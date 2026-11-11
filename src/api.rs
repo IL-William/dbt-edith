@@ -4646,9 +4646,93 @@ pub async fn watch_update(st: Arc<AppState>) {
     }
 }
 
+/// How many times a manifest or catalog that would not read is read again for
+/// the same stamps, before it is left until it moves: a broken file someone
+/// wrote must not be read in full every poll.
+const RELOAD_RETRIES: u32 = 3;
+
+/// What the stamps say moved since `seen`, as (anything, the manifest or the
+/// catalog). A stamp of 0 is no file, which moves nothing.
+fn what_moved(seen: &[u64; 3], stamps: &[u64; 3]) -> (bool, bool) {
+    let moved = |i: usize| stamps[i] != 0 && stamps[i] != seen[i];
+    let artifacts = moved(0) || moved(1);
+    (artifacts || moved(2), artifacts)
+}
+
+/// The manifest's and the catalog's stamps that did not read, and how many
+/// times they were left unseen to be read again; and the catalog's stamp that
+/// was given up on, which a new manifest does not reset.
+#[derive(Clone, Copy, Default, PartialEq, Debug)]
+struct Tried {
+    stamps: [u64; 2],
+    tries: u32,
+    gave_up: u64,
+}
+
+/// What the poll says about a read that did not go through, and of which file.
+#[derive(PartialEq, Debug)]
+enum Say {
+    Nothing,
+    Again(&'static str),
+    GaveUp(&'static str),
+}
+
+/// What `seen`, the count and the log line become after a read of the
+/// artifacts, `loaded` being the catalog's stamp of what was read, or None when
+/// the read failed.
+///
+/// The poll stored this tick's stamps before reading, so a file dbt was still
+/// writing, whose stamp does not move again once the write ends within the
+/// same second, would stay unread. The manifest's and the catalog's go back
+/// to `before` (a manifest that failed) or stay 0 (a catalog that was left
+/// out, which `load_all` does not call a failure) for the next poll to see
+/// them as moved, until `RELOAD_RETRIES` such returns are spent for the same
+/// stamps, a manifest that failed and a catalog left out at the same stamps
+/// sharing one count. The cache's stamp is not what failed and is never put back.
+fn after_artifacts_read(now: [u64; 3], before: [u64; 3], stamps: [u64; 3], tried: Tried, loaded: Option<u64>) -> ([u64; 3], Tried, Say) {
+    let mut tried = if tried.stamps == [stamps[0], stamps[1]] { tried } else { Tried { stamps: [stamps[0], stamps[1]], tries: 0, ..tried } };
+    let mut seen = now;
+    let (what, catalog_left_out) = match loaded {
+        None => ("artifacts", false),
+        // This very catalog was given up on while the manifest moved since: it
+        // is not tried again at every parse. A catalog that read fine at this
+        // stamp and fails now, with no move, has not been given up on.
+        Some(0) if stamps[1] != 0 && tried.gave_up == stamps[1] => {
+            seen[1] = stamps[1];
+            return (seen, tried, Say::Nothing);
+        }
+        Some(0) if stamps[1] != 0 => ("catalog.json", true),
+        Some(_) => return (seen, Tried::default(), Say::Nothing),
+    };
+    if tried.tries < RELOAD_RETRIES {
+        if !catalog_left_out {
+            // `now[i] == stamps[i]` is a defence: every writer of `seen` holds the
+            // lock the poll holds, but a stamp someone else stored is not undone.
+            for i in 0..2 {
+                if now[i] == stamps[i] {
+                    seen[i] = before[i];
+                }
+            }
+        }
+        // A catalog left out is stored as 0 by the read, so it stays unseen as it is.
+    } else if catalog_left_out {
+        // Given up on: the catalog's own stamp, so a file that moves is read again.
+        seen[1] = stamps[1];
+        tried.gave_up = stamps[1];
+    }
+    let say = match tried.tries {
+        0 => Say::Again(what),
+        n if n == RELOAD_RETRIES => Say::GaveUp(what),
+        _ => Say::Nothing,
+    };
+    tried.tries += 1;
+    (seen, tried, say)
+}
+
 /// Background poll: reloads whenever dbt rewrites manifest.json or catalog.json,
 /// or something other than a click rewrites the column-lineage cache.
 pub async fn watch_artifacts(st: Arc<AppState>) {
+    let mut tried = Tried::default();
     loop {
         tokio::time::sleep(std::time::Duration::from_secs(3)).await;
         // Held through the reload: a click merging fetched lineage meanwhile
@@ -4658,30 +4742,44 @@ pub async fn watch_artifacts(st: Arc<AppState>) {
         let stamps = tokio::task::spawn_blocking(move || [mtime_secs(&mp), mtime_secs(&cp), mtime_secs(&lp)])
             .await
             .unwrap_or([0, 0, 0]);
-        let (changed, artifacts) = st
+        let (changed, artifacts, before) = st
             .seen
             .lock()
             .map(|mut seen| {
-                let moved = |i: usize| stamps[i] != 0 && stamps[i] != seen[i];
-                let artifacts = moved(0) || moved(1);
-                let changed = artifacts || moved(2);
+                let before = *seen;
+                let (changed, artifacts) = what_moved(&before, &stamps);
                 if changed {
                     *seen = stamps;
                 }
-                (changed, artifacts)
+                (changed, artifacts, before)
             })
-            .unwrap_or((false, false));
+            .unwrap_or((false, false, [0; 3]));
         if !changed {
             continue;
         }
         // Give dbt a moment to finish writing.
         tokio::time::sleep(std::time::Duration::from_millis(500)).await;
         if artifacts {
-            if let Ok(g) = load_all(&st).await {
-                eprintln!("  artifacts reloaded ({} nodes, {} ms)", g.nodes.len(), g.meta.load_ms);
-                // A parse just landed, so the badge should turn green on the
-                // next poll rather than a cache lifetime later.
-                *st.fresh.lock().await = None;
+            let read = load_all(&st).await;
+            let (loaded, why) = match &read {
+                Ok(g) => {
+                    eprintln!("  artifacts reloaded ({} nodes, {} ms)", g.nodes.len(), g.meta.load_ms);
+                    // A parse just landed, so the badge should turn green on the
+                    // next poll rather than a cache lifetime later.
+                    *st.fresh.lock().await = None;
+                    (Some(g.meta.catalog_mtime), String::new())
+                }
+                Err(e) => (None, format!(": {e:#}")),
+            };
+            if let Ok(mut seen) = st.seen.lock() {
+                let (next, now_tried, say) = after_artifacts_read(*seen, before, stamps, tried, loaded);
+                (*seen, tried) = (next, now_tried);
+                // Said on the first miss and when it is given up, not on every retry.
+                match say {
+                    Say::Again(what) => eprintln!("  {what} not read, trying again{why}"),
+                    Say::GaveUp(what) => eprintln!("  {what} still not read, waiting for it to change{why}"),
+                    Say::Nothing => {}
+                }
             }
         } else {
             // Only the cache moved: the manifest under it is the one already read.
@@ -4697,6 +4795,125 @@ pub async fn watch_artifacts(st: Arc<AppState>) {
 mod tests {
     use super::*;
 
+    /// One poll of a project whose files have `stamps`: whether it reads them,
+    /// and what the poll holds afterwards. `loaded` is what a read gives.
+    fn poll(seen: &mut [u64; 3], tried: &mut Tried, stamps: [u64; 3], loaded: Option<u64>) -> (bool, Say) {
+        let (changed, artifacts) = what_moved(seen, &stamps);
+        if !changed || !artifacts {
+            return (false, Say::Nothing);
+        }
+        let before = *seen;
+        *seen = stamps;
+        // What `load_all` stores when it reads: the stamps of what was read.
+        if let Some(catalog) = loaded {
+            *seen = [stamps[0], catalog, stamps[2]];
+        }
+        let (next, now_tried, say) = after_artifacts_read(*seen, before, stamps, *tried, loaded);
+        (*seen, *tried) = (next, now_tried);
+        (true, say)
+    }
+
+    #[test]
+    fn a_manifest_that_did_not_read_is_read_again_and_one_that_did_is_not() {
+        let (mut seen, mut tried) = ([10, 20, 30], Tried::default());
+        let stamps = [11, 21, 31];
+        assert!(poll(&mut seen, &mut tried, stamps, None).0);
+        assert!(what_moved(&seen, &stamps).1, "a failed read is unseen, for the next poll");
+        assert!(poll(&mut seen, &mut tried, stamps, Some(21)).0, "read again");
+        assert_eq!((seen, tried), (stamps, Tried::default()), "a read that went through is seen and its count reset");
+        assert!(!poll(&mut seen, &mut tried, stamps, Some(21)).0);
+    }
+
+    #[test]
+    fn a_file_that_stays_broken_is_read_once_and_then_the_retries_over() {
+        let (mut seen, mut tried) = ([10, 20, 30], Tried::default());
+        let stamps = [11, 21, 31];
+        let mut said = Vec::new();
+        let mut reads = 0;
+        for _ in 0..20 {
+            let (read, say) = poll(&mut seen, &mut tried, stamps, None);
+            reads += read as u32;
+            said.push(say);
+        }
+        assert_eq!(reads, 1 + RELOAD_RETRIES);
+        assert_eq!(said.iter().filter(|s| **s != Say::Nothing).count(), 2, "said when it first failed and when given up");
+        assert_eq!(said[0], Say::Again("artifacts"));
+        assert_eq!(said[RELOAD_RETRIES as usize], Say::GaveUp("artifacts"));
+        assert_eq!(&seen[..2], &stamps[..2], "left seen until it moves");
+        // It moves: read again, with the count from the start.
+        let moved = [12, 21, 31];
+        assert!(poll(&mut seen, &mut tried, moved, None).0);
+        assert_eq!(tried, Tried { stamps: [12, 21], tries: 1, gave_up: 0 }, "new stamps reset the count");
+    }
+
+    #[test]
+    fn a_catalog_that_is_left_out_is_read_again_the_same_number_of_times() {
+        let (mut seen, mut tried) = ([10, 20, 30], Tried::default());
+        let stamps = [11, 21, 31];
+        let (mut reads, mut said) = (0, Vec::new());
+        for _ in 0..20 {
+            // The manifest reads, the catalog is left out: its stamp is 0.
+            let (read, say) = poll(&mut seen, &mut tried, stamps, Some(0));
+            reads += read as u32;
+            said.push(say);
+        }
+        assert_eq!(reads, 1 + RELOAD_RETRIES);
+        assert_eq!(said[0], Say::Again("catalog.json"));
+        assert_eq!(said[RELOAD_RETRIES as usize], Say::GaveUp("catalog.json"));
+        assert_eq!(seen, stamps, "the catalog's own stamp, so it is read again when it moves");
+        assert!(poll(&mut seen, &mut tried, [11, 22, 31], Some(0)).0);
+        // A catalog that was never there is no failure.
+        let (mut seen, mut tried) = ([10, 20, 30], Tried::default());
+        assert_eq!(poll(&mut seen, &mut tried, [11, 0, 31], Some(0)).1, Say::Nothing);
+        assert_eq!(tried, Tried::default());
+    }
+
+    #[test]
+    fn a_catalog_given_up_on_is_not_tried_again_when_only_the_manifest_moves() {
+        let (mut seen, mut tried) = ([10, 20, 30], Tried::default());
+        for _ in 0..20 {
+            poll(&mut seen, &mut tried, [11, 21, 31], Some(0));
+        }
+        // The next parse writes a manifest and leaves the catalog as it was.
+        let (read, say) = poll(&mut seen, &mut tried, [12, 21, 31], Some(0));
+        assert_eq!((read, say), (true, Say::Nothing));
+        assert_eq!(seen, [12, 21, 31], "the catalog stays seen at once");
+        assert!(!poll(&mut seen, &mut tried, [12, 21, 31], Some(0)).0, "and nothing is read again");
+    }
+
+    #[test]
+    fn a_catalog_that_read_fine_and_fails_without_moving_is_retried() {
+        let (mut seen, mut tried) = ([10, 20, 30], Tried::default());
+        // The catalog reads at this stamp, which is no given-up stamp.
+        assert!(poll(&mut seen, &mut tried, [11, 21, 31], Some(21)).0);
+        // The manifest moves and the catalog, not moved, is left out (a lock, a permission).
+        let (mut reads, mut said) = (0, Vec::new());
+        for _ in 0..20 {
+            let (read, say) = poll(&mut seen, &mut tried, [12, 21, 31], Some(0));
+            reads += read as u32;
+            said.push(say);
+        }
+        assert_eq!(reads, 1 + RELOAD_RETRIES, "the bounded retries, as for any file");
+        assert_eq!(said[0], Say::Again("catalog.json"));
+        assert_eq!(tried.gave_up, 21);
+    }
+
+    #[test]
+    fn the_cache_stamp_is_not_put_back_and_a_missing_file_moves_nothing() {
+        let (before, stamps) = ([10, 20, 30], [10, 21, 31]);
+        assert_eq!(after_artifacts_read(stamps, before, stamps, Tried::default(), None).0[2], 31);
+        assert_eq!(what_moved(&[10, 20, 30], &[0, 0, 30]), (false, false), "no file is no move");
+        assert_eq!(what_moved(&[10, 20, 30], &[10, 20, 31]), (true, false), "the cache alone is not the artifacts");
+    }
+
+    #[test]
+    fn a_stamp_that_is_no_longer_this_ticks_is_left_as_it_is() {
+        // Every writer of `seen` holds the poll's lock, so this does not happen;
+        // were it to, the stamp someone else stored would not be undone.
+        let (before, stamps) = ([10, 20, 30], [11, 21, 31]);
+        let seen = after_artifacts_read([50, 21, 31], before, stamps, Tried::default(), None).0;
+        assert_eq!((seen[0], seen[1]), (50, before[1]));
+    }
     #[test]
     fn a_hidden_var_keeps_nothing_of_its_text() {
         let list = vec!["a".to_string()];

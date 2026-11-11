@@ -66,6 +66,10 @@ CARD = "document.querySelector('.mcard')"
 # The card's Run button holds the focus: that and which key it carries.
 RUN_FOCUS = ("(() => { const a = document.activeElement; return a && a.matches('.mcard .mc-run')"
              " ? a.dataset.key : (a ? a.tagName + (a.id ? '#' + a.id : '') : ''); })()")
+# What is on screen when a wait on the manifest's card fails: the badge's tone
+# and the titles of the files the card lists.
+TONE = "document.querySelector('#fresh-badge')?.dataset.tone"
+FILES = "[...document.querySelectorAll('.mcard .mc-file')].map((f) => f.title)"
 TAGGED = ("(() => { const w = document.querySelector('.mcard .mc-when'), r = document.querySelector('.mcard .mc-run');"
           " return [!!w && w.__walk === 1 && w.isConnected, !!r && r.__walk === 1 && r.isConnected,"
           " !!r && document.activeElement === r]; })()")
@@ -177,24 +181,32 @@ class Walk:
                 " document.querySelector('.mcard .mc-run').__walk = 1; })()")
         before = page.js("document.querySelector('.mcard .mc-when').textContent")
         try:
-            page.until(f"{CARD}?.querySelector('.mc-when')?.textContent !== {before!r}", "the card's age moving", 20)
+            # 75 s: past a minute the age moves only once a minute ("1 min ago",
+            # then "2 min ago"), so a tagging that came late (the waits above add
+            # up on a loaded machine) sees no change for up to a minute; the rest
+            # is a poll and the server's 2.5 s freshness cache.
+            page.until(f"{CARD}?.querySelector('.mc-when')?.textContent !== {before!r}", "the card's age moving", 75)
         except AssertionError:
             pass
         after = page.js(f"{CARD}?.querySelector('.mc-when')?.textContent")
         tagged = page.js(TAGGED)
-        self.check("a poll rewrites the age", after != before, f"{before!r} before, {after!r} after")
+        self.check("a poll rewrites the age", after != before,
+                   f"{before!r} before, {after!r} after; badge {page.js(TONE)!r}; files {page.js(FILES)}")
         self.check("in the same element, not a redraw", tagged[0], f"the age line: {tagged}")
         self.check("the Run button is the same one", tagged[1], f"the button: {tagged}")
         self.check("and keeps the focus", tagged[2], page.js(RUN_FOCUS))
 
         self.touch(project, "stg_payments")
+        # 45 s: a poll, the server's freshness cache and a walk of the folder,
+        # on a machine other Chrome runs share.
         try:
             page.until("[...document.querySelectorAll('.mcard .mc-file')].some((f) => f.title.endsWith('stg_payments.sql'))",
-                       "the card listing stg_payments.sql", 15)
+                       "the card listing stg_payments.sql", 45)
         except AssertionError:
             pass
         self.check("a poll that changes the answer draws the card again, with the new file",
-                   page.js("[...document.querySelectorAll('.mcard .mc-file')].some((f) => f.title.endsWith('stg_payments.sql'))"))
+                   page.js("[...document.querySelectorAll('.mcard .mc-file')].some((f) => f.title.endsWith('stg_payments.sql'))"),
+                   f"badge {page.js(TONE)!r}; files {page.js(FILES)}")
         self.check("the card is still open", page.js(f"!!{CARD}"))
         self.check("and the focus is on its Run dbt parse button again", page.js(RUN_FOCUS) == "parse", page.js(RUN_FOCUS))
 

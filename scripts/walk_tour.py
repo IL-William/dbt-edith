@@ -156,9 +156,14 @@ class Page:
         profile.mkdir()
         # Port 0: Chrome picks a free one and writes it down, so two checks
         # running at once never drive each other's browser.
+        # The three flags against backgrounding: the page's polls are timers,
+        # which headless Chrome held back for 40 s at a time in a tab the page
+        # still saw as visible, and a walk waits on them.
         self.chrome = subprocess.Popen(
             [CHROME, "--headless=new", "--remote-debugging-port=0", f"--user-data-dir={profile}",
              "--window-size=1400,900", f"--force-device-scale-factor={scale}", "--hide-scrollbars",
+             "--disable-background-timer-throttling", "--disable-renderer-backgrounding",
+             "--disable-backgrounding-occluded-windows",
              "--no-first-run", "--no-default-browser-check", "about:blank"],
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
         )
