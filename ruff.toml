@@ -1,0 +1,24 @@
+# Run by scripts/lint.py with the Ruff it pins (0173). Rules that catch bugs;
+# nothing here formats: Ruff's formatter is never run, the code is hand-aligned
+# (0172).
+target-version = "py310"
+
+[lint]
+select = ["E", "F", "W", "B", "UP", "SIM", "RUF", "PLE", "PLW"]
+ignore = [
+    # The scripts' comments and long literals are written to the width the code
+    # is, not wrapped to a limit.
+    "E501",
+    # `a + [b]` and `["x"] + rest` read as the command line they build; the
+    # `[*a, b]` it asks for is no safer.
+    "RUF005",
+    # subprocess.run without check=: where it is not set the code reads the
+    # return code itself, and raising would skip the message printed from it.
+    "PLW1510",
+    # `try: ... except AssertionError: pass` in the walks says "this step may
+    # fail" where contextlib.suppress would hide the intent; style only.
+    "SIM105",
+    # `name = lambda ...` for a one-line helper, in the tests and in
+    # tools/sf_lineage.py's `held`; a def is longer for the same behaviour.
+    "E731",
+]

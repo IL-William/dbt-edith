@@ -9036,7 +9036,7 @@ function depthWords(label, n) {
     incremental: ['incremental model', 'incremental models'], ephemeral: ['ephemeral model', 'ephemeral models'],
     materialized_view: ['materialized view', 'materialized views'], other: ['other node', 'other nodes'],
   };
-  const words = Object.prototype.hasOwnProperty.call(known, label) ? known[label] : [`${label} model`, `${label} models`];
+  const words = Object.hasOwn(known, label) ? known[label] : [`${label} model`, `${label} models`];
   return words[n === 1 ? 0 : 1];
 }
 
@@ -12599,7 +12599,7 @@ function runStatusRank(status) {
 }
 
 function runSecs(s) {
-  if (typeof s !== 'number' || !isFinite(s)) return '';
+  if (typeof s !== 'number' || !Number.isFinite(s)) return '';
   if (s < 1) return `${s.toFixed(2)} s`;
   if (s < 10) return `${s.toFixed(1)} s`;
   if (s < 60) return `${Math.round(s)} s`;
@@ -16587,7 +16587,7 @@ function zoneWall(tz, ms) {
 
 /* Whether this browser knows the zone's name. */
 function zoneKnown(tz) {
-  try { zoneWall(tz || 'UTC', 0); return true; } catch (e) { return false; }
+  try { zoneWall(tz || 'UTC', 0); return true; } catch { return false; }
 }
 
 /* The last time the cron fires at or before `beforeMs`, in milliseconds, read
@@ -16608,7 +16608,7 @@ function cronPrevious(fields, tz, beforeMs) {
   // Begun two hours past the wall clock of that instant: where a clock was put
   // back, the first pass over an hour lies ahead of the wall time of the
   // second, and `instants` leaves out whatever is after `beforeMs`.
-  try { wall = Math.floor(zoneWall(zone, beforeMs) / minute) * minute + 2 * 3600000; } catch (e) { return null; }
+  try { wall = Math.floor(zoneWall(zone, beforeMs) / minute) * minute + 2 * 3600000; } catch { return null; }
   const instants = (w) => {
     // The offset before and after: a day either side is past any change.
     const before = w - (zoneWall(zone, w - day1) - (w - day1)), after = w - (zoneWall(zone, w + day1) - (w + day1));

@@ -1,0 +1,41 @@
+// Run by scripts/lint.py with the Biome it pins (0173). Lint only: the
+// formatter would rewrite a hand-aligned frontend, and the assists rewrite
+// imports and keys, neither of which is a bug (0172).
+{
+  "formatter": { "enabled": false },
+  "assist": { "enabled": false },
+  "files": {
+    // web/tests/ eval slices of app.js, so every name there is "undeclared"
+    // and eval is the point; web/vendor/ is third-party code (0085).
+    "includes": ["web/app.js", "web/lineage.js"],
+    // app.js is over the 1 MiB default.
+    "maxSize": 10000000
+  },
+  "linter": {
+    "rules": {
+      "preset": "recommended",
+      // Style and complexity rules are taste, not bugs, and would mostly ask
+      // for rewrites of a deliberately dense hand-written style.
+      "style": "off",
+      "complexity": "off",
+      "correctness": {
+        "noUndeclaredVariables": "error",
+        // Handlers take the arguments an event or a callback gives, used or not.
+        "noUnusedFunctionParameters": "off"
+      },
+      "suspicious": {
+        // forEach and map bodies written as one-line expressions return what
+        // the expression gives; nothing reads it.
+        "useIterableCallbackReturn": "off",
+        // `while ((m = re.exec(s)))` and `a = b = c` are used on purpose.
+        "noAssignInExpressions": "off",
+        // The terminal's escape sequences are matched by their control characters.
+        "noControlCharactersInRegex": "off"
+      }
+    }
+  },
+  "javascript": {
+    // Loaded by <script> tags from web/vendor/ and lineage.js, not imported.
+    "globals": ["CodeMirror", "Terminal", "FitAddon", "diff_match_patch", "Lineage"]
+  }
+}

@@ -105,7 +105,7 @@ def parse(project):
 class Edith:
     def __init__(self, binary, project, home, update_check=False):
         self.log_path = home / "server.log"
-        self.log = open(self.log_path, "w")
+        self.log = open(self.log_path, "w")  # noqa: SIM115 - handed to Popen, closed with the server
         env = dict(os.environ, DBT_EDITH_CONFIG_DIR=str(home / "config"), HOME=str(home / "home"))
         env.pop("DBT_PROFILES_DIR", None)
         # Off unless asked: a walk never reaches GitHub. take_shots.py asks, to
@@ -176,7 +176,7 @@ class Page:
                 break
             except (OSError, ValueError, StopIteration, IndexError):
                 if time.time() > deadline:
-                    raise RuntimeError("Chrome did not start")
+                    raise RuntimeError("Chrome did not start") from None
                 time.sleep(0.2)
         hostport, path = url.split("://", 1)[1].split("/", 1)
         host, port = hostport.split(":")
@@ -379,7 +379,7 @@ class Walk:
             return ring is None
         box, view = geometry["target"], geometry["view"]
         return bool(ring and box and all(abs(a - b) <= 6 for a, b in zip(ring, [
-            max(2, box[0] - 4), max(2, box[1] - 4), min(view[0] - 2, box[2] + 4), min(view[1] - 2, box[3] + 4)])))
+            max(2, box[0] - 4), max(2, box[1] - 4), min(view[0] - 2, box[2] + 4), min(view[1] - 2, box[3] + 4)], strict=False)))
 
     def look(self, index, total):
         """The step on screen against STEPS: its title, its ring around its

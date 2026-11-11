@@ -588,7 +588,7 @@ class Edith:
         # A directory of its own, which the one-shot mode must never create:
         # it reads no settings and writes none (0057).
         self.command_line_config = home / "command-line-config"
-        self.log = open(home / "server.log", "w")
+        self.log = open(home / "server.log", "w")  # noqa: SIM115 - handed to Popen, closed with the server
         env = dict(os.environ, DBT_EDITH_CONFIG_DIR=str(home / "config"))
         self.proc = subprocess.Popen(
             [str(binary), str(project), "--manifest", str(manifest), "--port", "0", "--no-open"],
@@ -613,7 +613,7 @@ class Edith:
             except (urllib.error.URLError, ConnectionError):
                 if time.time() > deadline or self.proc.poll() is not None:
                     self.stop()
-                    raise RuntimeError("dbt-edith did not start: " + (home / "server.log").read_text()[-2000:])
+                    raise RuntimeError("dbt-edith did not start: " + (home / "server.log").read_text()[-2000:]) from None
                 time.sleep(0.2)
 
     def get(self, path):

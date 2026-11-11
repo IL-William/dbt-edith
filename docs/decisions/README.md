@@ -176,6 +176,7 @@ it; these files say why it is built this way, for whoever changes it next.
 | [0170](0170-the-page-is-served-in-the-theme-kept.md) | The page is served in the theme kept | changing what the server writes into `index.html`, what of `look.json` leaves without the key, or when a page reads the look again |
 | [0171](0171-clippy-runs-on-stable-with-every-lint-an-error.md) | Clippy runs on stable with every lint an error | silencing a Clippy lint or adding an `#[allow]`, changing the Clippy step of `check.sh` or CI, or pinning a toolchain |
 | [0172](0172-only-the-rust-code-is-formatted-by-rustfmt-with-a-packed-config.md) | Only the Rust code is formatted, by rustfmt with a packed config | changing `rustfmt.toml`, formatting another language, or resolving a conflict in formatted code |
+| [0173](0173-the-linters-are-fetched-by-hash-and-aim-at-bugs.md) | The linters are fetched by hash, and their rules aim at bugs | adding or changing a linter rule, bumping a linter, or covering a new file type |
 
 ## Keeping these honest
 

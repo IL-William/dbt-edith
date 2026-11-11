@@ -92,7 +92,7 @@ def held(found: Path) -> None:
     outside the project is yours, and its links are followed as dbt follows
     them."""
     project = Path.cwd().resolve()
-    inside = lambda p: p == project or project in p.parents  # noqa: E731
+    inside = lambda p: p == project or project in p.parents
     try:
         folder = found.parent.resolve(strict=True)
     except OSError:
@@ -341,7 +341,7 @@ def profile_from_project():
     try:
         import yaml
         return (yaml.safe_load(path.read_text()) or {}).get("profile")
-    except Exception:  # noqa: BLE001 - an unreadable project just means no default
+    except Exception:  # an unreadable project just means no default
         return None
 
 
@@ -414,7 +414,7 @@ def session_info(cur):
     try:
         cur.execute("select current_organization_name(), current_account_name(), current_user(), current_role()")
         org, account, user, role = cur.fetchall()[0][:4]
-    except Exception:  # noqa: BLE001 - an account with no organization still has a history
+    except Exception:  # an account with no organization still has a history
         cur.execute("select current_account_name(), current_user(), current_role()")
         account, user, role = cur.fetchall()[0][:3]
         org = None
@@ -429,9 +429,8 @@ def history_request(req):
     id, so the next page starts after it whatever ran since.
     """
     role = req.get("role")
-    if role is not None:
-        if not isinstance(role, str) or not role.strip() or len(role) > 255 or not role.isprintable():
-            raise ValueError("role must be a role name, or * for every role")
+    if role is not None and (not isinstance(role, str) or not role.strip() or len(role) > 255 or not role.isprintable()):
+        raise ValueError("role must be a role name, or * for every role")
     before = req.get("before")
     if before is not None:
         at = before.get("at") if isinstance(before, dict) else None
@@ -484,7 +483,7 @@ def query_history(cur, role: str | None, before, page: int = HISTORY_PAGE):
 
 def history_row(r):
     """One QUERY_HISTORY row as the page reads it, without the columns Snowflake left empty."""
-    row = dict(zip(HISTORY_COLUMNS, r))
+    row = dict(zip(HISTORY_COLUMNS, r, strict=False))
     at = int(row["at"])
     row["at"] = str(at)  # past what a JavaScript number holds exactly
     row["start"] = datetime.fromtimestamp(at // 1_000_000_000, timezone.utc).strftime("%Y-%m-%dT%H:%M:%S") + (
@@ -570,7 +569,7 @@ def utc_text(value):
 
 def build_row(r):
     """One run as the page reads it, without the columns Snowflake left empty."""
-    row = dict(zip(BUILD_COLUMNS, r))
+    row = dict(zip(BUILD_COLUMNS, r, strict=False))
     for key in ("started", "completed", "compiled", "last_success"):
         row[key] = utc_text(row[key])
     if row["status"]:
@@ -609,7 +608,7 @@ def cmd_probe(args):
             rows = cur.fetchall()
             print(f"  OK    {label}: {len(rows)} row(s) in {time.time() - t0:.1f}s")
             return rows
-        except Exception as e:  # noqa: BLE001 - the whole point is to report any failure
+        except Exception as e:  # the whole point is to report any failure
             print(f"  FAIL  {label}: {error_text(e, 160)}")
             return None
 
@@ -734,8 +733,8 @@ def cmd_serve(args):
         }
     )
 
-    for line in sys.stdin:
-        line = line.strip()
+    for raw in sys.stdin:
+        line = raw.strip()
         if not line:
             continue
         try:
@@ -788,7 +787,7 @@ def cmd_serve(args):
                 finally:
                     cur.close()
             reply({"id": rid, **answer})
-        except Exception as e:  # noqa: BLE001 - every failure becomes a reply
+        except Exception as e:  # every failure becomes a reply
             reply({"id": rid, "error": error_text(e, 300), "phase": phase})
             # A dead session would fail every later request the same way.
             if conn is not None and getattr(conn, "is_closed", lambda: False)():
@@ -824,7 +823,7 @@ def cmd_dump(args):
     print(f"{len(targets)} model(s), {total_cols} column(s), {args.threads} thread(s)", file=sys.stderr)
 
     work = queue.Queue()
-    for uid, rel, cols in targets:
+    for _uid, rel, cols in targets:
         for c in cols:
             work.put((rel, c))
     found, errors, done = [], [], [0]
@@ -840,7 +839,7 @@ def cmd_dump(args):
                 break
             try:
                 edges = rows_to_edges(column_lineage(cur, rel, col, "UPSTREAM", 1), resolve)
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 with lock:
                     errors.append(f"{rel}.{col}: {error_text(e, 120)}")
                 edges = []

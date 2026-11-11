@@ -112,10 +112,10 @@ while [ $# -gt 0 ]; do
   shift
 done
 cat > "$out" <<'JSON'
-%s
+@CACHE@
 JSON
 echo '{"totals":{"models":5,"parsed":5},"models":[]}' > "$report"
-""" % json.dumps(CACHE)
+""".replace("@CACHE@", json.dumps(CACHE))
 
 # (line, whether the command line is expected to exit 0, 1 or 2). The command
 # line parses the words as a shell would; the tool is given the line as it is.
@@ -191,7 +191,7 @@ class Server:
 
     def __init__(self, binary, project, manifest, env, work, name):
         self.stderr_path = work / f"{name}-stderr.log"
-        self.log = open(self.stderr_path, "w")
+        self.log = open(self.stderr_path, "w")  # noqa: SIM115 - handed to Popen, closed with the server
         self.proc = subprocess.Popen(
             [str(binary), "--mcp", str(project)] + (["--manifest", str(manifest)] if manifest else []),
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=self.log, env=env, cwd=work,
@@ -427,7 +427,7 @@ def server_pass(binary, project, manifest, questions, env, work, reload_lines=No
 def probe_pass(binary, project, manifest, env, work):
     """What Claude Code pays for a probe: a process, a modern server/discover
     answered -32601, and the exit when stdin closes."""
-    log = open(work / "probe-stderr.log", "w")
+    log = open(work / "probe-stderr.log", "w")  # noqa: SIM115 - handed to Popen, closed after the exit
     t = time.perf_counter()
     proc = subprocess.Popen([str(binary), "--mcp", str(project), "--manifest", str(manifest)],
                             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=log, env=env, cwd=work)
@@ -513,7 +513,7 @@ def measure_project(label, binary, project, manifest, models, columns, env, work
     srv_ms = [med([p["rows"][i][0] for p in srv]) for i in range(len(questions))]
     srv_first = med([p["rows"][0][0] for p in srv])
     rows = []
-    for i, (kind, line) in enumerate(questions):
+    for i, (_kind, line) in enumerate(questions):
         rows.append((i + 1, line, f"{cli_ms[i]:.1f}", f"{srv_ms[i]:.1f}", cli[0][i][1], srv[0]["rows"][i][1], srv[0]["rows"][i][2]))
     table(["#", "line", "CLI ms", "server ms", "answer bytes (CLI)", "answer bytes (server text)", "response line bytes"], rows)
 
@@ -538,8 +538,8 @@ def measure_project(label, binary, project, manifest, models, columns, env, work
     table(["call", "warm ms", "after touch ms"],
           [(k, f"{med([p['reload'][k][0] for p in srv]):.1f}", f"{med([p['reload'][k][1] for p in srv]):.1f}") for k in srv[0]["reload"]])
     print("### Memory\n")
-    peak_sel = peak_rss_mib(binary, project, manifest, next(l for k, l in questions if k == "s"), env, work)
-    peak_col = peak_rss_mib(binary, project, manifest, next((l for k, l in questions if k == "c"), questions[0][1]), env, work)
+    peak_sel = peak_rss_mib(binary, project, manifest, next(line for k, line in questions if k == "s"), env, work)
+    peak_col = peak_rss_mib(binary, project, manifest, next((line for k, line in questions if k == "c"), questions[0][1]), env, work)
     table(["", "MiB"], [("server, after the handshake", f"{med([p['rss_idle'] for p in srv]) / 1024:.1f}"),
                         ("server, after the lines", f"{med([p['rss_after'] for p in srv]) / 1024:.1f}"),
                         ("server, after the reloads", f"{med([p['rss_reload'] for p in srv]) / 1024:.1f}"),
