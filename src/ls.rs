@@ -95,13 +95,7 @@ pub fn run(project: &Path, manifest: Option<&Path>, query: &Query, count: Option
 /// never holds it back. The exit code, or the write that failed. A caller that
 /// is not a process hands it two buffers in place of the standard streams.
 pub(crate) fn respond(
-    root: &Path,
-    graph: &Graph,
-    query: &Query,
-    count: Option<Count>,
-    output: Output,
-    out: &mut impl Write,
-    err: &mut impl Write,
+    root: &Path, graph: &Graph, query: &Query, count: Option<Count>, output: Output, out: &mut impl Write, err: &mut impl Write,
 ) -> io::Result<i32> {
     let code = answer(graph, query, count, output, out, err)?;
     out.flush()?;
@@ -141,9 +135,7 @@ pub(crate) fn open(project: &Path, manifest: Option<&Path>) -> Result<(PathBuf, 
 /// shows a node's columns as the Catalog does: the catalog named, else the
 /// one beside the manifest (0102).
 pub(crate) fn open_with_catalog(
-    project: &Path,
-    manifest: Option<&Path>,
-    catalog: Option<&Path>,
+    project: &Path, manifest: Option<&Path>, catalog: Option<&Path>,
 ) -> Result<(PathBuf, PathBuf, Graph), String> {
     // Asked for by name and not there, it would be left out of the answer
     // without a word, and the card would show the types of the YAML as if the
@@ -163,15 +155,11 @@ pub(crate) fn missing_catalog(named: Option<&Path>) -> Option<String> {
 /// The catalog that is merged: the one named, else the one beside the
 /// manifest, where `dbt docs generate` writes it with the manifest it read.
 pub(crate) fn catalog_path(root: &Path, manifest: &Path, named: Option<&Path>) -> PathBuf {
-    named
-        .map(Path::to_path_buf)
-        .unwrap_or_else(|| files::folder_of(manifest).unwrap_or_else(|| root.join("target")).join("catalog.json"))
+    named.map(Path::to_path_buf).unwrap_or_else(|| files::folder_of(manifest).unwrap_or_else(|| root.join("target")).join("catalog.json"))
 }
 
 fn open_with(
-    project: &Path,
-    manifest: Option<&Path>,
-    load: impl FnOnce(&Path, &Path) -> anyhow::Result<Graph>,
+    project: &Path, manifest: Option<&Path>, load: impl FnOnce(&Path, &Path) -> anyhow::Result<Graph>,
 ) -> Result<(PathBuf, PathBuf, Graph), String> {
     let root = match project.canonicalize() {
         Ok(p) => files::plain(p),
@@ -190,12 +178,7 @@ fn open_with(
 /// Resolves the query and prints it, or counts it when asked. Returns the exit
 /// code; an `Err` is only ever a failed write.
 fn answer(
-    graph: &Graph,
-    query: &Query,
-    count: Option<Count>,
-    output: Output,
-    out: &mut impl Write,
-    err: &mut impl Write,
+    graph: &Graph, query: &Query, count: Option<Count>, output: Output, out: &mut impl Write, err: &mut impl Write,
 ) -> io::Result<i32> {
     let (nodes, warnings) = match selected(graph, query, err)? {
         Some(selection) => selection,
@@ -268,12 +251,7 @@ pub fn run_columns(project: &Path, manifest: Option<&Path>, catalog: Option<&Pat
 /// What `run_columns` does once the project is open, and what an MCP call
 /// does over the graph the server keeps for `--describe`.
 pub(crate) fn respond_columns(
-    root: &Path,
-    graph: &Graph,
-    query: &Query,
-    output: Output,
-    out: &mut impl Write,
-    err: &mut impl Write,
+    root: &Path, graph: &Graph, query: &Query, output: Output, out: &mut impl Write, err: &mut impl Write,
 ) -> io::Result<i32> {
     let code = answer_columns(graph, query, output, out, err)?;
     out.flush()?;
@@ -351,7 +329,11 @@ fn folder_of(graph: &Graph, n: &Node, depth: usize) -> String {
     let mut parts: Vec<&str> = path.split('/').filter(|p| !p.is_empty() && *p != ".").collect();
     parts.pop();
     parts.truncate(depth);
-    if parts.is_empty() { "(no folder)".to_string() } else { parts.join("/") }
+    if parts.is_empty() {
+        "(no folder)".to_string()
+    } else {
+        parts.join("/")
+    }
 }
 
 /// A `--count-by` answer. Text, for `name` and `compact` alike: a header of
@@ -562,7 +544,11 @@ pub(crate) fn node_named(graph: &Graph, name: &str, kinds: &[Kind]) -> Result<u3
         Unnamed::Nothing => {
             let near = near_nodes(graph, name, kinds);
             let none = if kinds.is_empty() { format!("no node named {name}") } else { format!("no {} is named {name}", kind_words(kinds)) };
-            if near.is_empty() { none } else { format!("{none}; did you mean {}", near.join(", ")) }
+            if near.is_empty() {
+                none
+            } else {
+                format!("{none}; did you mean {}", near.join(", "))
+            }
         }
     })
 }
@@ -661,9 +647,7 @@ pub(crate) fn find_node(graph: &Graph, name: &str, kinds: &[Kind]) -> Result<u32
     }
     match hits.as_slice() {
         [one] => Ok(*one),
-        [] => {
-            Err(Unnamed::Nothing)
-        }
+        [] => Err(Unnamed::Nothing),
         many => {
             let mut ids: Vec<&str> = many.iter().map(|&i| graph.nodes[i as usize].id.as_str()).collect();
             ids.sort_unstable();
@@ -749,7 +733,11 @@ pub(crate) fn field(text: &str) -> String {
 /// How an answer names a node: its name, or its unique_id where another node
 /// of the graph has that name, so a name read in one line is never two nodes.
 pub(crate) fn label(n: &Node, shared: &HashSet<&str>) -> String {
-    if shared.contains(n.name.as_str()) { n.id.clone() } else { n.name.clone() }
+    if shared.contains(n.name.as_str()) {
+        n.id.clone()
+    } else {
+        n.name.clone()
+    }
 }
 
 /// One node of a `--output compact` answer: the columns of `COMPACT_HEADER`.
@@ -1090,10 +1078,7 @@ mod tests {
         assert_eq!(count("+orders+", CountBy::Kind, 3), "count\tkind\n3\tmodel\n1\tsource\n1\ttest\n5\t(all)\n");
         // A model whose config says nothing is `unset`, as the overview says;
         // the most first, then by value.
-        assert_eq!(
-            count("+orders+", CountBy::Materialized, 3),
-            "count\tmaterialized\n2\ttable\n1\tsource\n1\tunset\n1\tview\n5\t(all)\n"
-        );
+        assert_eq!(count("+orders+", CountBy::Materialized, 3), "count\tmaterialized\n2\ttable\n1\tsource\n1\tunset\n1\tview\n5\t(all)\n");
         assert_eq!(count("+orders+", CountBy::Source, 3), "count\tsource\n4\t(not a source)\n1\traw\n5\t(all)\n");
         assert_eq!(count("+orders+", CountBy::Tag, 3), "count\ttag\n4\t(no tag)\n1\tnightly\n5\t(all)\n");
         assert_eq!(count("+orders+", CountBy::Package, 3), "count\tpackage\n5\tshop\n5\t(all)\n");
@@ -1142,10 +1127,7 @@ mod tests {
             }
         });
         let (out, _, _) = count_on(&g, "resource_type:model --exclude resource_type:test", CountBy::Folder, 3, Output::Name);
-        assert_eq!(
-            out,
-            "count\tfolder\n1\tmodels\n1\tmodels/a/b\n1\tmodels/a-b\n2\tmodels/marts\n1\tmodels/staging\n6\t(all)\n"
-        );
+        assert_eq!(out, "count\tfolder\n1\tmodels\n1\tmodels/a/b\n1\tmodels/a-b\n2\tmodels/marts\n1\tmodels/staging\n6\t(all)\n");
     }
 
     #[test]
@@ -1300,7 +1282,9 @@ mod tests {
                 "original_file_path": format!("models/{name}.sql"), "fqn": [pkg, name], "config": { "enabled": enabled } })
         };
         let g = graph_with(|m| {
-            for (pkg, name) in [("shop", "solo"), ("shop", "dimv"), ("other", "dimv"), ("shop", "mixed"), ("shop", "sv"), ("shop", "totals")] {
+            for (pkg, name) in
+                [("shop", "solo"), ("shop", "dimv"), ("other", "dimv"), ("shop", "mixed"), ("shop", "sv"), ("shop", "totals")]
+            {
                 for v in 1..=2 {
                     m["nodes"][format!("model.{pkg}.{name}.v{v}")] = version(pkg, name, v, 2);
                 }
@@ -1326,10 +1310,7 @@ mod tests {
                 format!("{name} names 2 nodes: write the unique_id of one, model.other.dimv.v2, model.shop.dimv.v2")
             );
         }
-        assert_eq!(
-            id("mixed").unwrap_err(),
-            "mixed names 2 nodes: write the unique_id of one, model.other.mixed, model.shop.mixed.v2"
-        );
+        assert_eq!(id("mixed").unwrap_err(), "mixed names 2 nodes: write the unique_id of one, model.other.mixed, model.shop.mixed.v2");
         assert_eq!(id("sv").unwrap_err(), "sv names 2 nodes: write the unique_id of one, model.shop.sv.v2, seed.other.sv");
         // A disabled model of the name gives way to the enabled versions.
         assert_eq!(id("totals").unwrap(), "model.shop.totals.v2");
@@ -1533,10 +1514,15 @@ mod tests {
         let (_, _, merged) = open_with_catalog(&dir, None, None).unwrap();
         assert_eq!(alone.nodes.len(), merged.nodes.len(), "the catalog adds no node");
         assert!(merged.nodes.iter().any(|n| n.id == "model.dbt_utils.helper" && !n.place.is_empty()), "the package was placed");
-        for select in ["*", "path:models/marts", "path:models/helper.sql", "source:*", "package:dbt_utils", "package:shop", "+orders", "orders+", "resource_type:model", "config.materialized:table"] {
+        for select in [
+            "*", "path:models/marts", "path:models/helper.sql", "source:*", "package:dbt_utils", "package:shop", "+orders", "orders+",
+            "resource_type:model", "config.materialized:table",
+        ] {
             let ids = |g: &Graph| {
                 let mut err = Vec::new();
-                let (nodes, _) = selected(g, &line(select, ""), &mut err).unwrap().unwrap_or_else(|| panic!("{select}: {}", String::from_utf8_lossy(&err)));
+                let (nodes, _) = selected(g, &line(select, ""), &mut err)
+                    .unwrap()
+                    .unwrap_or_else(|| panic!("{select}: {}", String::from_utf8_lossy(&err)));
                 nodes.iter().map(|n| n.id.clone()).collect::<Vec<_>>()
             };
             assert_eq!(ids(&alone), ids(&merged), "{select}");

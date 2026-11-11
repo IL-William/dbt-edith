@@ -44,13 +44,7 @@ pub(crate) fn no_name(name: &str) -> Option<&'static str> {
 /// holds between calls (MCP); None reads them here, if the project has a
 /// sources file.
 pub(crate) fn respond_job(
-    root: &Path,
-    graph: &Graph,
-    kept: Option<&Known>,
-    name: &str,
-    output: Output,
-    out: &mut impl Write,
-    err: &mut impl Write,
+    root: &Path, graph: &Graph, kept: Option<&Known>, name: &str, output: Output, out: &mut impl Write, err: &mut impl Write,
 ) -> io::Result<i32> {
     let code = job(root, graph, kept, name.trim(), output, out, err)?;
     out.flush()?;
@@ -58,11 +52,17 @@ pub(crate) fn respond_job(
     Ok(code)
 }
 
-fn job(root: &Path, graph: &Graph, kept: Option<&Known>, name: &str, output: Output, out: &mut impl Write, err: &mut impl Write) -> io::Result<i32> {
+fn job(
+    root: &Path, graph: &Graph, kept: Option<&Known>, name: &str, output: Output, out: &mut impl Write, err: &mut impl Write,
+) -> io::Result<i32> {
     let known = kept.cloned().unwrap_or_else(|| jobs::known(graph, root));
     let read = match known {
         Known::Absent => {
-            writeln!(err, "error: no {} in this project; name the sources in the Orchestration section of the settings", clean(jobs::SOURCES_FILE))?;
+            writeln!(
+                err,
+                "error: no {} in this project; name the sources in the Orchestration section of the settings",
+                clean(jobs::SOURCES_FILE)
+            )?;
             return Ok(CANNOT_RUN);
         }
         Known::Refused(why) => {
@@ -208,7 +208,11 @@ mod tests {
                 path: format!("jobs/{dir}"),
                 label: label.to_string(),
                 // The fixture names its own keys.
-                keys: if *dir == "airflow_renamed" { jobs::RENAMED_KEYS.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect() } else { Default::default() },
+                keys: if *dir == "airflow_renamed" {
+                    jobs::RENAMED_KEYS.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect()
+                } else {
+                    Default::default()
+                },
                 ..Default::default()
             })
             .collect();
@@ -264,7 +268,10 @@ mod tests {
         }
         let (json, _, _) = ask(&root, "Nightly build", Output::Json);
         let json: serde_json::Value = serde_json::from_str(&json).unwrap();
-        assert_eq!((json["kind"].as_str(), json["ident"].as_str(), json["schedule"].as_str()), (Some("dbt_cloud"), Some("nightly"), Some("scheduled 0 2 * * *")));
+        assert_eq!(
+            (json["kind"].as_str(), json["ident"].as_str(), json["schedule"].as_str()),
+            (Some("dbt_cloud"), Some("nightly"), Some("scheduled 0 2 * * *"))
+        );
         assert_eq!(json["steps"][0]["node_count"], 1);
         assert_eq!(json["steps"][0]["nodes"][0], json!({"id": "seed.jaffle_shop.raw_orders", "kind": "seed", "name": "raw_orders"}));
         assert_eq!(json["nodes"], 5, "distinct: the seed is run by two steps and counted once");
@@ -299,7 +306,12 @@ mod tests {
         std::fs::create_dir_all(&none).unwrap();
         let (out, err, code) = ask(&none, "jaffle_daily", Output::Name);
         assert_eq!((out.as_str(), code), ("", CANNOT_RUN));
-        assert!(err.starts_with("error: no .dbt-edith/jobs.yml in this project; name the sources in the Orchestration section of the settings\n"), "{err}");
+        assert!(
+            err.starts_with(
+                "error: no .dbt-edith/jobs.yml in this project; name the sources in the Orchestration section of the settings\n"
+            ),
+            "{err}"
+        );
         let root = project("broken", &[("airflow", "airflow", "")]);
         std::fs::write(root.join(".dbt-edith/jobs.yml"), "jobs: nope\n").unwrap();
         let (_, err, code) = ask(&root, "jaffle_daily", Output::Name);
@@ -343,8 +355,15 @@ mod tests {
              - task_id: load_more\n    python_callable: load\n    outlets: [raw_loaded]\n",
         )
         .unwrap();
-        std::fs::write(dir.join("jaffle_next.yml"), "dag_id: jaffle_next\nschedule: [raw_loaded]\ntasks:\n  - task_id: build\n    command: dbt run -s orders\n").unwrap();
-        let list = [JobSource { kind: "airflow".into(), path: "jobs/airflow".into(), ..Default::default() }, JobSource { kind: "airflow".into(), path: "jobs/gated".into(), ..Default::default() }];
+        std::fs::write(
+            dir.join("jaffle_next.yml"),
+            "dag_id: jaffle_next\nschedule: [raw_loaded]\ntasks:\n  - task_id: build\n    command: dbt run -s orders\n",
+        )
+        .unwrap();
+        let list = [
+            JobSource { kind: "airflow".into(), path: "jobs/airflow".into(), ..Default::default() },
+            JobSource { kind: "airflow".into(), path: "jobs/gated".into(), ..Default::default() },
+        ];
         std::fs::write(root.join(".dbt-edith/jobs.yml"), jobs::sources_yaml(&list)).unwrap();
     }
 
@@ -352,7 +371,12 @@ mod tests {
     fn a_dag_says_what_its_sensors_wait_for_and_a_task_what_awaits_it() {
         let root = project("sensors", &[("airflow", "airflow", ""), ("airflow", "airflow_renamed", "")]);
         let (out, _, _) = ask(&root, "jaffle_reports", Output::Name);
-        assert!(out.starts_with("DAG jaffle_reports  manual  jaffle_reports.yml:4\n  sensor wait_marts  waits for jaffle_daily › marts\n  task refresh  "), "{out}");
+        assert!(
+            out.starts_with(
+                "DAG jaffle_reports  manual  jaffle_reports.yml:4\n  sensor wait_marts  waits for jaffle_daily › marts\n  task refresh  "
+            ),
+            "{out}"
+        );
         assert!(!out.contains("order:"), "no task of it names another: {out}");
         let (out, _, _) = ask(&root, "jaffle_daily", Output::Name);
         assert!(out.contains("    order: after stage · before reconcile · awaited by jaffle_reports › wait_marts · updates jaffle_marts, which starts jaffle_on_marts\n"), "{out}");
@@ -378,7 +402,12 @@ mod tests {
         );
         let (out, _, _) = ask(&root, "jaffle_daily", Output::Name);
         assert!(out.contains("    order: before stage · awaited by jaffle_gated › wait_all (whole run)\n"), "{out}");
-        assert!(out.contains("    order: after load_seeds · before marts · awaited by jaffle_gated › wait_stage, jaffle_gated › wait_all (whole run)\n"), "{out}");
+        assert!(
+            out.contains(
+                "    order: after load_seeds · before marts · awaited by jaffle_gated › wait_stage, jaffle_gated › wait_all (whole run)\n"
+            ),
+            "{out}"
+        );
         // The nameless sensor is the DAG alone, with no separator after it.
         assert!(out.contains(" · awaited by jaffle_gated › wait_all (whole run), jaffle_gated · updates jaffle_marts"), "{out}");
 
@@ -459,7 +488,11 @@ mod tests {
         let root = project("unread-json", &[]);
         let dir = root.join("jobs/loose");
         std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(dir.join("orphan.yml"), "dag_id: jaffle_orphan\nschedule: [never_updated]\ntasks:\n  - task_id: build\n    command: dbt run -s orders\n").unwrap();
+        std::fs::write(
+            dir.join("orphan.yml"),
+            "dag_id: jaffle_orphan\nschedule: [never_updated]\ntasks:\n  - task_id: build\n    command: dbt run -s orders\n",
+        )
+        .unwrap();
         std::fs::write(
             dir.join("jobs.yml"),
             "jobs:\n  lone:\n    name: Lone\n    execute_steps:\n      - dbt seed\n    job_completion_trigger_condition:\n      condition:\n        job_id: 4242\n",

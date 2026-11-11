@@ -613,7 +613,8 @@ impl Parser {
         if !rest.is_empty() && !rest.starts_with('#') {
             return fail(no, "text after a closing ] or }");
         }
-        let mut f = Flow { s: &text[..end], i: 0, line: no, breaks: &breaks, anchors: &self.anchors, values: &mut self.values, depth: self.depth };
+        let mut f =
+            Flow { s: &text[..end], i: 0, line: no, breaks: &breaks, anchors: &self.anchors, values: &mut self.values, depth: self.depth };
         let node = f.value().or_else(|m| fail(no, m))?;
         self.values += 1;
         Ok(node)
@@ -760,7 +761,8 @@ fn quoted(s: &str) -> Result<(String, &str), &'static str> {
                 };
                 let mut code = 0u32;
                 for _ in 0..width {
-                    let digit = chars.next().and_then(|(_, h)| h.to_digit(16)).ok_or("an escape YAML does not define, inside double quotes")?;
+                    let digit =
+                        chars.next().and_then(|(_, h)| h.to_digit(16)).ok_or("an escape YAML does not define, inside double quotes")?;
                     code = code * 16 + digit;
                 }
                 out.push(char::from_u32(code).ok_or("an escape YAML does not define, inside double quotes")?);

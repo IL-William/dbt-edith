@@ -62,15 +62,7 @@ impl Verb {
             Verb::Compile => &[Kind::Model, Kind::Snapshot, Kind::Test, Kind::Analysis],
             Verb::Clone => &[Kind::Model, Kind::Seed, Kind::Snapshot],
             Verb::Show => &[Kind::Model, Kind::Snapshot, Kind::Seed, Kind::Test, Kind::Analysis],
-            Verb::List => &[
-                Kind::Model,
-                Kind::Seed,
-                Kind::Snapshot,
-                Kind::Test,
-                Kind::Source,
-                Kind::Exposure,
-                Kind::Analysis,
-            ],
+            Verb::List => &[Kind::Model, Kind::Seed, Kind::Snapshot, Kind::Test, Kind::Source, Kind::Exposure, Kind::Analysis],
             Verb::DocsGenerate | Verb::RunOperation | Verb::Other => return None,
         })
     }
@@ -158,39 +150,36 @@ impl Invocation {
 /// click, so the rule `src/pty.rs` applies to a path applies here. Refused
 /// rather than cleaned, so that the name typed is the name resolved.
 fn shell_acts_on(text: &str) -> Option<String> {
-    text.chars()
-        .find(|c| matches!(c, '"' | '\u{201c}' | '\u{201d}' | '\u{201e}' | '$' | '`' | '\\' | '!') || c.is_control())
-        .map(|c| match c {
+    text.chars().find(|c| matches!(c, '"' | '\u{201c}' | '\u{201d}' | '\u{201e}' | '$' | '`' | '\\' | '!') || c.is_control()).map(|c| {
+        match c {
             '"' | '\u{201c}' | '\u{201d}' | '\u{201e}' => "a quote inside a selector".to_string(),
             c if c.is_control() => "a control character inside a selector".to_string(),
             c => format!("a `{c}` inside a selector, which the shell would act on"),
-        })
+        }
+    })
 }
 
 /// Flags that take no value and change nothing about what is selected.
 const SWITCHES: &[&str] = &[
-    "--full-refresh", "-f", "--no-full-refresh", "--fail-fast", "-x", "--no-fail-fast", "--defer", "--no-defer",
-    "--favor-state", "--no-favor-state", "--empty", "--no-empty", "--store-failures", "--warn-error", "--debug",
-    "-d", "--no-debug", "--quiet", "-q", "--no-quiet", "--use-colors", "--no-use-colors", "--use-colors-file",
-    "--no-use-colors-file", "--partial-parse", "--no-partial-parse", "--static-parser", "--no-static-parser",
-    "--version-check", "--no-version-check", "--write-json", "--no-write-json", "--print", "--no-print",
-    "--send-anonymous-usage-stats", "--no-send-anonymous-usage-stats", "--cache-selected-only",
-    "--no-cache-selected-only", "--introspect", "--no-introspect", "--compile", "--no-compile", "--static",
-    "--empty-catalog", "--populate-cache", "--no-populate-cache", "--partial-parse-file-diff",
-    "--no-partial-parse-file-diff", "--use-experimental-parser", "--no-use-experimental-parser",
-    "--inject-ephemeral-ctes", "--no-inject-ephemeral-ctes", "--export-saved-queries", "--no-export-saved-queries",
-    "--include-saved-query", "--no-include-saved-query", "--upgrade", "--lock", "--skip-profile-setup",
+    "--full-refresh", "-f", "--no-full-refresh", "--fail-fast", "-x", "--no-fail-fast", "--defer", "--no-defer", "--favor-state",
+    "--no-favor-state", "--empty", "--no-empty", "--store-failures", "--warn-error", "--debug", "-d", "--no-debug", "--quiet", "-q",
+    "--no-quiet", "--use-colors", "--no-use-colors", "--use-colors-file", "--no-use-colors-file", "--partial-parse", "--no-partial-parse",
+    "--static-parser", "--no-static-parser", "--version-check", "--no-version-check", "--write-json", "--no-write-json", "--print",
+    "--no-print", "--send-anonymous-usage-stats", "--no-send-anonymous-usage-stats", "--cache-selected-only", "--no-cache-selected-only",
+    "--introspect", "--no-introspect", "--compile", "--no-compile", "--static", "--empty-catalog", "--populate-cache",
+    "--no-populate-cache", "--partial-parse-file-diff", "--no-partial-parse-file-diff", "--use-experimental-parser",
+    "--no-use-experimental-parser", "--inject-ephemeral-ctes", "--no-inject-ephemeral-ctes", "--export-saved-queries",
+    "--no-export-saved-queries", "--include-saved-query", "--no-include-saved-query", "--upgrade", "--lock", "--skip-profile-setup",
     "--show-resource-report", "--no-show-resource-report", "--write-index", "--write-lineage",
 ];
 
 /// Flags that take one value and change nothing about what is selected.
 /// `--project-dir` is among them: a job is taken to run this project (0063).
 const VALUED: &[&str] = &[
-    "--target", "-t", "--threads", "--profiles-dir", "--project-dir", "--profile", "--target-path", "--log-path",
-    "--log-level", "--log-level-file", "--log-format", "--log-format-file", "--log-file-max-bytes", "--state",
-    "--defer-state", "--warn-error-options", "--printer-width", "--event-time-start", "--event-time-end",
-    "--sample", "--output", "-o", "--output-keys", "--limit", "--record-timing-info", "-r", "--static-analysis",
-    "--packages-install-path", "--macro-debugging",
+    "--target", "-t", "--threads", "--profiles-dir", "--project-dir", "--profile", "--target-path", "--log-path", "--log-level",
+    "--log-level-file", "--log-format", "--log-format-file", "--log-file-max-bytes", "--state", "--defer-state", "--warn-error-options",
+    "--printer-width", "--event-time-start", "--event-time-end", "--sample", "--output", "-o", "--output-keys", "--limit",
+    "--record-timing-info", "-r", "--static-analysis", "--packages-install-path", "--macro-debugging",
 ];
 
 /// Flags whose value is never kept nor shown: a secret would sit there.
@@ -295,9 +284,7 @@ fn words(line: &str) -> Result<Vec<Token>, String> {
             }
             '#' if !started => break,
             ';' | '&' | '|' | '<' | '>' | '(' | ')' => {
-                return Err(format!(
-                    "`{c}` outside quotes makes this more than one dbt command, and only one is read"
-                ))
+                return Err(format!("`{c}` outside quotes makes this more than one dbt command, and only one is read"))
             }
             '$' | '`' => {
                 started = true;
@@ -626,12 +613,8 @@ mod tests {
     #[test]
     fn reads_the_spellings_dbt_accepts_for_one_flag() {
         for line in [
-            "dbt build --select=orders",
-            "dbt build -s orders",
-            "dbt build -m orders",
-            "dbt build --models orders",
-            "dbt build --model orders",
-            "dbt build --select \"orders\"",
+            "dbt build --select=orders", "dbt build -s orders", "dbt build -m orders", "dbt build --models orders",
+            "dbt build --model orders", "dbt build --select \"orders\"",
         ] {
             assert_eq!(ok(line).select, owned(&["orders"]), "{line}");
         }
@@ -695,10 +678,7 @@ mod tests {
         );
         // A C1 control that is whitespace to Rust and to Python alike, NEL,
         // splits a `--select` the same way and is typed as the space it is.
-        assert_eq!(
-            ok("run --select 'é\u{85}b'").ls().unwrap(),
-            "dbt ls --select \"é b\" --resource-type model --output name"
-        );
+        assert_eq!(ok("run --select 'é\u{85}b'").ls().unwrap(), "dbt ls --select \"é b\" --resource-type model --output name");
     }
 
     #[test]
@@ -707,10 +687,7 @@ mod tests {
             ok("run --select tag:a +b --exclude c").ls().unwrap(),
             "dbt ls --select \"tag:a +b\" --exclude \"c\" --resource-type model --output name"
         );
-        assert_eq!(
-            ok("test --selector nightly").ls().unwrap(),
-            "dbt ls --selector \"nightly\" --resource-type test --output name"
-        );
+        assert_eq!(ok("test --selector nightly").ls().unwrap(), "dbt ls --selector \"nightly\" --resource-type test --output name");
         assert_eq!(ok("seed").ls().unwrap(), "dbt ls --resource-type seed --output name");
         assert_eq!(
             ok("build -s a --indirect-selection empty").ls().unwrap(),

@@ -10,8 +10,8 @@
 //! the steps that would write a new one, the target left for the user to
 //! name. stdout carries the answer and nothing else.
 
-use crate::collin::{self, iso_utc, Available, RawColLineage};
 use crate::collin::RawRule;
+use crate::collin::{self, iso_utc, Available, RawColLineage};
 use crate::graph::{ColRef, Expr, Gap, Graph, Kind, Lineage, RowEdges};
 use crate::ls::{self, Output, ANSWERED, CANNOT_RUN, REFUSED};
 use crate::{collin_run, files, profiles};
@@ -124,15 +124,8 @@ pub fn run(project: &Path, manifest: Option<&Path>, ask: &Ask, output: Output) -
 /// ends the mode with `CANNOT_RUN` like any other. `locate` finds the collin
 /// to run, asked only when a run is.
 pub(crate) fn respond(
-    root: &Path,
-    manifest_path: &Path,
-    mut graph: Graph,
-    ask: &Ask,
-    output: Output,
-    stop: &AtomicBool,
-    locate: impl FnOnce() -> collin_run::Located,
-    out: &mut impl Write,
-    err: &mut impl Write,
+    root: &Path, manifest_path: &Path, mut graph: Graph, ask: &Ask, output: Output, stop: &AtomicBool,
+    locate: impl FnOnce() -> collin_run::Located, out: &mut impl Write, err: &mut impl Write,
 ) -> io::Result<i32> {
     let target_dir = files::folder_of(manifest_path).unwrap_or_else(|| root.join("target"));
     // The model is the manifest's to name: a question naming none is refused
@@ -166,7 +159,15 @@ pub(crate) fn respond(
         Ok(path) => path,
         Err(why) => {
             let _ = writeln!(err, "error: {why}");
-            let _ = regenerate(root, &graph, &target_dir, if against { "collin" } else { ask.tool.map_or("", Tool::name) }, offer_run, against, err);
+            let _ = regenerate(
+                root,
+                &graph,
+                &target_dir,
+                if against { "collin" } else { ask.tool.map_or("", Tool::name) },
+                offer_run,
+                against,
+                err,
+            );
             return Ok(if against { REFUSED } else { CANNOT_RUN });
         }
     };
@@ -351,13 +352,7 @@ fn cache_for(target_dir: &Path, graph: &Graph, ask: &Ask, found: &[Available]) -
 /// answer's alone. The cache written, or None once stderr says why there is
 /// none; an `Err` is only ever a failed write.
 fn produce(
-    root: &Path,
-    manifest: &Path,
-    folder: &Path,
-    p: &Produce,
-    collin: collin_run::Located,
-    stop: &AtomicBool,
-    err: &mut impl Write,
+    root: &Path, manifest: &Path, folder: &Path, p: &Produce, collin: collin_run::Located, stop: &AtomicBool, err: &mut impl Write,
 ) -> io::Result<Option<PathBuf>> {
     // Named and not there, the folder would read no file, and every model it
     // was named for would come out matched by name over the page's cache.
@@ -483,7 +478,9 @@ fn passed_over(collin: &collin_run::Located, err: &mut impl Write) -> io::Result
             printable(&at.display().to_string()),
             printable(why)
         ),
-        Some((at, collin_run::Refusal::Shared(why))) => writeln!(err, "  {} is not run: {}", printable(&at.display().to_string()), printable(why)),
+        Some((at, collin_run::Refusal::Shared(why))) => {
+            writeln!(err, "  {} is not run: {}", printable(&at.display().to_string()), printable(why))
+        }
         None => Ok(()),
     }
 }
@@ -552,7 +549,11 @@ fn no_expressions(graph: &Graph, err: &mut impl Write) -> io::Result<()> {
     let tool = collin::tool_of(&m.cll_source);
     if tool == "collin" && collin_run::older_than(Some(version).filter(|v| !v.is_empty()), collin_run::EXPRESSIONS_SINCE) {
         let by = if producer.is_empty() { "a collin that names no version".to_string() } else { printable(producer) };
-        writeln!(err, "note: this cache was written by {by}, older than collin {}: it lists no expression, so steps and expression are empty", collin_run::EXPRESSIONS_SINCE_TEXT)?;
+        writeln!(
+            err,
+            "note: this cache was written by {by}, older than collin {}: it lists no expression, so steps and expression are empty",
+            collin_run::EXPRESSIONS_SINCE_TEXT
+        )?;
     } else if !cll.has_expressions() {
         let from = if tool == "fusion" { "Fusion's cache carries no expression" } else { "this cache lists no expression" };
         writeln!(err, "note: {from}, so steps and expression are empty; collin writes an expression only for a cast, transform, aggregate or window column")?;
@@ -621,7 +622,9 @@ fn columns_answer(models: &[Reached<'_>], ask: &Ask, output: Output, out: &mut i
 /// object per model, `{node, depth, rules}`. Nothing for a model without rules, and
 /// nothing at all, with a word on stderr, when the cache lists none: it was
 /// written by a collin before 0.11.0, or without `--indirect`.
-fn rules_answer(graph: &Graph, ask: &Ask, models: &[Reached<'_>], output: Output, out: &mut impl Write, err: &mut impl Write) -> io::Result<()> {
+fn rules_answer(
+    graph: &Graph, ask: &Ask, models: &[Reached<'_>], output: Output, out: &mut impl Write, err: &mut impl Write,
+) -> io::Result<()> {
     // Named outright: Fusion's cache has no rules to read, whatever it holds.
     if ask.tool == Some(Tool::Fusion) {
         writeln!(err, "{}", no_rules(&graph.meta.cll_file, "fusion"))?;
@@ -673,7 +676,9 @@ fn rules_answer(graph: &Graph, ask: &Ask, models: &[Reached<'_>], output: Output
 pub(crate) fn no_rules(file: &str, source: &str) -> String {
     let at = if file.is_empty() { "this cache".to_string() } else { file.to_string() };
     match collin::tool_of(source) {
-        "collin" => format!("no rules in {at}: it was written by a collin before 0.11.0, or without --indirect, so --rules has nothing to print"),
+        "collin" => {
+            format!("no rules in {at}: it was written by a collin before 0.11.0, or without --indirect, so --rules has nothing to print")
+        }
         "fusion" => format!("no rules in {at}: Fusion's cache carries none, and --rules reads collin's (--column-tool collin)"),
         _ => format!("no rules in {at}: only collin's cache carries them (--column-tool collin)"),
     }
@@ -892,8 +897,7 @@ fn reached<'a>(graph: &'a Graph, lineage: &Lineage<'a>, ask: &Ask) -> Vec<Reache
         let Some(here) = at[i] else { continue };
         let o = here.node;
         let n = &graph.nodes[o as usize];
-        let mut tests: Vec<&str> =
-            n.columns[here.col as usize].tests.iter().map(|&t| graph.nodes[t as usize].name.as_str()).collect();
+        let mut tests: Vec<&str> = n.columns[here.col as usize].tests.iter().map(|&t| graph.nodes[t as usize].name.as_str()).collect();
         tests.sort_unstable();
         let m = models.entry(o).or_insert_with(|| Reached {
             label: label(o),
@@ -944,14 +948,7 @@ fn reached<'a>(graph: &'a Graph, lineage: &Lineage<'a>, ask: &Ask) -> Vec<Reache
 /// against the manifest's, and for collin whether its report found the
 /// manifest, the catalog and the compiled SQL from more than one target.
 fn cache_lines(
-    root: &Path,
-    graph: &Graph,
-    cache: &Path,
-    manifest: &Path,
-    producer: &str,
-    offer_run: bool,
-    indirect: bool,
-    err: &mut impl Write,
+    root: &Path, graph: &Graph, cache: &Path, manifest: &Path, producer: &str, offer_run: bool, indirect: bool, err: &mut impl Write,
 ) -> io::Result<()> {
     let m = &graph.meta;
     let now = ls::now_secs();
@@ -988,7 +985,10 @@ fn cache_lines(
         writeln!(err, "note: Snowflake's cache holds only the columns fetched so far from the page, so an answer from it can be partial")?;
     }
     if collin_run::stale(cache, manifest) {
-        writeln!(err, "warning: the column lineage is older than the manifest: a column added, renamed or moved since may be missing or wrong")?;
+        writeln!(
+            err,
+            "warning: the column lineage is older than the manifest: a column added, renamed or moved since may be missing or wrong"
+        )?;
         regenerate(root, graph, &files::folder_of(manifest).unwrap_or_else(|| root.join("target")), tool, offer_run, indirect, err)?;
     }
     if tool == "collin" {
@@ -1029,7 +1029,9 @@ fn alignment(cache: &Path) -> Option<String> {
 /// nothing here can tell which one they mean. `folder` is where the manifest
 /// was read, which dbt and collin are pointed at when it is not their default.
 /// `indirect` adds collin's `--indirect`, for a mode that reads rules and rows.
-fn regenerate(root: &Path, graph: &Graph, folder: &Path, tool: &str, offer_run: bool, indirect: bool, err: &mut impl Write) -> io::Result<()> {
+fn regenerate(
+    root: &Path, graph: &Graph, folder: &Path, tool: &str, offer_run: bool, indirect: bool, err: &mut impl Write,
+) -> io::Result<()> {
     match tool {
         "snowflake" => {
             return writeln!(
@@ -1038,9 +1040,7 @@ fn regenerate(root: &Path, graph: &Graph, folder: &Path, tool: &str, offer_run: 
                  this mode never asks the warehouse. --column-tool collin reads collin's cache instead"
             )
         }
-        "fusion" => {
-            return writeln!(err, "  nothing writes Fusion's cache yet: --column-tool collin reads collin's cache instead")
-        }
+        "fusion" => return writeln!(err, "  nothing writes Fusion's cache yet: --column-tool collin reads collin's cache instead"),
         _ => {}
     }
     writeln!(
@@ -1165,15 +1165,15 @@ mod tests {
     }
 
     /// `graph_with` with the two lists collin 0.11.0 adds.
-    fn listing(more: &[(&str, &str, &str, &str, &str)], rules: Vec<crate::collin::RawRule>, expressions: Vec<crate::collin::RawExpression>) -> Graph {
+    fn listing(
+        more: &[(&str, &str, &str, &str, &str)], rules: Vec<crate::collin::RawRule>, expressions: Vec<crate::collin::RawExpression>,
+    ) -> Graph {
         listing_with(more, rules, expressions, Vec::new())
     }
 
     /// `listing` with the list collin 0.12.0 adds.
     fn listing_with(
-        more: &[(&str, &str, &str, &str, &str)],
-        rules: Vec<crate::collin::RawRule>,
-        expressions: Vec<crate::collin::RawExpression>,
+        more: &[(&str, &str, &str, &str, &str)], rules: Vec<crate::collin::RawRule>, expressions: Vec<crate::collin::RawExpression>,
         partial: Vec<crate::collin::RawPartial>,
     ) -> Graph {
         let model = |name: &str, package: &str, file: &str, materialized: &str| {
@@ -1276,7 +1276,10 @@ mod tests {
             clause: clause.into(),
             text: text.into(),
             cut,
-            columns: columns.iter().map(|&(node, column)| crate::collin::RawRuleColumn { node: node.into(), column: column.into() }).collect(),
+            columns: columns
+                .iter()
+                .map(|&(node, column)| crate::collin::RawRuleColumn { node: node.into(), column: column.into() })
+                .collect(),
         }
     }
 
@@ -1305,9 +1308,25 @@ mod tests {
         listing(
             &[],
             vec![
-                rule("model.shop.stg_orders", "QUALIFY", "row_number() over (partition by id order by updated_at desc) = 1", true, &[("source.shop.raw.orders", "id"), ("source.shop.raw.orders", "updated_at")]),
+                rule(
+                    "model.shop.stg_orders",
+                    "QUALIFY",
+                    "row_number() over (partition by id order by updated_at desc) = 1",
+                    true,
+                    &[("source.shop.raw.orders", "id"), ("source.shop.raw.orders", "updated_at")],
+                ),
                 rule("model.shop.orders", "WHERE", "status <> 'cancelled'", false, &[("model.shop.stg_orders", "status")]),
-                rule("model.shop.orders", "JOIN", "o.customer_id\n  = c.id", false, &[("model.shop.stg_orders", "customer_id"), ("rel:RAW.PUBLIC.CUSTOMERS", "id"), ("model.shop.stg_orders", "customer_id")]),
+                rule(
+                    "model.shop.orders",
+                    "JOIN",
+                    "o.customer_id\n  = c.id",
+                    false,
+                    &[
+                        ("model.shop.stg_orders", "customer_id"),
+                        ("rel:RAW.PUBLIC.CUSTOMERS", "id"),
+                        ("model.shop.stg_orders", "customer_id"),
+                    ],
+                ),
                 rule("model.shop.customer_ltv", "HAVING", "count(*) > 1", false, &[]),
             ],
             Vec::new(),
@@ -1315,7 +1334,20 @@ mod tests {
     }
 
     fn ask(column: &str, up: u32, down: u32) -> Ask {
-        Ask { column: column.into(), up, down, stop_at: Vec::new(), tool: None, cache: None, indirect: false, produce: None, rules: false, casts: false, against: None, with: None }
+        Ask {
+            column: column.into(),
+            up,
+            down,
+            stop_at: Vec::new(),
+            tool: None,
+            cache: None,
+            indirect: false,
+            produce: None,
+            rules: false,
+            casts: false,
+            against: None,
+            with: None,
+        }
     }
 
     fn run_on(g: &Graph, a: &Ask, output: Output) -> (String, String, i32) {
@@ -1426,13 +1458,8 @@ mod tests {
         assert_eq!(
             out.lines().collect::<Vec<_>>(),
             [
-                "raw.orders.amount",
-                "stg_orders.amount",
-                "orders.order_amount",
-                "customer_ltv.avg_basket",
-                "customer_ltv.lifetime_value",
-                "audit_orders.basket",
-                "audit_orders.ltv",
+                "raw.orders.amount", "stg_orders.amount", "orders.order_amount", "customer_ltv.avg_basket", "customer_ltv.lifetime_value",
+                "audit_orders.basket", "audit_orders.ltv",
             ]
         );
     }
@@ -1589,7 +1616,15 @@ mod tests {
             String::from_utf8(err).unwrap()
         };
         // One column lost names; the capped one has all its edges and is not counted.
-        let one = said(&listing_with(&[], Vec::new(), Vec::new(), vec![gap("model.shop.orders", "order_amount", "name_unresolved", "shipped_at"), gap("model.audit.audit_orders", "ltv", "steps_capped", "lifetime_value")]));
+        let one = said(&listing_with(
+            &[],
+            Vec::new(),
+            Vec::new(),
+            vec![
+                gap("model.shop.orders", "order_amount", "name_unresolved", "shipped_at"),
+                gap("model.audit.audit_orders", "ltv", "steps_capped", "lifetime_value"),
+            ],
+        ));
         let line = one.lines().find(|l| l.starts_with("column lineage:")).unwrap();
         assert!(line.ends_with(", 1 column partly traced"), "{line}");
         // The odd rows of `with_partial`: three columns are marked, the one
@@ -1597,11 +1632,15 @@ mod tests {
         let line = said(&with_partial());
         assert!(line.lines().find(|l| l.starts_with("column lineage:")).unwrap().ends_with(", 3 columns partly traced"), "{line}");
         // Two columns lost names: plural.
-        let mut two = vec![gap("model.shop.orders", "order_amount", "name_unresolved", "a"), gap("model.shop.stg_orders", "amount", "cte_lacks_name", "b")];
+        let mut two = vec![
+            gap("model.shop.orders", "order_amount", "name_unresolved", "a"),
+            gap("model.shop.stg_orders", "amount", "cte_lacks_name", "b"),
+        ];
         let line = said(&listing_with(&[], Vec::new(), Vec::new(), std::mem::take(&mut two)));
         assert!(line.lines().find(|l| l.starts_with("column lineage:")).unwrap().ends_with(", 2 columns partly traced"), "{line}");
         // Only a capped chain: nothing is said. A cache without the list: the same.
-        let capped = listing_with(&[], Vec::new(), Vec::new(), vec![gap("model.audit.audit_orders", "ltv", "steps_capped", "lifetime_value")]);
+        let capped =
+            listing_with(&[], Vec::new(), Vec::new(), vec![gap("model.audit.audit_orders", "ltv", "steps_capped", "lifetime_value")]);
         for g in [capped, graph()] {
             assert!(!said(&g).contains("partly traced"), "{}", said(&g));
         }
@@ -1694,7 +1733,10 @@ mod tests {
         assert_eq!(got[0]["depth"], -1);
         assert_eq!(got[0]["rules"][0]["clause"], "QUALIFY");
         assert_eq!(got[0]["rules"][0]["cut"], true);
-        assert_eq!(got[0]["rules"][0]["columns"], json!([{ "node": "source.shop.raw.orders", "column": "id" }, { "node": "source.shop.raw.orders", "column": "updated_at" }]));
+        assert_eq!(
+            got[0]["rules"][0]["columns"],
+            json!([{ "node": "source.shop.raw.orders", "column": "id" }, { "node": "source.shop.raw.orders", "column": "updated_at" }])
+        );
         assert_eq!((got[1]["node"].as_str(), got[1]["depth"].as_i64()), (Some("model.shop.orders"), Some(0)));
         assert_eq!(got[1]["rules"].as_array().map(Vec::len), Some(2));
         assert!(got[1]["rules"][0].get("cut").is_none(), "a flag set only when true: {out}");
@@ -1721,7 +1763,8 @@ mod tests {
     /// Fusion cache of the same edges with none.
     fn both_caches(tag: &str) -> PathBuf {
         let dir = scratch(tag);
-        let edges = r#"[{"from":"model.shop.stg_orders","from_col":"amount","to":"model.shop.orders","to_col":"order_amount","kind":"rename"}]"#;
+        let edges =
+            r#"[{"from":"model.shop.stg_orders","from_col":"amount","to":"model.shop.orders","to_col":"order_amount","kind":"rename"}]"#;
         std::fs::write(dir.join("manifest.json"), "{}").unwrap();
         std::fs::write(
             dir.join("column_lineage.collin.json"),
@@ -1739,7 +1782,18 @@ mod tests {
 
     fn rules_of_walk(dir: &Path, a: &Ask) -> (String, String, i32) {
         let (mut out, mut err) = (Vec::new(), Vec::new());
-        let code = respond(dir, &dir.join("manifest.json"), graph(), a, Output::Name, &AtomicBool::new(false), collin_run::Located::default, &mut out, &mut err).unwrap();
+        let code = respond(
+            dir,
+            &dir.join("manifest.json"),
+            graph(),
+            a,
+            Output::Name,
+            &AtomicBool::new(false),
+            collin_run::Located::default,
+            &mut out,
+            &mut err,
+        )
+        .unwrap();
         (String::from_utf8(out).unwrap(), String::from_utf8(err).unwrap(), code)
     }
 
@@ -1750,7 +1804,11 @@ mod tests {
         // No tool named: collin's cache answers the walk and the rules alike,
         // and stderr says which one it was.
         let (out, err, code) = rules_of_walk(&dir, &a);
-        assert_eq!((out.as_str(), code), ("orders  (depth 0)\n  WHERE status <> 'cancelled'  reads stg_orders.status\n", ANSWERED), "{err}");
+        assert_eq!(
+            (out.as_str(), code),
+            ("orders  (depth 0)\n  WHERE status <> 'cancelled'  reads stg_orders.status\n", ANSWERED),
+            "{err}"
+        );
         assert!(err.contains("column lineage: ") && err.contains("column_lineage.collin.json") && err.contains("collin 0.11.0"), "{err}");
         // Without the flag the newest of the two still answers, as before.
         let (_, err, _) = rules_of_walk(&dir, &ask("orders.order_amount", 0, 0));
@@ -1882,7 +1940,8 @@ mod tests {
         });
         std::fs::write(target.join("manifest.json"), manifest.to_string()).unwrap();
         if cache {
-            let edges = json!([{ "from": id, "from_col": "amount", "to": format!("model.{tag}.{source}"), "to_col": "amount", "kind": "rename" }]);
+            let edges =
+                json!([{ "from": id, "from_col": "amount", "to": format!("model.{tag}.{source}"), "to_col": "amount", "kind": "rename" }]);
             let body = json!({ "version": 1, "source": "collin", "producer": "collin 0.12.0", "edges": edges });
             std::fs::write(target.join("column_lineage.collin.json"), body.to_string()).unwrap();
         }
@@ -1892,7 +1951,9 @@ mod tests {
     fn against_run(here: &Path, a: &Ask) -> (String, String, i32) {
         let (root, manifest, graph) = ls::open(here, None).unwrap();
         let (mut out, mut err) = (Vec::new(), Vec::new());
-        let code = respond(&root, &manifest, graph, a, Output::Name, &AtomicBool::new(false), collin_run::Located::default, &mut out, &mut err).unwrap();
+        let code =
+            respond(&root, &manifest, graph, a, Output::Name, &AtomicBool::new(false), collin_run::Located::default, &mut out, &mut err)
+                .unwrap();
         (String::from_utf8(out).unwrap(), String::from_utf8(err).unwrap(), code)
     }
 
@@ -1975,19 +2036,32 @@ mod tests {
         std::fs::remove_file(target.join("column_lineage.collin.json")).unwrap();
         let (out, err, code) = against_run(&here, &a);
         assert_eq!((out.as_str(), code), ("", REFUSED), "{err}");
-        assert!(err.contains("no column lineage from collin in ") && err.contains("collin generate --project . --target <TARGET>"), "{err}");
+        assert!(
+            err.contains("no column lineage from collin in ") && err.contains("collin generate --project . --target <TARGET>"),
+            "{err}"
+        );
 
         // A wrong column is refused and this project's lines still end the answer.
-        std::fs::write(target.join("column_lineage.collin.json"), format!(r#"{{"version":1,"source":"collin","producer":"collin 0.12.0","edges":{edges}}}"#)).unwrap();
+        std::fs::write(
+            target.join("column_lineage.collin.json"),
+            format!(r#"{{"version":1,"source":"collin","producer":"collin 0.12.0","edges":{edges}}}"#),
+        )
+        .unwrap();
         let wrong = Ask { against: Some(there.clone()), ..ask("orders.nope", 0, 0) };
         let (_, err, code) = against_run(&here, &wrong);
         assert_eq!(code, REFUSED);
-        assert!(err.starts_with("error: orders has no column nope") && err.contains("\nmanifest: ") && err.contains("\ncolumn lineage: "), "{err}");
+        assert!(
+            err.starts_with("error: orders has no column nope") && err.contains("\nmanifest: ") && err.contains("\ncolumn lineage: "),
+            "{err}"
+        );
         // So does a failure to open the other project.
         let gone = Ask { against: Some(here.join("nowhere")), ..ask("orders.amount", 0, 0) };
         let (_, err, code) = against_run(&here, &gone);
         assert_eq!(code, CANNOT_RUN);
-        assert!(err.contains("error: --against: cannot open ") && err.contains("\nmanifest: ") && err.contains("\ncolumn lineage: "), "{err}");
+        assert!(
+            err.contains("error: --against: cannot open ") && err.contains("\nmanifest: ") && err.contains("\ncolumn lineage: "),
+            "{err}"
+        );
         for d in [here, there] {
             std::fs::remove_dir_all(&d).unwrap();
         }
@@ -2096,7 +2170,9 @@ mod tests {
         assert!(!said.contains("--target-path"), "{said}");
         assert!(said.contains("dbt docs generate --target <TARGET>") && !said.contains("--write-catalog"), "{said}");
         assert!(
-            said.contains("collin generate --project . --target <TARGET> --out target/column_lineage.collin.json --report target/collin.report.json"),
+            said.contains(
+                "collin generate --project . --target <TARGET> --out target/column_lineage.collin.json --report target/collin.report.json"
+            ),
             "{said}"
         );
         assert!(said.contains(".env.preprod (DBT_TARGET=preprod)") && !said.contains("hunter2"), "{said}");
@@ -2209,9 +2285,17 @@ echo '{"totals":{"models":5,"parsed":4},"models":[]}' > "$report""#;
 
         // A collin older than WANTS still runs, and says what updating brings.
         let mut err = Vec::new();
-        produce(&dir, &manifest, &folder, &Produce { catalog: None, compiled: None }, stand_in(&dir, "0.0.9", WRITES), &AtomicBool::new(false), &mut err)
-            .unwrap()
-            .unwrap();
+        produce(
+            &dir,
+            &manifest,
+            &folder,
+            &Produce { catalog: None, compiled: None },
+            stand_in(&dir, "0.0.9", WRITES),
+            &AtomicBool::new(false),
+            &mut err,
+        )
+        .unwrap()
+        .unwrap();
         let said = String::from_utf8(err).unwrap();
         assert!(said.contains("collin 0.0.9 is older than collin") && said.contains(collin_run::UPDATE), "{said}");
 

@@ -89,9 +89,7 @@ fn secrets(all: &[(&str, &str)]) -> Vec<Found> {
         // first line below that is not one is what says what the key holds,
         // so it is judged in the inline's place. A line that is itself a key
         // opens a mapping instead, whose keys are judged on their own lines.
-        let below = (i + 1..=last)
-            .map(|k| all[k].0)
-            .find(|l| !l.trim().is_empty() && !l.trim_start().starts_with('#'));
+        let below = (i + 1..=last).map(|k| all[k].0).find(|l| !l.trim().is_empty() && !l.trim_start().starts_with('#'));
         let judged = match below {
             Some(line) if (inline.is_empty() || inline.starts_with('#')) && !opens_mapping(line) => line.trim(),
             _ => inline,
@@ -102,12 +100,12 @@ fn secrets(all: &[(&str, &str)]) -> Vec<Found> {
         // and neither does a switch such as `passcode_in_password: true`.
         let worth_hiding = flow_holds_secret(judged)
             || secret_key(&key)
-            && !judged.is_empty()
-            && !judged.starts_with('#')
-            && !judged.contains("{{")
-            && !matches!(judged, "''" | "\"\"")
-            && !judged.eq_ignore_ascii_case("true")
-            && !judged.eq_ignore_ascii_case("false");
+                && !judged.is_empty()
+                && !judged.starts_with('#')
+                && !judged.contains("{{")
+                && !matches!(judged, "''" | "\"\"")
+                && !judged.eq_ignore_ascii_case("true")
+                && !judged.eq_ignore_ascii_case("false");
         if worth_hiding {
             out.push(Found { path: stack.iter().map(|(_, k)| k.clone()).collect(), first: i, last, at, depth });
             i = last + 1;
@@ -124,9 +122,9 @@ fn secrets(all: &[(&str, &str)]) -> Vec<Found> {
 /// it is, and put back whole by the key it hangs from.
 fn flow_holds_secret(inline: &str) -> bool {
     let Some(inner) = inline.strip_prefix('{') else { return false };
-    inner.split([',', '{']).any(|pair| {
-        pair.split_once(':').is_some_and(|(k, _)| secret_key(k.trim().trim_matches(|c| c == '\'' || c == '"')))
-    })
+    inner
+        .split([',', '{'])
+        .any(|pair| pair.split_once(':').is_some_and(|(k, _)| secret_key(k.trim().trim_matches(|c| c == '\'' || c == '"'))))
 }
 
 /// Whether a line under a key is a key of its own rather than the value. A
@@ -310,9 +308,7 @@ other:
     #[test]
     fn an_edit_keeps_the_hidden_values_and_a_value_typed_over_one_replaces_it() {
         let (shown, _) = hide(PROFILE);
-        let edited = shown
-            .replace("role: TRANSFORMER", "role: ANALYST_ROLE")
-            .replace(&format!("pass: {HIDDEN}"), "pass: n3w-one");
+        let edited = shown.replace("role: TRANSFORMER", "role: ANALYST_ROLE").replace(&format!("pass: {HIDDEN}"), "pass: n3w-one");
         let saved = restore(&edited, PROFILE).unwrap();
         assert!(saved.contains("role: ANALYST_ROLE"));
         assert!(saved.contains("password: 'hunter2'   # rotated in May"), "{saved}");
@@ -421,12 +417,13 @@ other:
 
     #[test]
     fn credential_keys_are_told_from_their_neighbours() {
-        for key in ["password", "PASSWORD", "pass", "token", "refresh_token", "client_secret", "private_key",
-                    "private_key_passphrase", "oauth_client_secret", "api_key"] {
+        for key in [
+            "password", "PASSWORD", "pass", "token", "refresh_token", "client_secret", "private_key", "private_key_passphrase",
+            "oauth_client_secret", "api_key",
+        ] {
             assert!(secret_key(key), "{key}");
         }
-        for key in ["user", "account", "role", "private_key_path", "keyfile", "token_file", "authenticator",
-                    "client_id", "warehouse"] {
+        for key in ["user", "account", "role", "private_key_path", "keyfile", "token_file", "authenticator", "client_id", "warehouse"] {
             assert!(!secret_key(key), "{key}");
         }
     }

@@ -88,9 +88,7 @@ impl Parser {
             return Err(format!("its definition nests deeper than {MAX_DEPTH} levels"));
         }
         match v {
-            Value::String(s) => select::term(s)
-                .map(|term| Spec::Criteria { term, indirect: Indirect::Eager })
-                .map_err(|e| e.to_string()),
+            Value::String(s) => select::term(s).map(|term| Spec::Criteria { term, indirect: Indirect::Eager }).map_err(|e| e.to_string()),
             Value::Object(map) => {
                 if let Some(items) = map.get("union") {
                     return self.group(items, true, depth);
@@ -456,9 +454,7 @@ pub fn mentions_indirect(root: &Path) -> bool {
         return false;
     }
     let Ok(bytes) = std::fs::read(&path) else { return false };
-    crate::envs::decode(&bytes)
-        .lines()
-        .any(|line| line.split('#').next().unwrap_or("").contains("indirect_selection"))
+    crate::envs::decode(&bytes).lines().any(|line| line.split('#').next().unwrap_or("").contains("indirect_selection"))
 }
 
 #[cfg(test)]
@@ -473,12 +469,8 @@ mod tests {
     /// two parents each, and a disabled model shares the tests' tag.
     fn graph(selectors: Value) -> Graph {
         let model = |name: &str| json!({ "name": name, "resource_type": "model", "package_name": "shop", "fqn": ["shop", name] });
-        let test = |name: &str, tags: Value| {
-            json!({ "name": name, "resource_type": "test", "package_name": "shop", "fqn": ["shop", name], "tags": tags })
-        };
-        let source = |table: &str| {
-            json!({ "name": table, "resource_type": "source", "package_name": "shop", "source_name": "crm", "fqn": ["shop", "crm", table] })
-        };
+        let test = |name: &str, tags: Value| json!({ "name": name, "resource_type": "test", "package_name": "shop", "fqn": ["shop", name], "tags": tags });
+        let source = |table: &str| json!({ "name": table, "resource_type": "source", "package_name": "shop", "source_name": "crm", "fqn": ["shop", "crm", table] });
         let raw: RawManifest = serde_json::from_value(json!({
             "nodes": {
                 "model.shop.stg_orders": model("stg_orders"),
@@ -600,15 +592,21 @@ mod tests {
             ("tests_only", json!({ "intersection": [recon.clone(), tests.clone()] })),
             ("tests_minus_recon", json!({ "union": [tests.clone(), { "exclude": [recon.clone()] }] })),
             // A model brings its tests, as many as the mode lets through.
-            ("recon_near_customers", json!({ "intersection": [
-                { "method": "fqn", "value": "customers", "parents": true }, recon,
-            ]})),
+            (
+                "recon_near_customers",
+                json!({ "intersection": [
+                    { "method": "fqn", "value": "customers", "parents": true }, recon,
+                ]}),
+            ),
             // Under an exclusion the order turns round: more tests in the half
             // taken away leave fewer in the answer, and that is caught too.
-            ("orders_minus_customers", json!({ "union": [
-                { "method": "fqn", "value": "orders" },
-                { "exclude": [{ "method": "fqn", "value": "customers" }] },
-            ]})),
+            (
+                "orders_minus_customers",
+                json!({ "union": [
+                    { "method": "fqn", "value": "orders" },
+                    { "exclude": [{ "method": "fqn", "value": "customers" }] },
+                ]}),
+            ),
             ("by_reference", json!({ "method": "selector", "value": "recon_near_customers" })),
         ]));
         let depends = |name: &str| g.selectors.depends_on_indirect(&g, name);
@@ -629,10 +627,13 @@ mod tests {
             ("by_ref", json!({ "method": "selector", "value": "customers", "children": true })),
             // Named first in an exclusion, where it is no start, then outside
             // one, where it is.
-            ("twice", json!({ "union": [
-                { "union": [{ "method": "fqn", "value": "orders", "parents": true }, { "exclude": [{ "method": "selector", "value": "customers" }] }] },
-                { "method": "selector", "value": "customers" },
-            ]})),
+            (
+                "twice",
+                json!({ "union": [
+                    { "union": [{ "method": "fqn", "value": "orders", "parents": true }, { "exclude": [{ "method": "selector", "value": "customers" }] }] },
+                    { "method": "selector", "value": "customers" },
+                ]}),
+            ),
         ]));
         let starts = |name: &str| names(&g, &g.selectors.resolve(&g, name).expect(name).starts);
         assert_eq!(starts("by_ref"), ["customers"]);

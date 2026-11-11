@@ -246,10 +246,8 @@ pub fn for_node(graph: &Graph, idx: u32) -> Vec<Finding> {
     let internal = |m: u32| crate::macro_use::internal_package(adapter, &macros.at(m).package);
 
     // The variables the node's location reads are what the swap replaces.
-    let located: HashSet<String> = [&n.written.database, &n.written.schema, &n.written.alias]
-        .into_iter()
-        .flat_map(|w| envs::var_names(w))
-        .collect();
+    let located: HashSet<String> =
+        [&n.written.database, &n.written.schema, &n.written.alias].into_iter().flat_map(|w| envs::var_names(w)).collect();
 
     let mut out: Vec<Finding> = n
         .reads
@@ -303,8 +301,14 @@ pub fn for_node(graph: &Graph, idx: u32) -> Vec<Finding> {
     }
 
     out.sort_by(|a, b| {
-        (!a.macro_id.is_empty(), &a.macro_name, &a.macro_id, a.kind, &a.detail, a.line)
-            .cmp(&(!b.macro_id.is_empty(), &b.macro_name, &b.macro_id, b.kind, &b.detail, b.line))
+        (!a.macro_id.is_empty(), &a.macro_name, &a.macro_id, a.kind, &a.detail, a.line).cmp(&(
+            !b.macro_id.is_empty(),
+            &b.macro_name,
+            &b.macro_id,
+            b.kind,
+            &b.detail,
+            b.line,
+        ))
     });
     out.dedup_by(|b, a| (&a.macro_id, a.kind, &a.detail) == (&b.macro_id, b.kind, &b.detail));
     out
@@ -489,10 +493,26 @@ mod tests {
         assert_eq!(leading_lines("\r\n\n  \nselect 1\n\n"), 3);
         assert_eq!(leading_lines("  select 1"), 0);
         let mut list = vec![
-            Finding { macro_id: String::new(), macro_name: String::new(), package: String::new(), file: String::new(),
-                kind: "target", detail: "name".into(), through: String::new(), line: 2 },
-            Finding { macro_id: "macro.shop.a".into(), macro_name: "a".into(), package: String::new(), file: String::new(),
-                kind: "target", detail: "name".into(), through: String::new(), line: 2 },
+            Finding {
+                macro_id: String::new(),
+                macro_name: String::new(),
+                package: String::new(),
+                file: String::new(),
+                kind: "target",
+                detail: "name".into(),
+                through: String::new(),
+                line: 2,
+            },
+            Finding {
+                macro_id: "macro.shop.a".into(),
+                macro_name: "a".into(),
+                package: String::new(),
+                file: String::new(),
+                kind: "target",
+                detail: "name".into(),
+                through: String::new(),
+                line: 2,
+            },
         ];
         shift_own(&mut list, 3);
         assert_eq!((list[0].line, list[1].line), (5, 2), "a macro's text is not the file's");

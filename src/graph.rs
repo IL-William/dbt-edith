@@ -14,8 +14,8 @@ use crate::collin::{RawColLineage, RawRule};
 use crate::incremental::{Incremental, Key, Shown};
 use crate::macro_use::{self, MacroUse};
 use crate::macros::Macros;
-use crate::selectors::Selectors;
 use crate::manifest::{RawCatalog, RawManifest, RawNode};
+use crate::selectors::Selectors;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, serde::Serialize)]
@@ -145,9 +145,12 @@ fn test_settings(c: &crate::manifest::RawConfig) -> Box<[Setting]> {
 fn columns_of(kwargs: Option<crate::manifest::RawTestKwargs>) -> (Box<[String]>, String) {
     let Some(k) = kwargs else { return Default::default() };
     let combination = match k.combination_of_columns {
-        Some(serde_json::Value::Array(a)) => {
-            a.into_iter().map(|v| if let serde_json::Value::String(s) = v { Some(s) } else { None }).collect::<Option<Vec<_>>>().unwrap_or_default().into()
-        }
+        Some(serde_json::Value::Array(a)) => a
+            .into_iter()
+            .map(|v| if let serde_json::Value::String(s) = v { Some(s) } else { None })
+            .collect::<Option<Vec<_>>>()
+            .unwrap_or_default()
+            .into(),
         _ => Box::default(),
     };
     // dbt keeps the kwarg as written, so Jinja it did not render reads as a
@@ -513,7 +516,11 @@ impl Expr {
     /// The count a text answer prints: the number, or `32+` once the chain
     /// recurses, since the number then says only where the limit was.
     pub fn steps_said(&self) -> String {
-        if self.recursive() { format!("{RECURSIVE_STEPS}+") } else { self.steps.to_string() }
+        if self.recursive() {
+            format!("{RECURSIVE_STEPS}+")
+        } else {
+            self.steps.to_string()
+        }
     }
 
     /// The expression with a cut text marked where it ends.
@@ -539,7 +546,11 @@ fn marked(g: &Gap) -> bool {
 
 /// A text from collin, with ` (cut)` after it when collin cut it.
 pub fn said_cut(text: &str, cut: bool) -> String {
-    if cut { format!("{text} (cut)") } else { text.to_string() }
+    if cut {
+        format!("{text} (cut)")
+    } else {
+        text.to_string()
+    }
 }
 
 /// Column-level edges, held flat rather than as per-column vectors: this
@@ -1015,7 +1026,11 @@ pub(crate) fn declaring(nodes: &[Node], index: &HashMap<String, u32>, t: &Node) 
     if let Some((key, rest)) = t.declared_in.split_once('.') {
         let named = |&p: &u32| {
             let n = &nodes[p as usize];
-            if key == "sources" { n.kind == Kind::Source && n.source_name == rest } else { n.kind != Kind::Source && n.base_name() == rest }
+            if key == "sources" {
+                n.kind == Kind::Source && n.source_name == rest
+            } else {
+                n.kind != Kind::Source && n.base_name() == rest
+            }
         };
         let named: Vec<u32> = t.parents.iter().copied().filter(named).collect();
         if let Some(&p) = named.iter().find(|p| here(p)).or(named.first()) {
@@ -1052,7 +1067,11 @@ impl Node {
     /// The file to show and open: in the package's folder for an installed
     /// package's node that was found there, `file` for every other.
     pub fn on_disk(&self) -> &str {
-        if self.place.is_empty() { &self.file } else { &self.place }
+        if self.place.is_empty() {
+            &self.file
+        } else {
+            &self.place
+        }
     }
 
     /// Where a source table lives for a comparison between two projects:
@@ -1101,19 +1120,20 @@ impl Node {
 
     pub fn strategy_facts(&self) -> StrategyFacts<'_> {
         match &self.shown {
-            Some(s) => StrategyFacts {
-                strategy_shown: &s.shown,
-                strategy_named: &s.named,
-                strategy_default: s.default,
-                strategy_insert: s.insert,
-            },
+            Some(s) => {
+                StrategyFacts { strategy_shown: &s.shown, strategy_named: &s.named, strategy_default: s.default, strategy_insert: s.insert }
+            }
             None => StrategyFacts::default(),
         }
     }
 
     /// The key a box's hover card names: an incremental model's only.
     pub fn box_key(&self) -> &[String] {
-        if self.is_incremental() { &self.unique_key } else { &[] }
+        if self.is_incremental() {
+            &self.unique_key
+        } else {
+            &[]
+        }
     }
 }
 
@@ -1178,11 +1198,7 @@ impl Graph {
         let mut nodes: Vec<Node> = Vec::with_capacity(raw.nodes.len() + raw.sources.len());
         let mut index: HashMap<String, u32> = HashMap::with_capacity(nodes.capacity());
 
-        let push = |id: String,
-                    raw_node: RawNode,
-                    from_disabled: bool,
-                    nodes: &mut Vec<Node>,
-                    index: &mut HashMap<String, u32>| {
+        let push = |id: String, raw_node: RawNode, from_disabled: bool, nodes: &mut Vec<Node>, index: &mut HashMap<String, u32>| {
             let off = raw_node.config.enabled == Some(false);
             // Disabled tests are dead weight; disabled models are still worth
             // resolving, because ref() calls point at them.
@@ -1224,18 +1240,11 @@ impl Graph {
             columns.sort_by(|a, b| a.name.cmp(&b.name));
 
             let file = slashed(raw_node.original_file_path);
-            let (test_name, namespace, (combination, column_arg)) = raw_node
-                .test_metadata
-                .map(|m| (m.name, m.namespace.unwrap_or_default(), columns_of(m.kwargs)))
-                .unwrap_or_default();
+            let (test_name, namespace, (combination, column_arg)) =
+                raw_node.test_metadata.map(|m| (m.name, m.namespace.unwrap_or_default(), columns_of(m.kwargs))).unwrap_or_default();
             // Fusion writes `WARN`, dbt-core keeps whatever the YAML says.
             let warn = kind == Kind::Test
-                && raw_node
-                    .config
-                    .severity
-                    .as_ref()
-                    .and_then(|v| v.as_str())
-                    .is_some_and(|s| s.eq_ignore_ascii_case("warn"));
+                && raw_node.config.severity.as_ref().and_then(|v| v.as_str()).is_some_and(|s| s.eq_ignore_ascii_case("warn"));
             // The top-level key first, then the config's, which dbt-core
             // writes the same.
             let freshness = if kind == Kind::Source {
@@ -1253,14 +1262,7 @@ impl Graph {
                 version,
                 kind,
                 source_name: if kind == Kind::Source { raw_node.source_name.clone().unwrap_or_default() } else { String::new() },
-                yml: slashed(
-                    raw_node
-                        .patch_path
-                        .unwrap_or_default()
-                        .split_once("://")
-                        .map(|(_, p)| p.to_string())
-                        .unwrap_or_default(),
-                ),
+                yml: slashed(raw_node.patch_path.unwrap_or_default().split_once("://").map(|(_, p)| p.to_string()).unwrap_or_default()),
                 file,
                 place: String::new(),
                 compiled: slashed(raw_node.compiled_path.unwrap_or_default()),
@@ -1417,11 +1419,7 @@ impl Graph {
         }
 
         // `parent_map` is authoritative when present; `depends_on` is the fallback.
-        let edges: Vec<(String, Vec<String>)> = if raw.parent_map.is_empty() {
-            deps
-        } else {
-            raw.parent_map.into_iter().collect()
-        };
+        let edges: Vec<(String, Vec<String>)> = if raw.parent_map.is_empty() { deps } else { raw.parent_map.into_iter().collect() };
 
         for (child_id, parent_ids) in edges {
             let Some(&ci) = index.get(&child_id) else { continue };
@@ -1488,9 +1486,7 @@ impl Graph {
         // nodes once and order each column by that rank. The dedup is on the
         // index and never on a name: it guards against one test node being
         // attached twice, which is the only duplicate that is not a second test.
-        let mut order: Vec<u32> = (0..nodes.len() as u32)
-            .filter(|&i| nodes[i as usize].kind == Kind::Test)
-            .collect();
+        let mut order: Vec<u32> = (0..nodes.len() as u32).filter(|&i| nodes[i as usize].kind == Kind::Test).collect();
         order.sort_by(|&a, &b| {
             let (x, y) = (&nodes[a as usize], &nodes[b as usize]);
             x.test_name.cmp(&y.test_name).then_with(|| x.name.cmp(&y.name))
@@ -1634,9 +1630,8 @@ impl Graph {
                 s => Some(s.to_string()),
             };
             let Some(strategy) = strategy else { continue };
-            let by = *inserts
-                .entry((n.package.clone(), strategy.clone(), n.key))
-                .or_insert_with(|| inc.inserts(&strategy, &n.package, n.key));
+            let by =
+                *inserts.entry((n.package.clone(), strategy.clone(), n.key)).or_insert_with(|| inc.inserts(&strategy, &n.package, n.key));
             let default = n.strategy.is_empty() || n.strategy == "default";
             n.shown = Some(Box::new(match by {
                 Some(insert) => Shown { shown: "append".to_string(), named: strategy, default, insert },
@@ -1648,11 +1643,7 @@ impl Graph {
     /// Position of a column within a node, matched case-insensitively.
     pub fn col_slot(&self, node: u32, name: &str) -> Option<u32> {
         let wanted = name.to_lowercase();
-        self.nodes[node as usize]
-            .columns
-            .iter()
-            .position(|c| c.name.to_lowercase() == wanted)
-            .map(|i| i as u32)
+        self.nodes[node as usize].columns.iter().position(|c| c.name.to_lowercase() == wanted).map(|i| i as u32)
     }
 
     /// The source tables by `Node::place`, for the nodes that are not disabled:
@@ -1753,10 +1744,7 @@ impl Graph {
                 }
                 continue;
             };
-            let (Some(&fc), Some(&tc)) = (
-                slot.get(&(fi, e.from_col.to_lowercase())),
-                slot.get(&(ti, e.to_col.to_lowercase())),
-            ) else {
+            let (Some(&fc), Some(&tc)) = (slot.get(&(fi, e.from_col.to_lowercase())), slot.get(&(ti, e.to_col.to_lowercase()))) else {
                 dropped += 1;
                 continue;
             };
@@ -1767,11 +1755,7 @@ impl Graph {
                     kinds.len() - 1
                 }
             };
-            edges.push(ColEdge {
-                from: ColRef { node: fi, col: fc },
-                to: ColRef { node: ti, col: tc },
-                kind: kind.min(255) as u8,
-            });
+            edges.push(ColEdge { from: ColRef { node: fi, col: fc }, to: ColRef { node: ti, col: tc }, kind: kind.min(255) as u8 });
             if edges.len() >= MAX_EDGES {
                 eprintln!("  column lineage capped at {MAX_EDGES} edges");
                 break;
@@ -1854,13 +1838,9 @@ impl Graph {
         partial.dedup();
         // A model the manifest lacks is a stale cache's. The sort is stable,
         // so a model's rules keep collin's order.
-        let mut rules: Vec<(u32, RawRule)> =
-            raw.rules.into_iter().filter_map(|r| Some((*self.index.get(r.node.as_str())?, r))).collect();
+        let mut rules: Vec<(u32, RawRule)> = raw.rules.into_iter().filter_map(|r| Some((*self.index.get(r.node.as_str())?, r))).collect();
         rules.sort_by_key(|(n, _)| *n);
-        let row_kinds: Vec<u8> = (0..kinds.len().min(256))
-            .filter(|&k| is_row_role(&kinds[k]))
-            .map(|k| k as u8)
-            .collect();
+        let row_kinds: Vec<u8> = (0..kinds.len().min(256)).filter(|&k| is_row_role(&kinds[k])).map(|k| k as u8).collect();
         self.cll = Some(ColLineage { edges, by_to, kinds, roots, expressions, partial, rules, outside, row_kinds });
         self.meta.cll_edges = total;
         self.meta.cll_dropped = dropped;
@@ -1916,8 +1896,7 @@ impl Graph {
         // An edge the walk may cross: an indirect one only when asked for.
         let shown = |e: &ColEdge| cll.crossed(e, indirect);
         let rank = |kind: u8| row_rank(cll.kinds.get(kind as usize).map(String::as_str).unwrap_or(""));
-        let ColWalked { depth, stopped, walked, boxes, box_edges, truncated, .. } =
-            cll.walk(focus, up, down, max_nodes, &cut, row_edges);
+        let ColWalked { depth, stopped, walked, boxes, box_edges, truncated, .. } = cll.walk(focus, up, down, max_nodes, &cut, row_edges);
 
         let mut members: Vec<ColRef> = depth.keys().copied().collect();
         members.sort_unstable();
@@ -1980,10 +1959,7 @@ impl Graph {
             }
         }
         stopped_at.sort_unstable();
-        let edge_kinds: Vec<&str> = pairs
-            .iter()
-            .map(|(_, k)| cll.kinds.get(*k as usize).map(String::as_str).unwrap_or(""))
-            .collect();
+        let edge_kinds: Vec<&str> = pairs.iter().map(|(_, k)| cll.kinds.get(*k as usize).map(String::as_str).unwrap_or("")).collect();
 
         let focus_node = &self.nodes[focus.node as usize];
         let mut nodes: Vec<LineageNode<'_>> = members
@@ -2197,7 +2173,10 @@ impl Graph {
         for m in models {
             for r in cll.rules_of(m).filter(|r| r.columns.iter().any(|x| x.node == owner.id && x.column.eq_ignore_ascii_case(column))) {
                 if named.len() < ROWS_BY {
-                    named.push([self.nodes[m as usize].name.clone(), format!("{} {}", r.clause, said_cut(&crate::ls::field(&r.text), r.cut))]);
+                    named.push([
+                        self.nodes[m as usize].name.clone(),
+                        format!("{} {}", r.clause, said_cut(&crate::ls::field(&r.text), r.cut)),
+                    ]);
                 } else {
                     more += 1;
                 }
@@ -3363,7 +3342,10 @@ mod tests {
 
         let mut plain = graph();
         plain.merge_col_lineage(cache(vec![edge("customer_id", "customer_id")]), 1);
-        let focus = ColRef { node: plain.index["model.shop.stg_customers"], col: plain.col_slot(plain.index["model.shop.stg_customers"], "customer_id").unwrap() };
+        let focus = ColRef {
+            node: plain.index["model.shop.stg_customers"],
+            col: plain.col_slot(plain.index["model.shop.stg_customers"], "customer_id").unwrap(),
+        };
         let drawn = serde_json::to_string(&plain.column_lineage(focus, 1, 1, 100, &[], RowEdges::Hidden)).unwrap();
         assert!(!drawn.contains("generated") && !drawn.contains("outside") && !drawn.contains("roots_known"), "{drawn}");
 
@@ -3407,7 +3389,12 @@ mod tests {
         let hidden = named(&g, g.column_lineage(at, 1, 0, 100, &[], RowEdges::Hidden));
         let bare = serde_json::to_string(&g.column_lineage(at, 1, 0, 100, &[], RowEdges::Hidden)).unwrap();
         assert!(!bare.contains("rows_by"), "the walk alone names nothing, as --column wants: {bare}");
-        assert!(hidden.contains(r#""parents":1,"children":0,"hidden_up":0,"rows_by":[["stg_customers.id","join_key"],["stg_customers.status","filter"]]"#), "{hidden}");
+        assert!(
+            hidden.contains(
+                r#""parents":1,"children":0,"hidden_up":0,"rows_by":[["stg_customers.id","join_key"],["stg_customers.status","filter"]]"#
+            ),
+            "{hidden}"
+        );
         assert!(hidden.contains(r#""edge_kinds":["rename"]"#) && hidden.ends_with(r#""indirect_hidden":true}"#), "{hidden}");
         let cll = g.cll.as_ref().unwrap();
         assert_eq!((cll.degree(at, false), cll.degree(at, true)), ((1, 0), (3, 0)));
@@ -3455,7 +3442,11 @@ mod tests {
     /// of `stg_orders` decides which rows of `orders` and `customers` exist.
     fn shop(extra: usize) -> Graph {
         let mut nodes = serde_json::Map::new();
-        for name in ["raw_orders", "stg_orders", "orders", "customers"].into_iter().map(String::from).chain((0..extra).map(|i| format!("mart_{i:02}"))) {
+        for name in ["raw_orders", "stg_orders", "orders", "customers"]
+            .into_iter()
+            .map(String::from)
+            .chain((0..extra).map(|i| format!("mart_{i:02}")))
+        {
             nodes.insert(
                 format!("model.shop.{name}"),
                 serde_json::json!({ "name": name, "resource_type": "model", "package_name": "shop", "config": { "materialized": "table" } }),
@@ -3504,7 +3495,10 @@ mod tests {
         let ids: Vec<&str> = l.nodes.iter().map(|n| n.id.as_ref()).collect();
         assert_eq!(
             ids,
-            ["model.shop.orders::status", "model.shop.raw_orders::status", "model.shop.stg_orders::status", "model.shop.customers", "model.shop.orders"],
+            [
+                "model.shop.orders::status", "model.shop.raw_orders::status", "model.shop.stg_orders::status", "model.shop.customers",
+                "model.shop.orders"
+            ],
             "the columns by model, then a box a model: two upstream, one the value reaches"
         );
         let box_of = |id: &str| l.nodes.iter().position(|n| n.id == id).unwrap();
@@ -3625,7 +3619,8 @@ mod tests {
         let l = g.column_lineage(focus, 0, 2, 100, &[], RowEdges::ToModels);
         let customers = l.nodes.iter().position(|n| n.id == "model.shop.customers").unwrap();
         assert_eq!(l.nodes[customers].depth, 2, "the filter on orders.status is a level past the focus's join key");
-        let mut into: Vec<(i32, &str)> = l.edges.iter().zip(&l.edge_kinds).filter(|(e, _)| e[1] == customers).map(|(e, k)| (l.nodes[e[0]].depth, *k)).collect();
+        let mut into: Vec<(i32, &str)> =
+            l.edges.iter().zip(&l.edge_kinds).filter(|(e, _)| e[1] == customers).map(|(e, k)| (l.nodes[e[0]].depth, *k)).collect();
         into.sort();
         assert_eq!(into, [(0, "join_key"), (1, "filter")]);
         assert!(l.nodes.iter().all(|n| n.id != "model.shop.raw_orders::customer_id"), "no column of a box's model is walked from it");
@@ -3680,7 +3675,10 @@ mod tests {
         let mut l = plain.column_lineage(col(&plain, "stg_orders", "status"), 0, 1, 100, &[], RowEdges::ToModels);
         plain.name_rows_by(&mut l);
         let json = serde_json::to_string(&l).unwrap();
-        assert!(!json.contains("rows_of") && !json.contains("rows_by") && !json.contains("most"), "a cache with no indirect edge answers as before: {json}");
+        assert!(
+            !json.contains("rows_of") && !json.contains("rows_by") && !json.contains("most"),
+            "a cache with no indirect edge answers as before: {json}"
+        );
     }
 
     fn rule_of(node: &str, clause: &str, text: &str, cut: bool, reads: &[(&str, &str)]) -> RawRule {
@@ -3725,7 +3723,14 @@ mod tests {
                 steps: 2,
                 cut: false,
             },
-            crate::collin::RawExpression { node: "model.shop.stg_orders".into(), column: "nowhere".into(), kind: "cast".into(), text: "x::int".into(), steps: 1, cut: false },
+            crate::collin::RawExpression {
+                node: "model.shop.stg_orders".into(),
+                column: "nowhere".into(),
+                kind: "cast".into(),
+                text: "x::int".into(),
+                steps: 1,
+                cut: false,
+            },
         ];
         g.merge_col_lineage(c, 1);
         let cll = g.cll.as_ref().unwrap();
@@ -3751,7 +3756,10 @@ mod tests {
             json.contains(r#""rules":[["customers","QUALIFY row_number() over (order by status) = 1 (cut)"],["customers","WHERE note = 'a b' and c"],["orders","WHERE status <> 'cancelled'"],["orders","HAVING sum(amount) > 0"]]"#),
             "the models in name order, each one's rules in collin's, a cut marked, a newline or tab a space: {json}"
         );
-        assert!(!json.contains("rules_more") && !json.contains("a.id = b.id"), "a rule that reads another column is not on this card: {json}");
+        assert!(
+            !json.contains("rules_more") && !json.contains("a.id = b.id"),
+            "a rule that reads another column is not on this card: {json}"
+        );
         let mut l = g.column_lineage(amount, 0, 0, 100, &[], RowEdges::Hidden);
         g.name_rows_by(&mut l);
         let json = serde_json::to_string(&l.nodes[0]).unwrap();
@@ -3900,11 +3908,8 @@ mod tests {
         let mut seen = HashSet::from([s]);
         let mut stack = vec![s];
         while let Some(cur) = stack.pop() {
-            let side: Vec<ColRef> = if upstream {
-                cll.incoming(cur).map(|e| e.from).collect()
-            } else {
-                cll.outgoing(cur).iter().map(|e| e.to).collect()
-            };
+            let side: Vec<ColRef> =
+                if upstream { cll.incoming(cur).map(|e| e.from).collect() } else { cll.outgoing(cur).iter().map(|e| e.to).collect() };
             for nb in side {
                 if seen.insert(nb) {
                     stack.push(nb);
@@ -4171,21 +4176,13 @@ mod tests {
         };
         let d = |name: &str, depth: i32| (name.to_string(), depth);
 
-        g.merge_col_lineage(
-            cache(vec![link("f", "s1", "window"), link("f", "s2", "window"), link("s1", "s2", "aggregate")]),
-            1,
-        );
+        g.merge_col_lineage(cache(vec![link("f", "s1", "window"), link("f", "s2", "window"), link("s1", "s2", "aggregate")]), 1);
         let two = g.column_lineage(at(&g, "f"), 0, 1, 100, &["window", "aggregate"], RowEdges::Hidden);
         assert_eq!(two.stopped_at, ["window"], "the aggregate between the two stops is not drawn");
         assert_eq!(two.edge_kinds, ["window", "window"]);
 
         g.merge_col_lineage(
-            cache(vec![
-                link("f", "s", "window"),
-                link("f", "a", "rename"),
-                link("a", "s", "rename"),
-                link("s", "a", "filter"),
-            ]),
+            cache(vec![link("f", "s", "window"), link("f", "a", "rename"), link("a", "s", "rename"), link("s", "a", "filter")]),
             2,
         );
         let roomy = g.column_lineage(at(&g, "f"), 0, 2, 200, &["window"], RowEdges::ToColumns);
@@ -4234,12 +4231,7 @@ mod tests {
 
         // A diamond: p is met from a, then from b with the cap full of it.
         g.merge_col_lineage(
-            cache(vec![
-                link("f", "a", "rename"),
-                link("f", "b", "rename"),
-                link("a", "p", "rename"),
-                link("b", "p", "rename"),
-            ]),
+            cache(vec![link("f", "a", "rename"), link("f", "b", "rename"), link("a", "p", "rename"), link("b", "p", "rename")]),
             5,
         );
         for (focus, up, down) in [("f", 0, 2), ("p", 2, 0)] {
@@ -4521,10 +4513,13 @@ mod tests {
             }
             for t in 1..=4 {
                 let id = format!("test.shop.t_{m}{t}");
-                nodes.insert(id.clone(), serde_json::json!({
-                    "name": format!("t_{m}{t}"), "resource_type": "test", "package_name": "shop",
-                    "attached_node": format!("model.shop.{m}"),
-                }));
+                nodes.insert(
+                    id.clone(),
+                    serde_json::json!({
+                        "name": format!("t_{m}{t}"), "resource_type": "test", "package_name": "shop",
+                        "attached_node": format!("model.shop.{m}"),
+                    }),
+                );
                 parents.insert(id, serde_json::json!([format!("model.shop.{m}")]));
             }
         }
@@ -4584,10 +4579,11 @@ mod tests {
     fn a_drawn_test_says_which_generic_column_package_and_severity() {
         let g = tested();
         let at = |id: &str| g.index[id];
-        let picked: Vec<u32> = ["model.shop.dim_customers", "model.shop.dim_legacy", "test.shop.rel_a", "test.shop.rel_b", "test.shop.nn", "test.shop.combo"]
-            .iter()
-            .map(|id| at(id))
-            .collect();
+        let picked: Vec<u32> =
+            ["model.shop.dim_customers", "model.shop.dim_legacy", "test.shop.rel_a", "test.shop.rel_b", "test.shop.nn", "test.shop.combo"]
+                .iter()
+                .map(|id| at(id))
+                .collect();
         let selected = serde_json::to_value(g.selection(&picked, &[], &[], true, 100)).unwrap();
         let around = serde_json::to_value(g.lineage(at("model.shop.dim_customers"), 1, 1, true, 100)).unwrap();
         for sub in [&selected, &around] {
@@ -4624,10 +4620,8 @@ mod tests {
     fn a_test_names_the_node_whose_yaml_declares_it() {
         let g = tested();
         let at = |id: &str| g.index[id];
-        let picked: Vec<u32> = ["model.shop.dim_customers", "model.shop.dim_legacy", "test.shop.rel_a", "test.shop.combo"]
-            .iter()
-            .map(|id| at(id))
-            .collect();
+        let picked: Vec<u32> =
+            ["model.shop.dim_customers", "model.shop.dim_legacy", "test.shop.rel_a", "test.shop.combo"].iter().map(|id| at(id)).collect();
         let sub = serde_json::to_value(g.selection(&picked, &[], &[], true, 100)).unwrap();
         let nodes = sub["nodes"].as_array().unwrap();
         let find = |name: &str| nodes.iter().find(|n| n["name"] == name).unwrap();
@@ -4724,8 +4718,7 @@ mod tests {
         let sub = serde_json::to_value(g.selection(&picked, &[g.index["model.shop.a"]], &[], true, 100)).unwrap();
         let nodes = sub["nodes"].as_array().unwrap();
         assert_eq!(nodes.len(), 2);
-        let flagged: Vec<&str> =
-            nodes.iter().filter(|n| n.get("context").is_some()).map(|n| n["name"].as_str().unwrap()).collect();
+        let flagged: Vec<&str> = nodes.iter().filter(|n| n.get("context").is_some()).map(|n| n["name"].as_str().unwrap()).collect();
         assert_eq!(flagged, ["a"], "the test is selected, the model it belongs to is context");
         assert_eq!(sub["edges"].as_array().unwrap().len(), 1, "and the test hangs off it");
 
@@ -4802,10 +4795,7 @@ mod tests {
                 "model.shop.dim_customers": model("dim_customers"),
             },
         });
-        let parents = [
-            ("model.shop.stg_customers", "seed.shop.country_codes"),
-            ("model.shop.dim_customers", "model.shop.stg_customers"),
-        ];
+        let parents = [("model.shop.stg_customers", "seed.shop.country_codes"), ("model.shop.dim_customers", "model.shop.stg_customers")];
         for (child, parent) in parents {
             if from_parent_map {
                 raw["parent_map"][child] = serde_json::json!([parent]);
@@ -5014,22 +5004,31 @@ mod tests {
                                 "patch_path": "shop://models/schema.yml" })
         };
         nodes.insert("model.shop.hub".into(), model("hub"));
-        nodes.insert("seed.shop.a_seed".into(), serde_json::json!({ "name": "a_seed", "resource_type": "seed",
-            "package_name": "shop", "original_file_path": "seeds/a_seed.csv", "patch_path": "shop://models/schema.yml" }));
+        nodes.insert(
+            "seed.shop.a_seed".into(),
+            serde_json::json!({ "name": "a_seed", "resource_type": "seed",
+            "package_name": "shop", "original_file_path": "seeds/a_seed.csv", "patch_path": "shop://models/schema.yml" }),
+        );
         for c in "abcdefghijkl".chars() {
             let m = format!("m_{c}");
             nodes.insert(format!("model.shop.{m}"), model(&m));
             parents.insert(format!("model.shop.{m}"), serde_json::json!(["model.shop.hub"]));
             for t in 1..=2 {
                 let id = format!("test.shop.t_{c}{t}");
-                nodes.insert(id.clone(), serde_json::json!({ "name": format!("t_{c}{t}"), "resource_type": "test",
+                nodes.insert(
+                    id.clone(),
+                    serde_json::json!({ "name": format!("t_{c}{t}"), "resource_type": "test",
                     "package_name": "shop", "original_file_path": "models/schema.yml",
-                    "attached_node": format!("model.shop.{m}") }));
+                    "attached_node": format!("model.shop.{m}") }),
+                );
                 parents.insert(id, serde_json::json!([format!("model.shop.{m}")]));
             }
             let id = format!("test.shop.s_{c}");
-            nodes.insert(id.clone(), serde_json::json!({ "name": format!("s_{c}"), "resource_type": "test",
-                "package_name": "shop", "original_file_path": format!("tests/s_{c}.sql") }));
+            nodes.insert(
+                id.clone(),
+                serde_json::json!({ "name": format!("s_{c}"), "resource_type": "test",
+                "package_name": "shop", "original_file_path": format!("tests/s_{c}.sql") }),
+            );
             parents.insert(id, serde_json::json!([format!("model.shop.{m}"), "model.shop.hub"]));
         }
         serde_json::json!({ "nodes": nodes, "parent_map": parents }).to_string()
@@ -5088,7 +5087,11 @@ mod tests {
         .unwrap();
         let g = Graph::build(raw, std::path::Path::new("manifest.json"), 0, 0);
         let shown = |file: &str| g.node_of_file(file).map(|i| g.nodes[i as usize].id.as_str());
-        assert_eq!(shown("models/schema.yml"), Some("source.shop.billing.payments"), "billing.payments is first by name, though a source's id sorts after a model's");
+        assert_eq!(
+            shown("models/schema.yml"),
+            Some("source.shop.billing.payments"),
+            "billing.payments is first by name, though a source's id sorts after a model's"
+        );
         assert_eq!(shown("models/orders.sql"), Some("model.shop.orders"));
         assert_eq!(shown("tests/assert_positive.sql"), Some("test.shop.assert_positive"), "a test, when the file holds nothing else");
         assert_eq!(shown("models/nowhere.yml"), None);
@@ -5192,7 +5195,11 @@ mod tests {
         .unwrap();
         let g = Graph::build(raw, std::path::Path::new("manifest.json"), 0, 0);
         let names: Vec<&str> = g.search("a", &[], 10).iter().map(|&i| g.nodes[i as usize].name.as_str()).collect();
-        assert_eq!(names, ["aac", "abc", "bca", "cab"], "starting with the query first, then by name: the seed is not last for being a seed");
+        assert_eq!(
+            names,
+            ["aac", "abc", "bca", "cab"],
+            "starting with the query first, then by name: the seed is not last for being a seed"
+        );
         let names: Vec<&str> = g.search("a", &[], 1).iter().map(|&i| g.nodes[i as usize].name.as_str()).collect();
         assert_eq!(names, ["aac"], "and the limit keeps the first of them by name");
     }
@@ -5278,9 +5285,7 @@ mod tests {
             let (Some(&fi), Some(&ti)) = (g.index.get(e.from.as_str()), g.index.get(e.to.as_str())) else {
                 continue;
             };
-            let (Some(&fc), Some(&tc)) =
-                (slot.get(&(fi, e.from_col.to_lowercase())), slot.get(&(ti, e.to_col.to_lowercase())))
-            else {
+            let (Some(&fc), Some(&tc)) = (slot.get(&(fi, e.from_col.to_lowercase())), slot.get(&(ti, e.to_col.to_lowercase()))) else {
                 dropped += 1;
                 continue;
             };
@@ -5627,7 +5632,11 @@ mod tests {
         assert_eq!(l.up.len(), 3);
         assert_eq!(kinds(&l.up[0]), [("view", 2), ("table", 1)]);
         assert_eq!(l.up[0].name, "", "three nodes name none");
-        assert_eq!(kinds(&l.up[1]), [("seed", 2), ("view", 1)], "stg_payments is two steps up through orders, a label's count first, then its name");
+        assert_eq!(
+            kinds(&l.up[1]),
+            [("seed", 2), ("view", 1)],
+            "stg_payments is two steps up through orders, a label's count first, then its name"
+        );
         assert_eq!((kinds(&l.up[2]), l.up[2].name.as_str()), (vec![("seed", 1)], "raw_payments"));
         assert!(l.down.is_empty() && !l.up_more && !l.down_more, "the test hangs under customers and is no level");
         // The other way, from a seed: dbt's `raw_orders+` reaches the same nodes.

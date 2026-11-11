@@ -57,7 +57,8 @@ impl Reads {
     /// only a control character escaped: printed raw to a terminal it could
     /// move the cursor or rewrite the line.
     pub fn quoted(&self) -> String {
-        let inner: String = self.entry.chars().flat_map(|c| if c.is_control() { c.escape_default().collect::<Vec<_>>() } else { vec![c] }).collect();
+        let inner: String =
+            self.entry.chars().flat_map(|c| if c.is_control() { c.escape_default().collect::<Vec<_>>() } else { vec![c] }).collect();
         format!("\"{inner}\"")
     }
 }
@@ -108,12 +109,7 @@ pub fn reads_cwd(path_var: Option<&OsString>, shell: &str, windows: bool, macos:
 
 fn on_path_in(name: &str, path_var: Option<OsString>, windows: bool) -> Option<PathBuf> {
     let file = if windows && Path::new(name).extension().is_none() { format!("{name}.exe") } else { name.to_string() };
-    path_var
-        .iter()
-        .flat_map(std::env::split_paths)
-        .filter(|dir| dir.is_absolute())
-        .map(|dir| dir.join(&file))
-        .find(|p| runnable(p))
+    path_var.iter().flat_map(std::env::split_paths).filter(|dir| dir.is_absolute()).map(|dir| dir.join(&file)).find(|p| runnable(p))
 }
 
 #[cfg(unix)]

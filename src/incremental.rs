@@ -126,10 +126,7 @@ impl<'a> Incremental<'a> {
 
     /// A bare name called while a model of package `local` runs.
     fn by_name(&self, name: &str, local: &str) -> Option<&'a Macro> {
-        self.macros
-            .get(local, name)
-            .or_else(|| self.macros.get(self.macros.root(), name))
-            .or_else(|| self.internal_macro(name))
+        self.macros.get(local, name).or_else(|| self.macros.get(self.macros.root(), name)).or_else(|| self.internal_macro(name))
     }
 
     /// `adapter.dispatch(name, 'dbt')`.
@@ -161,7 +158,11 @@ impl<'a> Incremental<'a> {
             }
             prefixes.iter().find_map(|p| {
                 let wanted = format!("{p}__{name}");
-                if package == "dbt" { self.internal_macro(&wanted) } else { self.macros.get(package, &wanted) }
+                if package == "dbt" {
+                    self.internal_macro(&wanted)
+                } else {
+                    self.macros.get(package, &wanted)
+                }
             })
         })
     }
@@ -472,15 +473,26 @@ mod tests {
     ];
 
     const SNOWFLAKE: &[(&str, &str, &str)] = &[
-        ("dbt_snowflake", "materialization_incremental_snowflake", "{% materialization incremental, adapter='snowflake', supported_languages=['sql', 'python'] -%}
+        (
+            "dbt_snowflake",
+            "materialization_incremental_snowflake",
+            "{% materialization incremental, adapter='snowflake', supported_languages=['sql', 'python'] -%}
   {#-- The temp relation will be a view, temp table, or transient table, depending on strategy and config --#}
   {%- set unique_key = config.get('unique_key') -%}
   {% set incremental_strategy = config.get('incremental_strategy') or 'default' %}
-{%- endmaterialization %}"),
-        ("dbt_snowflake", "snowflake__get_incremental_default_sql", "{% macro snowflake__get_incremental_default_sql(arg_dict) %}
+{%- endmaterialization %}",
+        ),
+        (
+            "dbt_snowflake",
+            "snowflake__get_incremental_default_sql",
+            "{% macro snowflake__get_incremental_default_sql(arg_dict) %}
   {{ return(get_incremental_merge_sql(arg_dict)) }}
-{% endmacro %}"),
-        ("dbt_snowflake", "snowflake__get_merge_sql", "{% macro snowflake__get_merge_sql(target, source_sql, unique_key, dest_columns, incremental_predicates) -%}
+{% endmacro %}",
+        ),
+        (
+            "dbt_snowflake",
+            "snowflake__get_merge_sql",
+            "{% macro snowflake__get_merge_sql(target, source_sql, unique_key, dest_columns, incremental_predicates) -%}
     {%- set dml -%}
     {%- if unique_key is none -%}
         insert into {{ target }} ({{ dest_cols_csv }})
@@ -489,36 +501,50 @@ mod tests {
     {%- endif -%}
     {%- endset -%}
     {% do return(snowflake_dml_explicit_transaction(dml)) %}
-{% endmacro %}"),
-        ("dbt_snowflake", "snowflake__get_delete_insert_merge_sql", "{% macro snowflake__get_delete_insert_merge_sql(target, source, unique_key, dest_columns, incremental_predicates) %}
+{% endmacro %}",
+        ),
+        (
+            "dbt_snowflake",
+            "snowflake__get_delete_insert_merge_sql",
+            "{% macro snowflake__get_delete_insert_merge_sql(target, source, unique_key, dest_columns, incremental_predicates) %}
     {% set dml = default__get_delete_insert_merge_sql(target, source, unique_key, dest_columns, incremental_predicates) %}
     {% do return(snowflake_dml_explicit_transaction(dml)) %}
-{% endmacro %}"),
+{% endmacro %}",
+        ),
     ];
 
     const DUCKDB: &[(&str, &str, &str)] = &[
-        ("dbt_duckdb", "materialization_incremental_duckdb", "{% materialization incremental, adapter=\"duckdb\", supported_languages=['sql', 'python'] -%}
+        (
+            "dbt_duckdb",
+            "materialization_incremental_duckdb",
+            "{% materialization incremental, adapter=\"duckdb\", supported_languages=['sql', 'python'] -%}
     {% set incremental_strategy = config.get('incremental_strategy') or 'default' %}
-{%- endmaterialization %}"),
-        ("dbt_duckdb", "duckdb__get_incremental_default_sql", "{% macro duckdb__get_incremental_default_sql(arg_dict) %}
+{%- endmaterialization %}",
+        ),
+        (
+            "dbt_duckdb",
+            "duckdb__get_incremental_default_sql",
+            "{% macro duckdb__get_incremental_default_sql(arg_dict) %}
   {% do return(get_incremental_delete_insert_sql(arg_dict)) %}
-{% endmacro %}"),
-        ("dbt_duckdb", "duckdb__get_delete_insert_merge_sql", "{% macro duckdb__get_delete_insert_merge_sql(target, source, unique_key, dest_columns, incremental_predicates) -%}
+{% endmacro %}",
+        ),
+        (
+            "dbt_duckdb",
+            "duckdb__get_delete_insert_merge_sql",
+            "{% macro duckdb__get_delete_insert_merge_sql(target, source, unique_key, dest_columns, incremental_predicates) -%}
     {% if unique_key %}
         delete from {{ target }}
     {% endif %}
     insert into {{ target }} ({{ dest_cols_csv }})
-{%- endmacro %}"),
+{%- endmacro %}",
+        ),
     ];
 
     /// dbt's own macros and `more`, each replacing any of the same package and name.
     fn kit(more: &[&[(&str, &str, &str)]]) -> Macros {
         let mut all = serde_json::Map::new();
         for (package, name, body) in CORE.iter().chain(more.iter().flat_map(|m| m.iter())) {
-            all.insert(
-                format!("macro.{package}.{name}"),
-                serde_json::json!({ "name": name, "package_name": package, "macro_sql": body }),
-            );
+            all.insert(format!("macro.{package}.{name}"), serde_json::json!({ "name": name, "package_name": package, "macro_sql": body }));
         }
         let raw: HashMap<String, RawMacro> = serde_json::from_value(serde_json::Value::Object(all)).unwrap();
         Macros::build(raw, "shop")
@@ -564,49 +590,77 @@ mod tests {
     fn a_materialization_may_name_the_default_outright_or_one_call_deep() {
         let none = DispatchOrder::Default;
         let bigquery: &[(&str, &str, &str)] = &[
-            ("dbt_bigquery", "materialization_incremental_bigquery", "{% materialization incremental, adapter='bigquery' -%}
+            (
+                "dbt_bigquery",
+                "materialization_incremental_bigquery",
+                "{% materialization incremental, adapter='bigquery' -%}
   {%- set strategy = dbt_bigquery_validate_get_incremental_strategy(config) -%}
-{%- endmaterialization %}"),
-            ("dbt_bigquery", "dbt_bigquery_validate_get_incremental_strategy", "{% macro dbt_bigquery_validate_get_incremental_strategy(config) %}
+{%- endmaterialization %}",
+            ),
+            (
+                "dbt_bigquery",
+                "dbt_bigquery_validate_get_incremental_strategy",
+                "{% macro dbt_bigquery_validate_get_incremental_strategy(config) %}
   {#-- Find and validate the incremental strategy --#}
   {%- set strategy = config.get(\"incremental_strategy\") or 'merge' -%}
   {% do return(strategy) %}
-{% endmacro %}"),
+{% endmacro %}",
+            ),
         ];
         assert_eq!(default_of(&kit(&[bigquery]), "bigquery", &none).as_deref(), Some("merge"));
-        let outright: &[(&str, &str, &str)] = &[("dbt_spark", "materialization_incremental_spark", "{% materialization incremental, adapter='spark' -%}
+        let outright: &[(&str, &str, &str)] = &[(
+            "dbt_spark",
+            "materialization_incremental_spark",
+            "{% materialization incremental, adapter='spark' -%}
   {%- set raw_strategy = config.get('incremental_strategy') or 'append' -%}
-{%- endmaterialization %}")];
+{%- endmaterialization %}",
+        )];
         assert_eq!(default_of(&kit(&[outright]), "spark", &none).as_deref(), Some("append"));
     }
 
     #[test]
     fn a_materialization_of_the_project_s_own_leaves_the_default_unnamed() {
         let none = DispatchOrder::Default;
-        let own: &[(&str, &str, &str)] = &[("shop", "materialization_incremental_snowflake", "{% materialization incremental, adapter='snowflake' -%}
+        let own: &[(&str, &str, &str)] = &[(
+            "shop",
+            "materialization_incremental_snowflake",
+            "{% materialization incremental, adapter='snowflake' -%}
   {% set incremental_strategy = config.get('incremental_strategy') or 'default' %}
-{%- endmaterialization %}")];
+{%- endmaterialization %}",
+        )];
         assert_eq!(default_of(&kit(&[SNOWFLAKE, own]), "snowflake", &none), None);
         // Nor does a configured merge claim anything under it, which may do
         // anything with the key.
         assert_eq!(inserts(&kit(&[SNOWFLAKE, own]), "snowflake", &none, "merge", Key::None), None);
         // dbt ranks an adapter's own above any default one, wherever it is
         // written, so a project's `default` materialization changes nothing.
-        let fallback: &[(&str, &str, &str)] = &[("shop", "materialization_incremental_default", "{% materialization incremental, default -%}
-{%- endmaterialization %}")];
+        let fallback: &[(&str, &str, &str)] = &[(
+            "shop",
+            "materialization_incremental_default",
+            "{% materialization incremental, default -%}
+{%- endmaterialization %}",
+        )];
         assert_eq!(default_of(&kit(&[SNOWFLAKE, fallback]), "snowflake", &none).as_deref(), Some("merge"));
         // A materialization that reads the configured strategy some other way.
-        let other: &[(&str, &str, &str)] = &[("dbt_snowflake", "materialization_incremental_snowflake", "{% materialization incremental, adapter='snowflake' -%}
+        let other: &[(&str, &str, &str)] = &[(
+            "dbt_snowflake",
+            "materialization_incremental_snowflake",
+            "{% materialization incremental, adapter='snowflake' -%}
   {% set incremental_strategy = config.get('incremental_strategy', 'default') %}
-{%- endmaterialization %}")];
+{%- endmaterialization %}",
+        )];
         assert_eq!(default_of(&kit(&[SNOWFLAKE, other]), "snowflake", &none), None);
     }
 
     #[test]
     fn a_root_project_macro_named_like_dbt_s_wins() {
-        let own: &[(&str, &str, &str)] = &[("shop", "get_incremental_default_sql", "{% macro get_incremental_default_sql(arg_dict) %}
+        let own: &[(&str, &str, &str)] = &[(
+            "shop",
+            "get_incremental_default_sql",
+            "{% macro get_incremental_default_sql(arg_dict) %}
   {% do return(get_incremental_append_sql(arg_dict)) %}
-{% endmacro %}")];
+{% endmacro %}",
+        )];
         assert_eq!(default_of(&kit(&[SNOWFLAKE, own]), "snowflake", &DispatchOrder::Default).as_deref(), Some("append"));
     }
 
@@ -614,9 +668,13 @@ mod tests {
     fn the_dispatch_searches_each_package_by_every_prefix_before_the_next() {
         // The root project's `default__` comes before Snowflake's own version,
         // since dbt walks the packages first and the prefixes within each.
-        let own: &[(&str, &str, &str)] = &[("shop", "default__get_incremental_default_sql", "{% macro default__get_incremental_default_sql(arg_dict) %}
+        let own: &[(&str, &str, &str)] = &[(
+            "shop",
+            "default__get_incremental_default_sql",
+            "{% macro default__get_incremental_default_sql(arg_dict) %}
   {% do return(get_incremental_delete_insert_sql(arg_dict)) %}
-{% endmacro %}")];
+{% endmacro %}",
+        )];
         let m = kit(&[SNOWFLAKE, own]);
         assert_eq!(default_of(&m, "snowflake", &DispatchOrder::Default).as_deref(), Some("delete+insert"));
         let dbt_first = DispatchOrder::Given(vec!["dbt".into(), "shop".into()]);
@@ -629,15 +687,20 @@ mod tests {
         let redshift: &[(&str, &str, &str)] = &[
             ("dbt_redshift", "redshift__create_table_as", "{% macro redshift__create_table_as() %}{% endmacro %}"),
             ("dbt_postgres", "postgres__create_table_as", "{% macro postgres__create_table_as() %}{% endmacro %}"),
-            ("dbt_postgres", "postgres__get_incremental_default_sql", "{% macro postgres__get_incremental_default_sql(arg_dict) %}
+            (
+                "dbt_postgres",
+                "postgres__get_incremental_default_sql",
+                "{% macro postgres__get_incremental_default_sql(arg_dict) %}
   {% do return(get_incremental_delete_insert_sql(arg_dict)) %}
-{% endmacro %}"),
+{% endmacro %}",
+            ),
             // Named like an adapter's package, with a macro by that prefix,
             // and no adapter all the same.
             ("dbt_utils", "utils__star", "{% macro utils__star() %}{% endmacro %}"),
         ];
         assert_eq!(default_of(&kit(&[redshift]), "redshift", &none).as_deref(), Some("delete+insert"));
-        let second: &[(&str, &str, &str)] = &[("dbt_spark", "spark__create_table_as", "{% macro spark__create_table_as() %}{% endmacro %}")];
+        let second: &[(&str, &str, &str)] =
+            &[("dbt_spark", "spark__create_table_as", "{% macro spark__create_table_as() %}{% endmacro %}")];
         assert_eq!(default_of(&kit(&[redshift, second]), "redshift", &none), None);
     }
 
@@ -647,9 +710,13 @@ mod tests {
         let mut all = serde_json::Map::new();
         let own = [
             ("dbt_vault", "vault__create_table_as", "{% macro vault__create_table_as() %}{% endmacro %}"),
-            ("dbt_vault", "materialization_incremental_snowflake", "{% materialization incremental, adapter='snowflake' -%}
+            (
+                "dbt_vault",
+                "materialization_incremental_snowflake",
+                "{% materialization incremental, adapter='snowflake' -%}
   {% set incremental_strategy = config.get('incremental_strategy') or 'append' %}
-{%- endmaterialization %}"),
+{%- endmaterialization %}",
+            ),
         ];
         for (package, name, body) in CORE.iter().chain(SNOWFLAKE).chain(own.iter()) {
             all.insert(format!("macro.{package}.{name}"), serde_json::json!({ "name": name, "package_name": package, "macro_sql": body }));
@@ -665,9 +732,13 @@ mod tests {
     fn an_unreadable_dispatch_matters_only_when_a_package_has_a_version() {
         let unreadable = DispatchOrder::Unreadable;
         assert_eq!(default_of(&kit(&[SNOWFLAKE]), "snowflake", &unreadable).as_deref(), Some("merge"));
-        let package: &[(&str, &str, &str)] = &[("vault", "snowflake__get_incremental_default_sql", "{% macro snowflake__get_incremental_default_sql(arg_dict) %}
+        let package: &[(&str, &str, &str)] = &[(
+            "vault",
+            "snowflake__get_incremental_default_sql",
+            "{% macro snowflake__get_incremental_default_sql(arg_dict) %}
   {{ return(get_incremental_append_sql(arg_dict)) }}
-{% endmacro %}")];
+{% endmacro %}",
+        )];
         let m = kit(&[SNOWFLAKE, package]);
         assert_eq!(default_of(&m, "snowflake", &unreadable), None);
         // Read, the order says where the package goes.
@@ -676,17 +747,25 @@ mod tests {
         assert_eq!(default_of(&m, "snowflake", &package_first).as_deref(), Some("append"));
         // The project's own version counts too: an order read wrong could
         // put dbt's before it.
-        let own: &[(&str, &str, &str)] = &[("shop", "snowflake__get_incremental_default_sql", "{% macro snowflake__get_incremental_default_sql(arg_dict) %}
+        let own: &[(&str, &str, &str)] = &[(
+            "shop",
+            "snowflake__get_incremental_default_sql",
+            "{% macro snowflake__get_incremental_default_sql(arg_dict) %}
   {{ return(get_incremental_append_sql(arg_dict)) }}
-{% endmacro %}")];
+{% endmacro %}",
+        )];
         assert_eq!(default_of(&kit(&[SNOWFLAKE, own]), "snowflake", &unreadable), None);
     }
 
     #[test]
     fn an_adapter_s_package_named_in_the_order_is_passed_over_as_dbt_does() {
-        let own: &[(&str, &str, &str)] = &[("shop", "default__get_merge_sql", "{% macro default__get_merge_sql(target, source, unique_key, dest_columns) %}
+        let own: &[(&str, &str, &str)] = &[(
+            "shop",
+            "default__get_merge_sql",
+            "{% macro default__get_merge_sql(target, source, unique_key, dest_columns) %}
     {% if unique_key %}{% else %}{% do predicates.append('FALSE') %}{% endif %}
-{% endmacro %}")];
+{% endmacro %}",
+        )];
         let order = DispatchOrder::Given(vec!["dbt_snowflake".into(), "shop".into(), "dbt".into()]);
         // The project's version comes first, and claims nothing.
         assert_eq!(inserts(&kit(&[SNOWFLAKE, own]), "snowflake", &order, "merge", Key::None), None);
@@ -700,11 +779,16 @@ mod tests {
         assert_eq!(named("{%- do return(get_incremental_delete_insert_sql(arg_dict)) -%}").as_deref(), Some("delete+insert"));
         assert_eq!(named("{# the adapter's choice #}{{ return(get_incremental_append_sql(arg_dict)) }}").as_deref(), Some("append"));
         // Postgres's form: a condition on the key picks one or the other.
-        assert_eq!(named("{% if arg_dict[\"unique_key\"] %}
+        assert_eq!(
+            named(
+                "{% if arg_dict[\"unique_key\"] %}
     {% do return(get_incremental_delete_insert_sql(arg_dict)) %}
   {% else %}
     {% do return(get_incremental_append_sql(arg_dict)) %}
-  {% endif %}"), None);
+  {% endif %}"
+            ),
+            None
+        );
         assert_eq!(named("{{ log('x') }}{{ return(get_incremental_merge_sql(arg_dict)) }}"), None);
         assert_eq!(named("{{ return(get_incremental_merge_sql(arg_dict) ~ ';') }}"), None);
         assert_eq!(named("{{ return(get_merge_sql(arg_dict)) }}"), None);
@@ -743,7 +827,9 @@ mod tests {
         let none = |more: &[(&str, &str, &str)], dispatch: &DispatchOrder| {
             inserts(&kit(&[SNOWFLAKE, more]), "snowflake", dispatch, "merge", Key::None)
         };
-        let own = |name: &str| format!("{{% macro {name}(target, source, unique_key, dest_columns) %}}merge into {{{{ target }}}}{{% endmacro %}}");
+        let own = |name: &str| {
+            format!("{{% macro {name}(target, source, unique_key, dest_columns) %}}merge into {{{{ target }}}}{{% endmacro %}}")
+        };
         let (a, b, c) = (own("snowflake__get_merge_sql"), own("get_merge_sql"), own("get_incremental_merge_sql"));
         assert_eq!(none(&[("shop", "snowflake__get_merge_sql", &a)], &d), None);
         assert_eq!(none(&[("shop", "get_merge_sql", &b)], &d), None);
@@ -766,14 +852,10 @@ mod tests {
     fn each_incremental_box_shows_what_dbt_runs() {
         let mut macros = serde_json::Map::new();
         for (package, name, body) in CORE.iter().chain(SNOWFLAKE) {
-            macros.insert(
-                format!("macro.{package}.{name}"),
-                serde_json::json!({ "name": name, "package_name": package, "macro_sql": body }),
-            );
+            macros
+                .insert(format!("macro.{package}.{name}"), serde_json::json!({ "name": name, "package_name": package, "macro_sql": body }));
         }
-        let model = |name: &str, config: serde_json::Value| {
-            serde_json::json!({ "name": name, "resource_type": "model", "package_name": "shop", "config": config })
-        };
+        let model = |name: &str, config: serde_json::Value| serde_json::json!({ "name": name, "resource_type": "model", "package_name": "shop", "config": config });
         let raw: RawManifest = serde_json::from_value(serde_json::json!({
             "metadata": { "project_name": "shop", "adapter_type": "snowflake" },
             "nodes": {

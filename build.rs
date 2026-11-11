@@ -69,10 +69,7 @@ fn version_resource() {
     for tool in &tools {
         // Relative to OUT_DIR, so the command windres hands its preprocessor
         // through a shell holds no folder a user named, spaces and all.
-        let run = Command::new(tool)
-            .current_dir(&out)
-            .args(["-O", "coff", "-i", "version.rc", "-o", "version.o"])
-            .output();
+        let run = Command::new(tool).current_dir(&out).args(["-O", "coff", "-i", "version.rc", "-o", "version.o"]).output();
         match run {
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
             Ok(o) if o.status.success() => {
@@ -99,12 +96,7 @@ fn version_rc() -> String {
     let var = |key: &str| env::var(key).unwrap_or_default();
     let name = var("CARGO_PKG_NAME");
     let version = var("CARGO_PKG_VERSION");
-    let numeric = format!(
-        "{},{},{},0",
-        var("CARGO_PKG_VERSION_MAJOR"),
-        var("CARGO_PKG_VERSION_MINOR"),
-        var("CARGO_PKG_VERSION_PATCH")
-    );
+    let numeric = format!("{},{},{},0", var("CARGO_PKG_VERSION_MAJOR"), var("CARGO_PKG_VERSION_MINOR"), var("CARGO_PKG_VERSION_PATCH"));
     // The notice line of LICENSE and README (0046), with the licence named
     // since the properties dialog is all some readers of the file will see.
     let copyright = format!("Copyright 2026 Datadorelix, licensed under {}", var("CARGO_PKG_LICENSE"));
@@ -127,9 +119,7 @@ fn version_rc() -> String {
         // A double quote is doubled inside an .rc string; nothing else needs it.
         rc.push_str(&format!("      VALUE \"{key}\", \"{}\"\n", value.replace('"', "\"\"")));
     }
-    rc.push_str(
-        "    END\n  END\n  BLOCK \"VarFileInfo\"\n  BEGIN\n    VALUE \"Translation\", 0x409, 1200\n  END\nEND\n",
-    );
+    rc.push_str("    END\n  END\n  BLOCK \"VarFileInfo\"\n  BEGIN\n    VALUE \"Translation\", 0x409, 1200\n  END\nEND\n");
     rc
 }
 
@@ -159,10 +149,7 @@ fn git_describe() -> Option<String> {
     if !prefix.status.success() || !String::from_utf8_lossy(&prefix.stdout).trim().is_empty() {
         return None;
     }
-    let out = git()
-        .args(["describe", "--tags", "--match", "v[0-9]*.[0-9]*.[0-9]*", "--always", "--dirty"])
-        .output()
-        .ok()?;
+    let out = git().args(["describe", "--tags", "--match", "v[0-9]*.[0-9]*.[0-9]*", "--always", "--dirty"]).output().ok()?;
     if !out.status.success() {
         return None;
     }
@@ -176,10 +163,7 @@ fn git_describe() -> Option<String> {
 
 /// UTC, to the day. A stamp is for telling two builds apart, not for timing one.
 fn build_date() -> String {
-    let secs = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0);
+    let secs = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
     let (y, m, d) = civil_from_days((secs / 86_400) as i64);
     format!("{y:04}-{m:02}-{d:02}")
 }

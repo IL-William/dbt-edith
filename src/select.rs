@@ -138,11 +138,19 @@ impl Indirect {
 /// the shallow case, a union of intersections minus an exclude half.
 #[derive(Clone, Debug)]
 pub enum Spec {
-    Criteria { term: Term, indirect: Indirect },
+    Criteria {
+        term: Term,
+        indirect: Indirect,
+    },
     /// `method: selector`: another named selector's whole answer, grown by the
     /// reference's own operators. It brings no tests of its own, since the
     /// selector it names already decided which ones belong.
-    Ref { name: String, at: bool, parents: Option<Depth>, children: Option<Depth> },
+    Ref {
+        name: String,
+        at: bool,
+        parents: Option<Depth>,
+        children: Option<Depth>,
+    },
     Union(Vec<Spec>),
     Intersection(Vec<Spec>),
     /// The first set without the second.
@@ -237,10 +245,7 @@ impl std::fmt::Display for SelectError {
             SelectError::BadDepth { term, .. } => {
                 write!(f, "`{term}`: the depth beside a + must be a whole number")
             }
-            SelectError::BadSource { value, .. } => write!(
-                f,
-                "`source:{value}`: expected source, source.table or package.source.table"
-            ),
+            SelectError::BadSource { value, .. } => write!(f, "`source:{value}`: expected source, source.table or package.source.table"),
             SelectError::BadVersion { value, .. } => {
                 write!(f, "`version:{value}`: expected latest, prerelease, old or none")
             }
@@ -252,10 +257,9 @@ impl std::fmt::Display for SelectError {
                 "a named selector stands alone: dbt ignores --select and --exclude beside \
                  --selector, so this box does not take them either"
             ),
-            SelectError::UnknownSelector { name } => write!(
-                f,
-                "no selector named `{name}` in this manifest; the Selectors menu lists the ones it records"
-            ),
+            SelectError::UnknownSelector { name } => {
+                write!(f, "no selector named `{name}` in this manifest; the Selectors menu lists the ones it records")
+            }
             SelectError::UnsupportedSelector { name, reason } => {
                 write!(f, "selector `{name}` cannot be resolved here: {reason}")
             }
@@ -570,8 +574,8 @@ fn tokenize(line: &str) -> Vec<(usize, String)> {
 
 /// dbt commands and the select flags, so a whole command line can be pasted.
 const PREFIX: &[&str] = &[
-    "dbt", "ls", "list", "run", "build", "test", "compile", "seed", "snapshot", "source",
-    "freshness", "docs", "generate", "-s", "--select", "-m", "--models", "--model",
+    "dbt", "ls", "list", "run", "build", "test", "compile", "seed", "snapshot", "source", "freshness", "docs", "generate", "-s",
+    "--select", "-m", "--models", "--model",
 ];
 
 /// Eats a pasted `dbt ls -s` off the front. Returns whether anything went.
@@ -638,10 +642,7 @@ fn parse_depth(digits: &str, raw: &str, pos: usize) -> Result<Depth, SelectError
     if digits.is_empty() {
         return Ok(None);
     }
-    digits
-        .parse::<u32>()
-        .map(Some)
-        .map_err(|_| SelectError::BadDepth { term: raw.to_string(), pos })
+    digits.parse::<u32>().map(Some).map_err(|_| SelectError::BadDepth { term: raw.to_string(), pos })
 }
 
 /// One term, in the order of dbt's `RAW_SELECTOR_PATTERN`: `@`, then `N+`, then
@@ -693,14 +694,7 @@ fn parse_term(raw: &str, pos: usize) -> Result<Term, SelectError> {
     if method == Method::Version && !VERSION_KINDS.contains(&value) {
         return Err(SelectError::BadVersion { value: value.to_string(), pos });
     }
-    Ok(Term {
-        method,
-        value: value.to_string(),
-        at,
-        parents,
-        children,
-        raw: raw.to_string(),
-    })
+    Ok(Term { method, value: value.to_string(), at, parents, children, raw: raw.to_string() })
 }
 
 /// A YAML selector's string criterion, `tag:nightly+`, read as one typed term.
@@ -711,13 +705,7 @@ pub(crate) fn term(raw: &str) -> Result<Term, SelectError> {
 /// A YAML selector's criterion, which arrives split into its parts rather than
 /// as text. It gets the checks a typed term gets, and a `raw` spelled the way
 /// the command line would spell it, so a warning can name it.
-pub(crate) fn criterion(
-    method: &str,
-    value: &str,
-    at: bool,
-    parents: Option<Depth>,
-    children: Option<Depth>,
-) -> Result<Term, SelectError> {
+pub(crate) fn criterion(method: &str, value: &str, at: bool, parents: Option<Depth>, children: Option<Depth>) -> Result<Term, SelectError> {
     let Some(m) = method_by_name(method) else {
         return Err(SelectError::UnknownMethod { method: method.to_string(), pos: 0 });
     };
@@ -845,9 +833,7 @@ impl Expr {
         let half = |u: &Union, indirect: Indirect| {
             Spec::Union(
                 u.0.iter()
-                    .map(|group| {
-                        Spec::Intersection(group.iter().map(|t| Spec::Criteria { term: t.clone(), indirect }).collect())
-                    })
+                    .map(|group| Spec::Intersection(group.iter().map(|t| Spec::Criteria { term: t.clone(), indirect }).collect()))
                     .collect(),
             )
         };
@@ -953,13 +939,7 @@ fn marked(mask: &[bool]) -> Vec<u32> {
 /// `mask`. `@` first, so the `+` depths still count from the direct matches
 /// and not from what `@` dragged in, which is how dbt combines them.
 fn neighbours(
-    graph: &Graph,
-    direct: &[u32],
-    at: bool,
-    parents: Option<Depth>,
-    children: Option<Depth>,
-    universe: &[bool],
-    mask: &mut [bool],
+    graph: &Graph, direct: &[u32], at: bool, parents: Option<Depth>, children: Option<Depth>, universe: &[bool], mask: &mut [bool],
 ) {
     if direct.is_empty() {
         return;
@@ -1194,10 +1174,7 @@ fn eval(cx: &mut Ctx, spec: &Spec, negated: bool) -> Result<Vec<bool>, SelectErr
 /// Resolves a selection tree. `lookup` finds a named selector's tree for a
 /// `Ref`; a typed line has none to find.
 pub fn resolve_spec<'s>(
-    graph: &Graph,
-    spec: &Spec,
-    tests: Tests,
-    lookup: &'s dyn Fn(&str) -> Option<&'s Spec>,
+    graph: &Graph, spec: &Spec, tests: Tests, lookup: &'s dyn Fn(&str) -> Option<&'s Spec>,
 ) -> Result<Resolved, SelectError> {
     run(graph, spec, tests, lookup, None)
 }
@@ -1206,32 +1183,20 @@ pub fn resolve_spec<'s>(
 /// (`Bound`). Only for asking whether a mode could matter: the answer itself
 /// is never this one.
 pub fn resolve_bounded<'s>(
-    graph: &Graph,
-    spec: &Spec,
-    tests: Tests,
-    lookup: &'s dyn Fn(&str) -> Option<&'s Spec>,
-    bound: Bound,
+    graph: &Graph, spec: &Spec, tests: Tests, lookup: &'s dyn Fn(&str) -> Option<&'s Spec>, bound: Bound,
 ) -> Result<Resolved, SelectError> {
     run(graph, spec, tests, lookup, Some(bound))
 }
 
 fn run<'s>(
-    graph: &Graph,
-    spec: &Spec,
-    tests: Tests,
-    lookup: &'s dyn Fn(&str) -> Option<&'s Spec>,
-    bound: Option<Bound>,
+    graph: &Graph, spec: &Spec, tests: Tests, lookup: &'s dyn Fn(&str) -> Option<&'s Spec>, bound: Option<Bound>,
 ) -> Result<Resolved, SelectError> {
     // Hooks carry no edges and cannot be drawn, so they are not in the universe
     // at all; dbt would list them for `resource_type:operation` and we do not.
     let universe: Vec<bool> = graph
         .nodes
         .iter()
-        .map(|node| {
-            !node.disabled
-                && node.kind != Kind::Operation
-                && (node.kind != Kind::Test || tests == Tests::Eager)
-        })
+        .map(|node| !node.disabled && node.kind != Kind::Operation && (node.kind != Kind::Test || tests == Tests::Eager))
         .collect();
     let mut cx = Ctx {
         graph,
@@ -1592,14 +1557,8 @@ mod tests {
         let fqn = "shop.customer_totals.v1";
         let m = |sel: &str| fqn_match(sel, fqn, Some("v1"));
         for sel in [
-            "customer_totals",
-            "customer_totals.v1",
-            "customer_totals_v1",
-            "shop.customer_totals.v1",
-            "shop.customer_totals",
-            "customer_totals.*",
-            "x.customer_totals.v1",
-            "customer.totals_v1",
+            "customer_totals", "customer_totals.v1", "customer_totals_v1", "shop.customer_totals.v1", "shop.customer_totals",
+            "customer_totals.*", "x.customer_totals.v1", "customer.totals_v1",
         ] {
             assert!(m(sel), "{sel}");
         }
@@ -1639,20 +1598,14 @@ mod tests {
         assert_eq!(pick("stg_orders dim_customers"), ["dim_customers", "stg_orders"]);
         assert_eq!(pick("tag:nightly,config.materialized:view"), ["stg_customers"]);
         // (a ∩ b) ∪ c, evaluated per whitespace group.
-        assert_eq!(
-            pick("tag:nightly,config.materialized:view stg_orders"),
-            ["stg_customers", "stg_orders"]
-        );
+        assert_eq!(pick("tag:nightly,config.materialized:view stg_orders"), ["stg_customers", "stg_orders"]);
         assert!(pick("tag:nightly,config.materialized:table").is_empty());
     }
 
     #[test]
     fn plus_walks_the_graph_to_the_depth_it_was_given() {
         assert_eq!(pick("dim_customers"), ["dim_customers"]);
-        assert_eq!(
-            pick("+dim_customers"),
-            ["crm.customers", "dim_customers", "stg_customers"]
-        );
+        assert_eq!(pick("+dim_customers"), ["crm.customers", "dim_customers", "stg_customers"]);
         assert_eq!(pick("1+dim_customers"), ["dim_customers", "stg_customers"]);
         assert_eq!(pick("dim_customers+"), ["dim_customers", "fct_orders", "weekly_report"]);
         assert_eq!(pick("dim_customers+1"), ["dim_customers", "fct_orders"]);
@@ -1663,25 +1616,14 @@ mod tests {
     #[test]
     fn plus_reaches_a_csv_seed_like_any_other_parent() {
         assert_eq!(pick("+stg_orders"), ["country_codes", "stg_orders"]);
-        assert_eq!(
-            pick("country_codes+"),
-            ["country_codes", "fct_orders", "stg_orders", "weekly_report"]
-        );
+        assert_eq!(pick("country_codes+"), ["country_codes", "fct_orders", "stg_orders", "weekly_report"]);
     }
 
     #[test]
     fn at_takes_the_children_and_every_parent_of_those() {
         assert_eq!(
             pick("@dim_customers"),
-            [
-                "country_codes",
-                "crm.customers",
-                "dim_customers",
-                "fct_orders",
-                "stg_customers",
-                "stg_orders",
-                "weekly_report"
-            ]
+            ["country_codes", "crm.customers", "dim_customers", "fct_orders", "stg_customers", "stg_orders", "weekly_report"]
         );
     }
 
@@ -1689,10 +1631,7 @@ mod tests {
     fn an_intersection_meets_on_the_expanded_sets_not_the_seeds() {
         // Everything feeding both marts, which is why anyone writes this.
         // Intersecting the seeds instead would answer nothing at all.
-        assert_eq!(
-            pick("+dim_customers,+fct_orders"),
-            ["crm.customers", "dim_customers", "stg_customers"]
-        );
+        assert_eq!(pick("+dim_customers,+fct_orders"), ["crm.customers", "dim_customers", "stg_customers"]);
     }
 
     #[test]
@@ -1705,15 +1644,9 @@ mod tests {
     #[test]
     fn tests_take_part_only_when_they_are_switched_on() {
         assert_eq!(pick("tag:nightly"), ["stg_customers"]);
-        assert_eq!(
-            pick_with("tag:nightly", "", Tests::Eager),
-            ["not_null_dim_customers_id", "stg_customers"]
-        );
+        assert_eq!(pick_with("tag:nightly", "", Tests::Eager), ["not_null_dim_customers_id", "stg_customers"]);
         // Eager indirect selection: the test joins because its parent did.
-        assert_eq!(
-            pick_with("dim_customers", "", Tests::Eager),
-            ["dim_customers", "not_null_dim_customers_id"]
-        );
+        assert_eq!(pick_with("dim_customers", "", Tests::Eager), ["dim_customers", "not_null_dim_customers_id"]);
         assert_eq!(pick("dim_customers"), ["dim_customers"]);
     }
 
@@ -1725,20 +1658,14 @@ mod tests {
             v
         });
         // The route's own parameter joins whatever the line already carried.
-        assert_eq!(
-            pick_with("stg_customers stg_orders", "stg_orders", Tests::Excluded),
-            ["stg_customers"]
-        );
+        assert_eq!(pick_with("stg_customers stg_orders", "stg_orders", Tests::Excluded), ["stg_customers"]);
         assert_eq!(pick("resource_type:model --exclude package:shop"), ["helper"]);
     }
 
     #[test]
     fn a_term_that_finds_nothing_warns_and_says_why() {
         assert_eq!(warnings("no_such_model", Tests::Excluded), ["nothing matches `no_such_model`"]);
-        assert_eq!(
-            warnings("legacy", Tests::Excluded),
-            ["`legacy` matches only disabled nodes"]
-        );
+        assert_eq!(warnings("legacy", Tests::Excluded), ["`legacy` matches only disabled nodes"]);
         assert_eq!(
             warnings("not_null_dim_customers_id", Tests::Excluded),
             ["`not_null_dim_customers_id` matches only tests; switch tests on to see them"]
@@ -1756,10 +1683,7 @@ mod tests {
         assert!(pick("customers").is_empty());
         assert!(pick("crm.customers").is_empty(), "nor its fqn without the package");
         assert!(pick("shop.crm.*").is_empty());
-        assert_eq!(
-            warnings("customers", Tests::Excluded),
-            ["`customers` matches only sources, which dbt selects with `source:` alone"]
-        );
+        assert_eq!(warnings("customers", Tests::Excluded), ["`customers` matches only sources, which dbt selects with `source:` alone"]);
         assert_eq!(pick("source:crm.customers"), ["crm.customers"]);
         assert_eq!(pick("+stg_customers"), ["crm.customers", "stg_customers"], "a parent is reached as a parent");
     }
@@ -1798,10 +1722,7 @@ mod tests {
         assert!(expr.stripped);
         assert_eq!(expr.select, "stg_customers dim_customers");
         assert_eq!(expr.excluded, "tag:nightly");
-        assert_eq!(
-            pick("dbt ls -s \"stg_customers dim_customers\" --exclude tag:nightly"),
-            ["dim_customers"]
-        );
+        assert_eq!(pick("dbt ls -s \"stg_customers dim_customers\" --exclude tag:nightly"), ["dim_customers"]);
         assert_eq!(Expr::parse("--select stg_orders", "").unwrap().select, "stg_orders");
         assert_eq!(Expr::parse("--select=stg_orders", "").unwrap().select, "stg_orders");
         assert_eq!(Expr::parse("dbt build --select stg_orders+", "").unwrap().select, "stg_orders+");
@@ -1850,10 +1771,12 @@ mod tests {
                 "version": v, "latest_version": latest,
             })
         };
-        let plain = |name: &str| serde_json::json!({
-            "name": name, "resource_type": "model", "package_name": "shop",
-            "original_file_path": format!("models/{name}.sql"), "fqn": ["shop", name],
-        });
+        let plain = |name: &str| {
+            serde_json::json!({
+                "name": name, "resource_type": "model", "package_name": "shop",
+                "original_file_path": format!("models/{name}.sql"), "fqn": ["shop", name],
+            })
+        };
         let raw: RawManifest = serde_json::from_value(serde_json::json!({
             "nodes": {
                 "model.shop.totals.v1": model("totals", 1.into(), 2.into()),
@@ -1942,8 +1865,25 @@ mod tests {
     fn nothing_a_person_can_type_panics() {
         let g = graph();
         for line in [
-            "@@@", "+++", "é", "tag:é*", "@", "----", "a,", ",a", ":", "x:", "a b,c+2 @d+",
-            "models/../../etc/passwd", "\"", "'''", "*", "**", "?", "source:", "config.:x",
+            "@@@",
+            "+++",
+            "é",
+            "tag:é*",
+            "@",
+            "----",
+            "a,",
+            ",a",
+            ":",
+            "x:",
+            "a b,c+2 @d+",
+            "models/../../etc/passwd",
+            "\"",
+            "'''",
+            "*",
+            "**",
+            "?",
+            "source:",
+            "config.:x",
             &"a".repeat(MAX_LEN),
             &"+".repeat(200),
         ] {
@@ -1961,10 +1901,7 @@ mod tests {
         // Each criterion brings its own tests before the difference is taken,
         // as in dbt, so the one excluded by name cannot come back through its
         // parent. The first engine added tests after subtracting, and did.
-        assert_eq!(
-            pick_with("dim_customers --exclude not_null_dim_customers_id", "", Tests::Eager),
-            ["dim_customers"]
-        );
+        assert_eq!(pick_with("dim_customers --exclude not_null_dim_customers_id", "", Tests::Eager), ["dim_customers"]);
         // Excluding the parent takes its tests with it, since the exclude half
         // is eager too.
         assert!(pick_with("dim_customers --exclude dim_customers", "", Tests::Eager).is_empty());
@@ -1972,10 +1909,7 @@ mod tests {
 
     #[test]
     fn plus_walks_into_a_test_the_way_dbts_graph_does() {
-        assert_eq!(
-            pick_with("dim_customers+1", "", Tests::Eager),
-            ["dim_customers", "fct_orders", "not_null_dim_customers_id"]
-        );
+        assert_eq!(pick_with("dim_customers+1", "", Tests::Eager), ["dim_customers", "fct_orders", "not_null_dim_customers_id"]);
         // Off, a test is outside the universe and the walk never enters one.
         assert_eq!(pick("dim_customers+1"), ["dim_customers", "fct_orders"]);
     }
@@ -2032,16 +1966,7 @@ mod tests {
         // goes through never reaches, and here the tests.
         assert_eq!(
             pick("*"),
-            [
-                "country_codes",
-                "dim_customers",
-                "fct_orders",
-                "helper",
-                "orders_snap",
-                "stg_customers",
-                "stg_orders",
-                "weekly_report"
-            ]
+            ["country_codes", "dim_customers", "fct_orders", "helper", "orders_snap", "stg_customers", "stg_orders", "weekly_report"]
         );
     }
 

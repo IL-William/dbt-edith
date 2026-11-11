@@ -379,8 +379,11 @@ fn call<W: Write>(wire: &Wire<W>, jobs: &mpsc::Sender<Job>, id: Value, params: O
 /// text blocks, an empty one left out. Under `MAX_ANSWER`; a longer one is cut
 /// (0135).
 fn tool_result(outcome: &Outcome) -> Value {
-    let content: Vec<Value> =
-        [&outcome.out, &outcome.err].into_iter().filter(|text| !text.is_empty()).map(|text| json!({"type": "text", "text": text})).collect();
+    let content: Vec<Value> = [&outcome.out, &outcome.err]
+        .into_iter()
+        .filter(|text| !text.is_empty())
+        .map(|text| json!({"type": "text", "text": text}))
+        .collect();
     json!({"content": content, "isError": outcome.is_error})
 }
 
@@ -428,7 +431,19 @@ fn answer_capped(graphs: &mut Graphs, line: &str, stop: &AtomicBool, locate: imp
                     // The cache is merged into a copy, as for `--column`: the
                     // kept graph stays the manifest's.
                     let cache = rules.then_some(manifest_path.as_path());
-                    describe::respond_describe(&root, base.graph, Some(&jobs), Some(base.standings), &names, sql, compiled.as_deref(), cache, output, &mut out, &mut err)
+                    describe::respond_describe(
+                        &root,
+                        base.graph,
+                        Some(&jobs),
+                        Some(base.standings),
+                        &names,
+                        sql,
+                        compiled.as_deref(),
+                        cache,
+                        output,
+                        &mut out,
+                        &mut err,
+                    )
                 }
                 Err(why) => return Outcome::failed(&why),
             }
@@ -457,7 +472,17 @@ fn answer_capped(graphs: &mut Graphs, line: &str, stop: &AtomicBool, locate: imp
         Question::Overview { depth } => match graphs.base_and_jobs() {
             Ok((base, jobs)) => {
                 kept_warning(base.warning, &mut err);
-                describe::respond_overview(&root, &manifest_path, base.graph, Some(&jobs), catalog.as_deref(), depth, output, &mut out, &mut err)
+                describe::respond_overview(
+                    &root,
+                    &manifest_path,
+                    base.graph,
+                    Some(&jobs),
+                    catalog.as_deref(),
+                    depth,
+                    output,
+                    &mut out,
+                    &mut err,
+                )
             }
             Err(why) => return Outcome::failed(&why),
         },
@@ -514,9 +539,9 @@ fn narrowing(question: &Question, output: ls::Output) -> String {
         ls::Output::Name => "",
     };
     match question {
-        Question::Select(_, None) => format!(
-            "--count-by folder (or kind, tag, package) counts instead of listing; a narrower --select lists less{compact}"
-        ),
+        Question::Select(_, None) => {
+            format!("--count-by folder (or kind, tag, package) counts instead of listing; a narrower --select lists less{compact}")
+        }
         Question::Select(_, Some(_)) => "a smaller --depth with --count-by folder, or a narrower --select".to_string(),
         // The compiled SQL is usually the longest part of a card, so each of
         // the two file flags is named when it was given.
@@ -568,14 +593,15 @@ fn cut_to(answer: Outcome, cap: usize, narrow: &str, json: bool) -> Outcome {
     }
     let lines: Vec<&str> = answer.out.split_inclusive('\n').collect();
     let closing = |left: usize| {
-        let mut said = format!(
-            "answer cut at {cap} characters: {left} of {} lines left out. To ask for less: {narrow}.",
-            lines.len()
-        );
+        let mut said = format!("answer cut at {cap} characters: {left} of {} lines left out. To ask for less: {narrow}.", lines.len());
         if json && left == lines.len() {
             said.push_str(" Or leave out --output json.");
         }
-        if json { format!("{}\n", json!({"cut": said})) } else { format!("{said}\n") }
+        if json {
+            format!("{}\n", json!({"cut": said}))
+        } else {
+            format!("{said}\n")
+        }
     };
     // The line is longest with every line left out, its numbers only shorten,
     // so room for that one is room for any.
@@ -852,11 +878,7 @@ mod tests {
             ("2024-11-05", "2025-11-25"),
             ("2099-01-01", "2025-11-25"),
         ] {
-            s.request(
-                1,
-                "initialize",
-                json!({"protocolVersion": asked, "capabilities": {}, "clientInfo": {"name": "t", "version": "0"}}),
-            );
+            s.request(1, "initialize", json!({"protocolVersion": asked, "capabilities": {}, "clientInfo": {"name": "t", "version": "0"}}));
             let said = s.recv();
             let result = &said["result"];
             assert_eq!(result["protocolVersion"], answered, "{asked}");
@@ -1074,7 +1096,20 @@ mod tests {
         let (_, _, graph) = ls::open_with_catalog(&root, None, None).unwrap();
 
         let (mut out, mut err) = (Vec::new(), Vec::new());
-        describe::respond_describe(&root, &graph, None, None, &["orders".to_string()], false, None, None, ls::Output::Name, &mut out, &mut err).unwrap();
+        describe::respond_describe(
+            &root,
+            &graph,
+            None,
+            None,
+            &["orders".to_string()],
+            false,
+            None,
+            None,
+            ls::Output::Name,
+            &mut out,
+            &mut err,
+        )
+        .unwrap();
         let card = String::from_utf8(out).unwrap();
         assert!(card.contains("  jobs (1)"), "{card}");
         assert_eq!(blocks(&s.ask("--describe orders"))[0], card);
@@ -1095,7 +1130,11 @@ mod tests {
             assert!(!is_error(&said), "{said}");
             assert_eq!(blocks(&said)[0], String::from_utf8(out).unwrap());
         }
-        for (output, line) in [(ls::Output::Name, "--job-coverage"), (ls::Output::Json, "--job-coverage --output json"), (ls::Output::Compact, "--job-coverage --output compact")] {
+        for (output, line) in [
+            (ls::Output::Name, "--job-coverage"),
+            (ls::Output::Json, "--job-coverage --output json"),
+            (ls::Output::Compact, "--job-coverage --output compact"),
+        ] {
             let (mut out, mut err) = (Vec::new(), Vec::new());
             crate::job_coverage::respond_job_coverage(&root, &graph, None, output, &mut out, &mut err).unwrap();
             let said = s.ask(line);
@@ -1405,7 +1444,8 @@ mod tests {
                 parents.insert(id, json!([format!("model.jaffle_shop.long_model_name_{:02}", i - 1)]));
             }
         }
-        let manifest = json!({"metadata": {"project_name": "jaffle_shop", "adapter_type": "duckdb"}, "nodes": nodes, "parent_map": parents});
+        let manifest =
+            json!({"metadata": {"project_name": "jaffle_shop", "adapter_type": "duckdb"}, "nodes": nodes, "parent_map": parents});
         std::fs::write(dir.join("target/manifest.json"), manifest.to_string()).unwrap();
         dir
     }
@@ -1481,7 +1521,10 @@ mod tests {
         assert!(cut.is_error);
         let closing: Value = serde_json::from_str(&cut.out).expect("only the closing line, as JSON");
         let said = closing["cut"].as_str().unwrap();
-        assert!(said.contains("1 of 1 lines left out") && said.contains("--describe one node") && said.ends_with("Or leave out --output json."), "{said}");
+        assert!(
+            said.contains("1 of 1 lines left out") && said.contains("--describe one node") && said.ends_with("Or leave out --output json."),
+            "{said}"
+        );
         assert_eq!(cut.err, whole.err);
     }
 
@@ -1504,7 +1547,12 @@ mod tests {
         assert!(cut.is_error);
         let closing: Value = serde_json::from_str(&cut.out).expect("only the closing line, as JSON");
         let said = closing["cut"].as_str().unwrap();
-        assert!(said.contains("1 of 1 lines left out") && said.contains("--job NAME for one job") && said.ends_with("Or leave out --output json."), "{said}");
+        assert!(
+            said.contains("1 of 1 lines left out")
+                && said.contains("--job NAME for one job")
+                && said.ends_with("Or leave out --output json."),
+            "{said}"
+        );
         // The text form has lines to keep: cut, not refused.
         let text = capped(&dir, "--job-coverage", MAX_ANSWER);
         let cut = capped(&dir, "--job-coverage", text.err.chars().count() + 260);
@@ -1528,7 +1576,9 @@ mod tests {
             let cut = capped(&dir, line, 10);
             assert!(cut.out.contains("lines left out") && cut.out.contains(hint), "{line}: {}", cut.out);
         }
-        let Ok(mcp_line::Read::Ask { question, output }) = mcp_line::read("--column long_model_name_00.order_id --up all", &dir, None, None) else {
+        let Ok(mcp_line::Read::Ask { question, output }) =
+            mcp_line::read("--column long_model_name_00.order_id --up all", &dir, None, None)
+        else {
             panic!("a column is asked");
         };
         let hint = narrowing(&question, output);
@@ -1538,10 +1588,7 @@ mod tests {
             _ => panic!("{line} is a question"),
         };
         assert!(asked("--column m.c --output json").contains("--output compact is shorter"));
-        assert_eq!(
-            asked("-s m --columns"),
-            "a narrower --select, or --describe NAME --columns for fewer nodes"
-        );
+        assert_eq!(asked("-s m --columns"), "a narrower --select, or --describe NAME --columns for fewer nodes");
         assert!(asked("-s m --columns --output json").ends_with("fewer nodes; --output compact is shorter"));
         assert!(asked("-s m --columns --output compact").ends_with("fewer nodes; --output name lists names only"));
         assert_eq!(asked("--describe m --columns"), "fewer names");
@@ -1736,10 +1783,8 @@ mod tests {
             let dir = project("collin-writes");
             let bin = dir.join("bin");
             std::fs::create_dir_all(&bin).unwrap();
-            let writes = format!(
-                "echo '{}' > \"$out\"\necho '{{\"totals\":{{\"models\":1,\"parsed\":1}},\"models\":[]}}' > \"$report\"",
-                OLD_CACHE
-            );
+            let writes =
+                format!("echo '{}' > \"$out\"\necho '{{\"totals\":{{\"models\":1,\"parsed\":1}},\"models\":[]}}' > \"$report\"", OLD_CACHE);
             let stand = StandIn::new(&bin, &writes);
             let s = stand.serving(&dir);
             let before = tree(&dir);

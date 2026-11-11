@@ -232,13 +232,7 @@ fn refusal(bin: &Path) -> Option<Refusal> {
 /// usage and a non-zero exit. Bounded, like a run: a binary that does not
 /// answer must not hold up the menu.
 pub fn version(bin: &Path) -> Option<String> {
-    let mut child = Command::new(bin)
-        .arg("--version")
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()
-        .ok()?;
+    let mut child = Command::new(bin).arg("--version").stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::null()).spawn().ok()?;
     let started = Instant::now();
     loop {
         match child.try_wait() {
@@ -897,10 +891,7 @@ fn keep_tail<R: Read + Send + 'static>(from: R, tail: Arc<Mutex<VecDeque<String>
 
 /// collin's own complaint, `collin: <why>`, else its last line.
 fn explain(log: &[String]) -> Option<String> {
-    log.iter()
-        .rev()
-        .find_map(|l| l.strip_prefix("collin: ").map(str::to_string))
-        .or_else(|| log.last().cloned())
+    log.iter().rev().find_map(|l| l.strip_prefix("collin: ").map(str::to_string)).or_else(|| log.last().cloned())
 }
 
 /// `path` with this process's id and `.tmp` after its name, where a run
@@ -968,13 +959,11 @@ pub fn run_stoppable(job: &Job, deadline: Duration, stop: &AtomicBool) -> Result
         .spawn()
         .map_err(|e| (format!("cannot run {}: {e}", job.bin.display()), Vec::new()))?;
     let tail = Arc::new(Mutex::new(VecDeque::new()));
-    let readers: Vec<_> = [
-        child.stdout.take().map(|o| keep_tail(o, tail.clone())),
-        child.stderr.take().map(|e| keep_tail(e, tail.clone())),
-    ]
-    .into_iter()
-    .flatten()
-    .collect();
+    let readers: Vec<_> =
+        [child.stdout.take().map(|o| keep_tail(o, tail.clone())), child.stderr.take().map(|e| keep_tail(e, tail.clone()))]
+            .into_iter()
+            .flatten()
+            .collect();
 
     let started = Instant::now();
     let exit = loop {
@@ -1096,10 +1085,7 @@ pub(crate) mod tests {
         let own = |_: &Path| None;
         assert_eq!(locate_in(Some(&beside), Some(path_var.clone()), own).bin, Some(on_path.join(exe_name())));
         std::fs::write(beside.join(exe_name()), "").unwrap();
-        assert_eq!(
-            locate_in(Some(&beside), Some(path_var), own),
-            Located { bin: Some(beside.join(exe_name())), refused: None }
-        );
+        assert_eq!(locate_in(Some(&beside), Some(path_var), own), Located { bin: Some(beside.join(exe_name())), refused: None });
         assert_eq!(locate_in(None, None, own), Located::default());
         // A relative entry names a folder the current one decides: skipped,
         // as `program::on_path` skips it.
@@ -1325,14 +1311,27 @@ pub(crate) mod tests {
         let (safe, refused) = installs_checked(&root, mine() + 1);
         assert!(safe.is_empty(), "{safe:?}");
         let why = &refused[0].1;
-        assert!(why.contains(&format!("{} belongs to another account (uid {})", root.join("0.4.0").join("bin").join(exe_name()).display(), mine())), "{why}");
+        assert!(
+            why.contains(&format!(
+                "{} belongs to another account (uid {})",
+                root.join("0.4.0").join("bin").join(exe_name()).display(),
+                mine()
+            )),
+            "{why}"
+        );
         assert!(why.contains(&format!("sudo chown -R \"$(id -un)\" \"{0}/\" && chmod -R go-w \"{0}/\"", root.display())), "{why}");
     }
 
     #[test]
     fn an_install_a_group_or_everyone_can_write_is_refused_wherever_in_the_chain() {
         // The binary, each folder up to the root, and which of the two it is.
-        for (up, mode, who) in [(0, 0o775, "its group"), (0, 0o757, "everyone"), (1, 0o775, "its group"), (2, 0o777, "its group and everyone"), (3, 0o770, "its group")] {
+        for (up, mode, who) in [
+            (0, 0o775, "its group"),
+            (0, 0o757, "everyone"),
+            (1, 0o775, "its group"),
+            (2, 0o777, "its group and everyone"),
+            (3, 0o770, "its group"),
+        ] {
             let d = dir(&format!("shared-mode-{up}-{mode:o}"));
             let root = d.join("collin");
             let bin = install(&root, "0.4.0");
@@ -1615,7 +1614,8 @@ pub(crate) mod tests {
         assert!(sent.contains(r#""from_files":3,"set_aside":1"#), "{sent}");
 
         // A collin that does not read compiled files writes none of it, and the page gets none of it.
-        std::fs::write(&path, r#"{"totals":{"models":2,"parsed":2},"models":[{"unique_id":"model.shop.a","provenance":"parsed"}]}"#).unwrap();
+        std::fs::write(&path, r#"{"totals":{"models":2,"parsed":2},"models":[{"unique_id":"model.shop.a","provenance":"parsed"}]}"#)
+            .unwrap();
         let old = read_report(&path).unwrap();
         let sent = serde_json::to_string(&old.summary).unwrap() + &serde_json::to_string(&old.notes["model.shop.a"]).unwrap();
         assert!(!sent.contains("from_files") && !sent.contains("set_aside") && !sent.contains("sql_file"), "{sent}");

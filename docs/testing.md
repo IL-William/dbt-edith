@@ -31,6 +31,17 @@ cargo clippy --all-targets --locked -- -D warnings
 A lint that is wrong for one place is allowed on that item, with a
 one-line reason; three are allowed for the whole crate, in `Cargo.toml`.
 
+Only the Rust code is formatted, by `rustfmt.toml` (0172). It needs the
+`rustfmt` component, `rustup component add rustfmt`, and `check.sh` skips it
+without. Run `cargo fmt` to format, and this to list the files that differ:
+
+```
+cargo fmt --check -- -l
+```
+
+A conflict in a Rust file is never resolved by hand: take one side of the
+file and run `cargo fmt` again.
+
 The browser code has small harnesses that run on macOS with the system
 JavaScript engine, no install required, from the repository root:
 

@@ -19,25 +19,9 @@ use std::collections::{BTreeMap, BTreeSet};
 
 /// The kinds, in the order the page lists them. One model can be in several.
 pub const KINDS: [&str; 19] = [
-    "no_compiled_sql",
-    "compiled_elsewhere",
-    "catalog_elsewhere",
-    "columns_missing",
-    "columns_unexpected",
-    "yaml_stale",
-    "thin",
-    "undeclared_relation",
-    "unknown_parent",
-    "unbacked_read",
-    "merged_scope",
-    "relation_collision",
-    "short_upstream",
-    "phantom",
-    "parse_failed",
-    "ambiguous",
-    "engine_issue",
-    "lost_in_expression",
-    "lost_unresolved",
+    "no_compiled_sql", "compiled_elsewhere", "catalog_elsewhere", "columns_missing", "columns_unexpected", "yaml_stale", "thin",
+    "undeclared_relation", "unknown_parent", "unbacked_read", "merged_scope", "relation_collision", "short_upstream", "phantom",
+    "parse_failed", "ambiguous", "engine_issue", "lost_in_expression", "lost_unresolved",
 ];
 
 /// A model with two hundred missing columns says so in a count, not a list.
@@ -329,12 +313,8 @@ fn model_findings(m: &Value) -> Vec<(&'static str, String, Vec<String>)> {
     }
     // The engine's issues, when nothing above already explains the entry. A
     // model reading its own table is not one (collin's 0012).
-    let codes = once(
-        list(m, "issues")
-            .iter()
-            .filter(|i| i.get("self_reference").and_then(Value::as_bool) != Some(true))
-            .map(|i| text(i, "code")),
-    );
+    let codes =
+        once(list(m, "issues").iter().filter(|i| i.get("self_reference").and_then(Value::as_bool) != Some(true)).map(|i| text(i, "code")));
     if out.is_empty() && !codes.is_empty() {
         out.push(("engine_issue", String::new(), codes));
     }
@@ -407,8 +387,8 @@ mod tests {
             kinds(&o),
             [
                 "compiled_elsewhere", "catalog_elsewhere", "columns_missing", "columns_unexpected", "yaml_stale", "thin",
-                "undeclared_relation", "unknown_parent", "unbacked_read", "merged_scope", "relation_collision",
-                "short_upstream", "phantom", "ambiguous", "lost_in_expression", "lost_unresolved",
+                "undeclared_relation", "unknown_parent", "unbacked_read", "merged_scope", "relation_collision", "short_upstream",
+                "phantom", "ambiguous", "lost_in_expression", "lost_unresolved",
             ]
         );
         assert_eq!(of(&o, "catalog_elsewhere")[0].detail, "DB.DEV.A");
@@ -452,7 +432,9 @@ mod tests {
 
     #[test]
     fn entries_come_out_in_one_order_whatever_order_the_report_has() {
-        let a = overview(&json!({ "models": [{ "unique_id": "model.p.b", "yaml_stale": true }, { "unique_id": "model.p.a", "yaml_stale": true }] }));
+        let a = overview(
+            &json!({ "models": [{ "unique_id": "model.p.b", "yaml_stale": true }, { "unique_id": "model.p.a", "yaml_stale": true }] }),
+        );
         assert_eq!(of(&a, "yaml_stale").iter().map(|e| e.id.as_str()).collect::<Vec<_>>(), ["model.p.a", "model.p.b"]);
     }
 
@@ -494,8 +476,7 @@ mod tests {
         }));
         // The kinds are filed as before, for the comparison of two versions.
         assert_eq!(kinds(&o), ["yaml_stale"]);
-        let shape: Vec<(&str, usize, usize)> =
-            o.collin_findings.iter().map(|f| (f.category.as_str(), f.models.len(), f.columns)).collect();
+        let shape: Vec<(&str, usize, usize)> = o.collin_findings.iter().map(|f| (f.category.as_str(), f.models.len(), f.columns)).collect();
         assert_eq!(shape, [("yaml_out_of_date", 2, 0), ("table_older_than_code", 1, 3)]);
         assert_eq!(o.collin_findings[1].models[0].detail, "x, y, z");
         // The badge counts what the page lists: collin's findings, each model once.

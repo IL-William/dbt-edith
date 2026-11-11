@@ -59,7 +59,10 @@ mod tests {
     /// A span with the placeholders a reader fills in made plain words.
     fn plain(span: &str) -> String {
         // `model.column` first: `model` alone is the next one.
-        span.replace("model.column", "orders.amount").replace("name[,name...]", "orders,customers").replace("<flags>", "--overview").replace("model", "orders")
+        span.replace("model.column", "orders.amount")
+            .replace("name[,name...]", "orders,customers")
+            .replace("<flags>", "--overview")
+            .replace("model", "orders")
     }
 
     /// The commands a text cites: its code spans that begin with the program's
@@ -78,7 +81,11 @@ mod tests {
         text.split('`')
             .skip(1)
             .step_by(2)
-            .filter(|span| (span.starts_with('-') && span.contains(' ') && span.split(' ').any(|word| QUESTIONS.contains(&word))) || *span == "--job-order" || *span == "--job-coverage")
+            .filter(|span| {
+                (span.starts_with('-') && span.contains(' ') && span.split(' ').any(|word| QUESTIONS.contains(&word)))
+                    || *span == "--job-order"
+                    || *span == "--job-coverage"
+            })
             .map(plain)
             .collect()
     }
@@ -167,7 +174,9 @@ mod tests {
             // graph is built so that every recipe selects something.
             match crate::select::select(&g, &line, &exclude, crate::select::Tests::Eager) {
                 Err(e) => flaws.push(format!("-s '{line}' --exclude '{exclude}' does not resolve: {e:?}")),
-                Ok((_, resolved)) if resolved.nodes.is_empty() => flaws.push(format!("-s '{line}' --exclude '{exclude}' selects nothing: {:?}", resolved.warnings)),
+                Ok((_, resolved)) if resolved.nodes.is_empty() => {
+                    flaws.push(format!("-s '{line}' --exclude '{exclude}' selects nothing: {:?}", resolved.warnings))
+                }
                 Ok(_) => {}
             }
         }
@@ -379,7 +388,11 @@ mod tests {
             }
         }
         let mut err = Vec::new();
-        assert_eq!(write_to(Kind::Mcp, &mut Fails(std::io::ErrorKind::BrokenPipe), &mut err), 0, "a closed pipe is someone having read enough");
+        assert_eq!(
+            write_to(Kind::Mcp, &mut Fails(std::io::ErrorKind::BrokenPipe), &mut err),
+            0,
+            "a closed pipe is someone having read enough"
+        );
         assert!(err.is_empty());
         assert_eq!(write_to(Kind::Mcp, &mut Fails(std::io::ErrorKind::Other), &mut err), crate::ls::CANNOT_RUN);
         assert!(String::from_utf8(err).unwrap().starts_with("error: "));
@@ -391,7 +404,10 @@ mod tests {
             for key in crate::ls::CountBy::value_variants() {
                 let name = key.to_possible_value().unwrap().get_name().to_string();
                 let file = template(*kind);
-                assert!(file.contains(&format!("`{name}`")) || file.contains(&format!("--count-by {name}")), "{kind:?}: {name} is not in the skill");
+                assert!(
+                    file.contains(&format!("`{name}`")) || file.contains(&format!("--count-by {name}")),
+                    "{kind:?}: {name} is not in the skill"
+                );
             }
         }
     }

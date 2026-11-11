@@ -42,12 +42,7 @@ pub fn run_job_coverage(project: &Path, manifest: Option<&Path>, catalog: Option
 /// holds between calls (MCP); None reads them here, if the project has a
 /// sources file.
 pub(crate) fn respond_job_coverage(
-    root: &Path,
-    graph: &Graph,
-    kept: Option<&Known>,
-    output: Output,
-    out: &mut impl Write,
-    err: &mut impl Write,
+    root: &Path, graph: &Graph, kept: Option<&Known>, output: Output, out: &mut impl Write, err: &mut impl Write,
 ) -> io::Result<i32> {
     let code = job_coverage(root, graph, kept, output, out, err)?;
     out.flush()?;
@@ -55,11 +50,17 @@ pub(crate) fn respond_job_coverage(
     Ok(code)
 }
 
-fn job_coverage(root: &Path, graph: &Graph, kept: Option<&Known>, output: Output, out: &mut impl Write, err: &mut impl Write) -> io::Result<i32> {
+fn job_coverage(
+    root: &Path, graph: &Graph, kept: Option<&Known>, output: Output, out: &mut impl Write, err: &mut impl Write,
+) -> io::Result<i32> {
     let known = kept.cloned().unwrap_or_else(|| jobs::known(graph, root));
     let read = match known {
         Known::Absent => {
-            writeln!(err, "error: no {} in this project; name the sources in the Orchestration section of the settings", clean(jobs::SOURCES_FILE))?;
+            writeln!(
+                err,
+                "error: no {} in this project; name the sources in the Orchestration section of the settings",
+                clean(jobs::SOURCES_FILE)
+            )?;
             return Ok(CANNOT_RUN);
         }
         Known::Refused(why) => {
@@ -405,8 +406,10 @@ mod tests {
 
     const DAILY: &str = "dag_id: daily\nschedule: \"0 5 * * *\"\ntasks:\n  - task_id: marts\n    command: dbt run --select orders\n";
     const MANUAL: &str = "dag_id: manual\nschedule: null\ntasks:\n  - task_id: all\n    command: dbt run --select customers\n";
-    const LATE: &str = "dag_id: late\nschedule: \"{{ var.value.cron }}\"\ntasks:\n  - task_id: all\n    command: dbt run --select stg_customers\n";
-    const NOTHING: &str = "dag_id: nothing\nschedule: \"0 6 * * *\"\ntasks:\n  - task_id: none\n    command: dbt run --select tag:no_such_tag\n";
+    const LATE: &str =
+        "dag_id: late\nschedule: \"{{ var.value.cron }}\"\ntasks:\n  - task_id: all\n    command: dbt run --select stg_customers\n";
+    const NOTHING: &str =
+        "dag_id: nothing\nschedule: \"0 6 * * *\"\ntasks:\n  - task_id: none\n    command: dbt run --select tag:no_such_tag\n";
 
     /// Every list of the answer holds something: orders runs on a clock,
     /// customers only in a job nothing starts, stg_customers only in one
@@ -414,7 +417,11 @@ mod tests {
     /// orders_summary in no job, int_orders is ephemeral, and one step
     /// selects nothing.
     fn every_list(tag: &str) -> std::path::PathBuf {
-        project(tag, &["dags"], &[("dags/daily.yml", DAILY), ("dags/manual.yml", MANUAL), ("dags/late.yml", LATE), ("dags/nothing.yml", NOTHING)])
+        project(
+            tag,
+            &["dags"],
+            &[("dags/daily.yml", DAILY), ("dags/manual.yml", MANUAL), ("dags/late.yml", LATE), ("dags/nothing.yml", NOTHING)],
+        )
     }
 
     #[test]
@@ -450,7 +457,10 @@ mod tests {
         let keys: Vec<&str> = json.as_object().unwrap().keys().map(String::as_str).collect();
         assert_eq!(keys, ["configured", "empty", "ephemeral", "never", "total", "unread", "unresolved", "unscheduled"]);
         assert_eq!((json["configured"].clone(), json["total"].clone()), (json!(true), json!(6)));
-        assert_eq!(json["never"][0], json!({"id": "model.jaffle_shop.orders_summary", "name": "orders_summary", "kind": "model", "folder": "models/marts"}));
+        assert_eq!(
+            json["never"][0],
+            json!({"id": "model.jaffle_shop.orders_summary", "name": "orders_summary", "kind": "model", "folder": "models/marts"})
+        );
         assert_eq!(json["never"][2]["kind"], "seed");
         let step = &json["empty"][0];
         let keys: Vec<&str> = step.as_object().unwrap().keys().map(String::as_str).collect();
@@ -508,10 +518,25 @@ mod tests {
     fn the_sentence_is_the_pages() {
         let view = |total, never, unscheduled, unread| {
             let rows = |n: usize| {
-                (0..n).map(|i| Row { id: format!("model.p.m{i}"), name: format!("m{i}"), kind: "model", folder: String::new(), materialized: String::new() }).collect::<Vec<_>>()
+                (0..n)
+                    .map(|i| Row {
+                        id: format!("model.p.m{i}"),
+                        name: format!("m{i}"),
+                        kind: "model",
+                        folder: String::new(),
+                        materialized: String::new(),
+                    })
+                    .collect::<Vec<_>>()
             };
             View::of(
-                Coverage { configured: true, total, never: rows(never), unscheduled: rows(unscheduled), unread: rows(unread), ..Default::default() },
+                Coverage {
+                    configured: true,
+                    total,
+                    never: rows(never),
+                    unscheduled: rows(unscheduled),
+                    unread: rows(unread),
+                    ..Default::default()
+                },
                 None,
                 0,
                 false,
@@ -636,7 +661,10 @@ mod tests {
         assert_eq!((code, out.as_str(), err.as_str()), (ANSWERED, "no sources in .dbt-edith/jobs.yml\n", ""));
         // Compact keeps its header, and the sentence goes to stderr.
         let (out, err, code) = ask(&root, Output::Compact);
-        assert_eq!((code, out.as_str(), err.as_str()), (ANSWERED, "list\tname\twhere\twhy\n", "warning: no sources in .dbt-edith/jobs.yml\n"));
+        assert_eq!(
+            (code, out.as_str(), err.as_str()),
+            (ANSWERED, "list\tname\twhere\twhy\n", "warning: no sources in .dbt-edith/jobs.yml\n")
+        );
         // What the project holds is true whatever the jobs: kept.
         let json: serde_json::Value = serde_json::from_str(&ask(&root, Output::Json).0).unwrap();
         assert_eq!((json["configured"].clone(), json["total"].clone(), json["never"].clone()), (json!(false), json!(6), json!([])));
@@ -650,7 +678,12 @@ mod tests {
         for output in [Output::Name, Output::Json, Output::Compact] {
             let (out, err, code) = ask(&none, output);
             assert_eq!((out.as_str(), code), ("", CANNOT_RUN));
-            assert!(err.starts_with("error: no .dbt-edith/jobs.yml in this project; name the sources in the Orchestration section of the settings\n"), "{err}");
+            assert!(
+                err.starts_with(
+                    "error: no .dbt-edith/jobs.yml in this project; name the sources in the Orchestration section of the settings\n"
+                ),
+                "{err}"
+            );
         }
         let root = project("broken", &["dags"], &[]);
         std::fs::write(root.join(".dbt-edith/jobs.yml"), "jobs: nope\n").unwrap();

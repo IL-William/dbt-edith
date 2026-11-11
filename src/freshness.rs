@@ -198,10 +198,7 @@ pub fn newest_input(root: &Path, dir: &str) -> Option<(u64, String)> {
 /// Whether git has this path as changed. Entries ending in `/` are how git
 /// reports a collapsed directory of untracked files, so a prefix counts too.
 pub fn is_dirty(path: &str, git: &GitInfo) -> bool {
-    git.modified
-        .iter()
-        .chain(git.untracked.iter())
-        .any(|e| e == path || (e.ends_with('/') && path.starts_with(e.as_str())))
+    git.modified.iter().chain(git.untracked.iter()).any(|e| e == path || (e.ends_with('/') && path.starts_with(e.as_str())))
 }
 
 /// Sorts the paths newer than the manifest into the user's own uncommitted work
@@ -259,19 +256,12 @@ pub fn project_files(graph: &Graph) -> Vec<String> {
 /// out: their paths are relative to the package, not to the project, so every
 /// one of them would read as a file that has gone missing.
 pub fn check(root: &Path, manifest_at: u64, node_files: &[String], git: &GitInfo) -> Freshness {
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0);
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
 
     // Asked only of a repository: outside one every git call would spawn a
     // subprocess to fail, four times over, on a poll that repeats every few
     // seconds. The badge works without git, it just has less to say.
-    let (head, drift) = if git.repo {
-        (crate::git::head(root), crate::git::drift(root, &git.git_dir))
-    } else {
-        Default::default()
-    };
+    let (head, drift) = if git.repo { (crate::git::head(root), crate::git::drift(root, &git.git_dir)) } else { Default::default() };
     let mut f = Freshness {
         manifest_at,
         age_secs: now.saturating_sub(manifest_at),
@@ -309,15 +299,8 @@ pub fn check(root: &Path, manifest_at: u64, node_files: &[String], git: &GitInfo
     // `dbt_project.yml` names that file as its own, and a file the walk never
     // looked at cannot be reported as one it failed to find.
     let walked = |p: &str| p.split_once('/').is_some_and(|(top, _)| dirs.contains(top));
-    let gone: Vec<String> = if w.capped {
-        Vec::new()
-    } else {
-        files
-            .iter()
-            .filter(|p| walked(p) && !w.seen.contains(**p))
-            .map(|p| p.to_string())
-            .collect()
-    };
+    let gone: Vec<String> =
+        if w.capped { Vec::new() } else { files.iter().filter(|p| walked(p) && !w.seen.contains(**p)).map(|p| p.to_string()).collect() };
 
     f.edited_n = edited.len();
     f.committed_n = committed.len();

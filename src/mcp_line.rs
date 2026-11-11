@@ -56,29 +56,8 @@ pub const HELP: &str = concat!(
 /// The flags a line may carry, by clap argument id: the questions and what
 /// shapes their answer.
 const ALLOWED: [&str; 23] = [
-    "select",
-    "exclude",
-    "selector",
-    "column",
-    "up",
-    "down",
-    "stop_at",
-    "indirect",
-    "rules",
-    "casts",
-    "column_tool",
-    "run_collin",
-    "describe",
-    "sql",
-    "compiled_sql",
-    "columns",
-    "overview",
-    "job",
-    "job_order",
-    "job_coverage",
-    "count_by",
-    "depth",
-    "output",
+    "select", "exclude", "selector", "column", "up", "down", "stop_at", "indirect", "rules", "casts", "column_tool", "run_collin",
+    "describe", "sql", "compiled_sql", "columns", "overview", "job", "job_order", "job_coverage", "count_by", "depth", "output",
 ];
 
 /// The flags that are refused on purpose, with why. `project` has a sentence
@@ -417,15 +396,23 @@ mod tests {
     #[test]
     fn each_mode_reads_to_its_question_and_the_flags_beside_it() {
         let (q, output) = asked("-s 'stg_orders+1' --exclude resource_type:test --output compact");
-        assert!(matches!(q, Question::Select(crate::ls::Query::Line { ref select, ref exclude }, None) if select == "stg_orders+1" && exclude == "resource_type:test"));
+        assert!(
+            matches!(q, Question::Select(crate::ls::Query::Line { ref select, ref exclude }, None) if select == "stg_orders+1" && exclude == "resource_type:test")
+        );
         assert_eq!(output, Output::Compact);
         assert!(matches!(asked("--select=orders").0, Question::Select(..)), "the = form");
         assert!(matches!(asked("--selector nightly").0, Question::Select(crate::ls::Query::Named(ref n), None) if n == "nightly"));
-        assert!(matches!(asked("--describe orders,customers --sql").0, Question::Describe { ref names, sql: true, compiled_sql: false, .. } if names.len() == 2));
+        assert!(
+            matches!(asked("--describe orders,customers --sql").0, Question::Describe { ref names, sql: true, compiled_sql: false, .. } if names.len() == 2)
+        );
         assert!(matches!(asked("--describe orders --compiled-sql").0, Question::Describe { sql: false, compiled_sql: true, .. }));
         assert!(matches!(asked("--describe orders,customers --columns").0, Question::DescribeColumns { ref names } if names.len() == 2));
-        assert!(matches!(asked("-s orders+ --exclude resource_type:test --columns --output compact").0, Question::SelectColumns(crate::ls::Query::Line { ref select, ref exclude }) if select == "orders+" && exclude == "resource_type:test"));
-        assert!(matches!(asked("--selector nightly --columns").0, Question::SelectColumns(crate::ls::Query::Named(ref n)) if n == "nightly"));
+        assert!(
+            matches!(asked("-s orders+ --exclude resource_type:test --columns --output compact").0, Question::SelectColumns(crate::ls::Query::Line { ref select, ref exclude }) if select == "orders+" && exclude == "resource_type:test")
+        );
+        assert!(
+            matches!(asked("--selector nightly --columns").0, Question::SelectColumns(crate::ls::Query::Named(ref n)) if n == "nightly")
+        );
         assert!(matches!(asked("--overview --depth 1 --output=json").0, Question::Overview { depth: 1 }));
         assert!(matches!(asked("--job jaffle_daily --output json").0, Question::Job { ref name } if name == "jaffle_daily"));
         assert!(matches!(asked("--job-order --output json").0, Question::JobOrder));
@@ -614,7 +601,10 @@ mod tests {
 
     /// The flags named in a text: `--word` and `-w` as the tool's help writes them.
     fn flags_in(text: &str) -> BTreeSet<String> {
-        text.split(|c: char| !(c.is_ascii_alphanumeric() || c == '-')).filter(|w| w.starts_with("--") && w.len() > 2).map(str::to_string).collect()
+        text.split(|c: char| !(c.is_ascii_alphanumeric() || c == '-'))
+            .filter(|w| w.starts_with("--") && w.len() > 2)
+            .map(str::to_string)
+            .collect()
     }
 
     #[test]

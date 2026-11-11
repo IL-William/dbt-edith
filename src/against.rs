@@ -487,7 +487,15 @@ pub fn candidates(here: &Fingerprint, there: &Graph, places: &HashMap<(String, S
     // not a comparison.
     reached.sort_by_cached_key(|c| {
         let (model, id, column) = by_name(&c.at);
-        (std::cmp::Reverse(c.hits), apart(c), c.hops, same_name(&here.named, there, c.at), model.to_string(), id.to_string(), column.to_string())
+        (
+            std::cmp::Reverse(c.hits),
+            apart(c),
+            c.hops,
+            same_name(&here.named, there, c.at),
+            model.to_string(),
+            id.to_string(),
+            column.to_string(),
+        )
     });
     reached.truncate(CANDIDATES);
     (reached, considered)
@@ -713,10 +721,7 @@ fn print_out(graph: &Graph, shared: &HashSet<&str>, fp: &Fingerprint) -> PrintOu
 
 /// The databases the two projects render for the tables a fingerprint reads.
 fn tables_of(
-    fp: &Fingerprint,
-    here: &Graph,
-    places_here: &HashMap<(String, String), Vec<u32>>,
-    there: &Graph,
+    fp: &Fingerprint, here: &Graph, places_here: &HashMap<(String, String), Vec<u32>>, there: &Graph,
     places_there: &HashMap<(String, String), Vec<u32>>,
 ) -> Vec<TableOut> {
     let mut seen: BTreeSet<(String, String)> = fp.value.keys().chain(fp.rows.iter()).map(|s| (s.schema.clone(), s.table.clone())).collect();
@@ -755,7 +760,11 @@ fn quoted(texts: &[TextOut]) -> String {
 }
 
 fn tables_word(n: usize) -> String {
-    if n == 1 { "1 source table".to_string() } else { format!("{n} source tables") }
+    if n == 1 {
+        "1 source table".to_string()
+    } else {
+        format!("{n} source tables")
+    }
 }
 
 /// The text card: one fact a line, the word that tells it apart first, a list
@@ -852,7 +861,9 @@ fn render(card: &Card, trimmed: &mut bool, rules_cut: &mut bool) -> Vec<String> 
 
 /// Compares the column `ask` names in `here` with the other project `there`,
 /// and prints the card. The exit code, or the write that failed.
-pub(crate) fn respond(here: &Graph, there: &Graph, ask: &Ask, output: Output, out: &mut impl Write, err: &mut impl Write) -> io::Result<i32> {
+pub(crate) fn respond(
+    here: &Graph, there: &Graph, ask: &Ask, output: Output, out: &mut impl Write, err: &mut impl Write,
+) -> io::Result<i32> {
     let focus = match ls_column::focus(here, &ask.column) {
         Ok(at) => at,
         Err(why) => {
@@ -1027,18 +1038,15 @@ mod tests {
 
     /// A project of sources, models and seeds named by unique_id, with collin's
     /// edges, rules and gaps merged in.
-    fn project(sources: &[Src], models: &[String], seeds: &[&str], edges: Vec<RawColEdge>, rules: Vec<RawRule>, partial: Vec<RawPartial>) -> Graph {
+    fn project(
+        sources: &[Src], models: &[String], seeds: &[&str], edges: Vec<RawColEdge>, rules: Vec<RawRule>, partial: Vec<RawPartial>,
+    ) -> Graph {
         project_with(sources, models, seeds, edges, rules, partial, Vec::new())
     }
 
     /// `project`, with the columns collin says the SQL sets from no column.
     fn project_with(
-        sources: &[Src],
-        models: &[String],
-        seeds: &[&str],
-        edges: Vec<RawColEdge>,
-        rules: Vec<RawRule>,
-        partial: Vec<RawPartial>,
+        sources: &[Src], models: &[String], seeds: &[&str], edges: Vec<RawColEdge>, rules: Vec<RawRule>, partial: Vec<RawPartial>,
         roots: Vec<crate::collin::RawRoot>,
     ) -> Graph {
         let named = |id: &str| id.rsplit('.').next().unwrap().to_string();
@@ -1098,7 +1106,13 @@ mod tests {
             ],
             vec![
                 rule("model.shop.stg_orders", "WHERE", "status <> 'cancelled'", false, &[(ORDERS, "status")]),
-                rule("model.shop.orders", "QUALIFY", "row_number() over (partition by id order by updated_at desc) = 1", false, &[(ORDERS, "id"), (ORDERS, "updated_at")]),
+                rule(
+                    "model.shop.orders",
+                    "QUALIFY",
+                    "row_number() over (partition by id order by updated_at desc) = 1",
+                    false,
+                    &[(ORDERS, "id"), (ORDERS, "updated_at")],
+                ),
                 rule("model.shop.orders", "JOIN", "o.customer_id = c.id", false, &[("rel:RAW.PUBLIC.CUSTOMERS", "id")]),
             ],
             Vec::new(),
@@ -1247,7 +1261,14 @@ mod tests {
         // The rules are said to be set against the column named.
         assert!(out.contains("  rules, against fct_orders.gross\n"), "{out}");
         // A pair that shares nothing is still the pair asked for.
-        let h = project(&[Src(ORDERS, "raw", "orders", "RAW", "D")], &names(&["model.shop.o"]), &[], vec![edge(ORDERS, "x", "model.shop.o", "x", "rename")], Vec::new(), Vec::new());
+        let h = project(
+            &[Src(ORDERS, "raw", "orders", "RAW", "D")],
+            &names(&["model.shop.o"]),
+            &[],
+            vec![edge(ORDERS, "x", "model.shop.o", "x", "rename")],
+            Vec::new(),
+            Vec::new(),
+        );
         let a = Ask { with: Some("fct_orders.gross".into()), ..ask("o.x") };
         let (out, _, _) = run(&h, &there(), &a, Output::Name);
         assert!(out.contains("fct_orders.gross   shares 0 of 1   missing RAW.ORDERS.X   extra RAW.ORDERS.AMOUNT"), "{out}");
@@ -1278,7 +1299,10 @@ mod tests {
         );
         let (out, err, _) = run(&here(), &no_rules, &ask("orders.amount"), Output::Name);
         assert!(out.ends_with("  rules, there   no rules in the cache\n"), "{out}");
-        assert!(err.contains("note: rules, there: no rules in this cache: it was written by a collin before 0.11.0, or without --indirect"), "{err}");
+        assert!(
+            err.contains("note: rules, there: no rules in this cache: it was written by a collin before 0.11.0, or without --indirect"),
+            "{err}"
+        );
         assert!(!out.contains("rules, here only") && !out.contains("rules, both"), "{out}");
         let (out, _, _) = run(&no_rules, &no_rules, &ask("fct_orders.amount"), Output::Name);
         assert!(out.ends_with("  rules, here   no rules in the cache\n  rules, there   no rules in the cache\n"), "{out}");
@@ -1334,7 +1358,14 @@ mod tests {
             "orders.region  against ../legacy\n  sources, value   none\n  not a shared source   country_codes.code\n  matches   none: it reads no source column\n"
         );
         // Sources the other project does not read: a different reason.
-        let other = project(&[Src("source.legacy.erp.invoices", "erp", "invoices", "ERP", "D")], &names(&["model.legacy.m"]), &[], vec![edge("source.legacy.erp.invoices", "a", "model.legacy.m", "a", "rename")], Vec::new(), Vec::new());
+        let other = project(
+            &[Src("source.legacy.erp.invoices", "erp", "invoices", "ERP", "D")],
+            &names(&["model.legacy.m"]),
+            &[],
+            vec![edge("source.legacy.erp.invoices", "a", "model.legacy.m", "a", "rename")],
+            Vec::new(),
+            Vec::new(),
+        );
         let places = other.sources_by_place();
         let (_, considered) = candidates(&fingerprint(&here(), at(&here(), "model.shop.orders", "amount")), &other, &places);
         assert_eq!(considered, 0);
@@ -1342,7 +1373,14 @@ mod tests {
 
     #[test]
     fn no_shared_table_ends_on_one_line_of_stderr_and_exit_zero() {
-        let other = project(&[Src("source.legacy.erp.invoices", "erp", "invoices", "ERP", "D")], &names(&["model.legacy.m"]), &[], vec![edge("source.legacy.erp.invoices", "a", "model.legacy.m", "a", "rename")], Vec::new(), Vec::new());
+        let other = project(
+            &[Src("source.legacy.erp.invoices", "erp", "invoices", "ERP", "D")],
+            &names(&["model.legacy.m"]),
+            &[],
+            vec![edge("source.legacy.erp.invoices", "a", "model.legacy.m", "a", "rename")],
+            Vec::new(),
+            Vec::new(),
+        );
         let (out, err, code) = run(&here(), &other, &ask("orders.amount"), Output::Name);
         assert_eq!((out.as_str(), code), ("", ANSWERED));
         assert_eq!(err, "no shared source table: this project has 3 source tables, the other 1 source table, and no table is in both\n");
@@ -1383,7 +1421,14 @@ mod tests {
         let models: Vec<String> = (0..25).map(|i| format!("model.legacy.m{i:02}")).collect();
         let edges = models.iter().map(|m| edge(LEGACY_ORDERS, "amount", m, "amount", "rename")).collect();
         let t = project(&[Src(LEGACY_ORDERS, "raw", "orders", "raw", "D")], &models, &[], edges, Vec::new(), Vec::new());
-        let h = project(&[Src(ORDERS, "raw", "orders", "RAW", "D")], &names(&["model.shop.orders"]), &[], vec![edge(ORDERS, "amount", "model.shop.orders", "amount", "rename")], Vec::new(), Vec::new());
+        let h = project(
+            &[Src(ORDERS, "raw", "orders", "RAW", "D")],
+            &names(&["model.shop.orders"]),
+            &[],
+            vec![edge(ORDERS, "amount", "model.shop.orders", "amount", "rename")],
+            Vec::new(),
+            Vec::new(),
+        );
         let (out, _, _) = run(&h, &t, &ask("orders.amount"), Output::Json);
         let v: serde_json::Value = serde_json::from_str(&out).unwrap();
         assert_eq!(v["candidates_considered"], 25);
@@ -1495,7 +1540,8 @@ mod tests {
             Vec::new(),
         );
         let (out, err, _) = run(&h, &t, &ask("orders.amount"), Output::Name);
-        let rule_lines = out.lines().skip_while(|l| !l.starts_with("  rules, both sides")).skip(1).take_while(|l| l.starts_with("    ")).count();
+        let rule_lines =
+            out.lines().skip_while(|l| !l.starts_with("  rules, both sides")).skip(1).take_while(|l| l.starts_with("    ")).count();
         assert_eq!(rule_lines, LISTED + 1, "{out}");
         assert!(out.contains("\n    +3\n"), "{out}");
         assert!(err.contains("a group of rules is cut at 12 lines") && err.contains("--output json"), "{err}");
@@ -1552,7 +1598,14 @@ mod tests {
             Vec::new(),
             Vec::new(),
         );
-        let h = project(&[Src(ORDERS, "raw", "orders", "RAW", "D")], &names(&["model.shop.orders"]), &[], vec![edge(ORDERS, "amount", "model.shop.orders", "amount", "rename")], Vec::new(), Vec::new());
+        let h = project(
+            &[Src(ORDERS, "raw", "orders", "RAW", "D")],
+            &names(&["model.shop.orders"]),
+            &[],
+            vec![edge(ORDERS, "amount", "model.shop.orders", "amount", "rename")],
+            Vec::new(),
+            Vec::new(),
+        );
         let fp = fingerprint(&h, at(&h, "model.shop.orders", "amount"));
         let (found, _) = candidates(&fp, &t, &t.sources_by_place());
         assert_eq!(found.len(), 1);
@@ -1625,7 +1678,14 @@ mod tests {
     /// this one, then the model too, though the alphabet would put another first.
     #[test]
     fn candidates_the_lineage_cannot_tell_apart_go_to_the_one_named_alike() {
-        let h = project(&[Src(ORDERS, "raw", "orders", "RAW", "D")], &names(&["model.shop.orders"]), &[], vec![edge(ORDERS, "amount", "model.shop.orders", "amount", "rename")], Vec::new(), Vec::new());
+        let h = project(
+            &[Src(ORDERS, "raw", "orders", "RAW", "D")],
+            &names(&["model.shop.orders"]),
+            &[],
+            vec![edge(ORDERS, "amount", "model.shop.orders", "amount", "rename")],
+            Vec::new(),
+            Vec::new(),
+        );
         let mut models = names(&["model.legacy.a_orders", "model.legacy.orders", "model.legacy.b_orders"]);
         let mut edges: Vec<RawColEdge> = Vec::new();
         for m in &models {
@@ -1645,7 +1705,14 @@ mod tests {
 
     #[test]
     fn with_naming_a_pair_with_no_shared_table_says_so_on_stderr() {
-        let other = project(&[Src("source.legacy.erp.invoices", "erp", "invoices", "ERP", "D")], &names(&["model.legacy.m"]), &[], vec![edge("source.legacy.erp.invoices", "a", "model.legacy.m", "a", "rename")], Vec::new(), Vec::new());
+        let other = project(
+            &[Src("source.legacy.erp.invoices", "erp", "invoices", "ERP", "D")],
+            &names(&["model.legacy.m"]),
+            &[],
+            vec![edge("source.legacy.erp.invoices", "a", "model.legacy.m", "a", "rename")],
+            Vec::new(),
+            Vec::new(),
+        );
         let a = Ask { with: Some("m.a".into()), ..ask("orders.amount") };
         let (out, err, code) = run(&here(), &other, &a, Output::Name);
         assert_eq!((out.as_str(), code), ("", ANSWERED));
@@ -1682,7 +1749,10 @@ mod tests {
         assert_eq!(best["extra"], json!([{ "schema": "raw", "table": "orders", "column": "tax" }]));
         assert_eq!(best["fingerprint"]["value"][0]["class"], "computed");
         let rules = &v["rules"];
-        assert_eq!((rules["against"].as_str(), &rules["here_in_cache"], &rules["there_in_cache"]), (Some("fct_orders.amount"), &json!(true), &json!(true)));
+        assert_eq!(
+            (rules["against"].as_str(), &rules["here_in_cache"], &rules["there_in_cache"]),
+            (Some("fct_orders.amount"), &json!(true), &json!(true))
+        );
         assert_eq!(rules["both"][0]["clause"], "WHERE");
         assert_eq!(rules["both"][0]["here"], json!([{ "text": "status <> 'cancelled'", "cut": false }]));
         assert_eq!(rules["there_only"][0]["sources"], json!([{ "schema": "raw", "table": "orders", "column": "deleted" }]));
@@ -1699,7 +1769,14 @@ mod tests {
         let models = names(&["model.shop.wide"]);
         let edges = (0..15).map(|i| edge(ORDERS, &format!("c{i:02}"), "model.shop.wide", "total", "transform")).collect();
         let h = project(&[Src(ORDERS, "raw", "orders", "RAW", "D")], &models, &[], edges, Vec::new(), Vec::new());
-        let t = project(&[Src(LEGACY_ORDERS, "raw", "orders", "raw", "D")], &names(&["model.legacy.m"]), &[], vec![edge(LEGACY_ORDERS, "c00", "model.legacy.m", "x", "rename")], Vec::new(), Vec::new());
+        let t = project(
+            &[Src(LEGACY_ORDERS, "raw", "orders", "raw", "D")],
+            &names(&["model.legacy.m"]),
+            &[],
+            vec![edge(LEGACY_ORDERS, "c00", "model.legacy.m", "x", "rename")],
+            Vec::new(),
+            Vec::new(),
+        );
         let (out, err, _) = run(&h, &t, &ask("wide.total"), Output::Name);
         assert!(out.contains("RAW.ORDERS.C11 computed, +3\n"), "{out}");
         assert!(err.contains("a list is cut at 12 names") && err.contains("--output json"), "{err}");
@@ -1713,9 +1790,17 @@ mod tests {
         let mut models = names(&["model.legacy.stg_orders"]);
         models.extend((0..25).map(|i| format!("model.legacy.agg_{i:02}")));
         let mut edges = vec![edge(LEGACY_ORDERS, "amount", "model.legacy.stg_orders", "amount", "rename")];
-        edges.extend((0..25).map(|i| edge("model.legacy.stg_orders", "amount", &format!("model.legacy.agg_{i:02}"), "amount", "aggregate")));
+        edges
+            .extend((0..25).map(|i| edge("model.legacy.stg_orders", "amount", &format!("model.legacy.agg_{i:02}"), "amount", "aggregate")));
         let t = project(&[Src(LEGACY_ORDERS, "raw", "orders", "raw", "D")], &models, &[], edges, Vec::new(), Vec::new());
-        let h = project(&[Src(ORDERS, "raw", "orders", "RAW", "D")], &names(&["model.shop.orders"]), &[], vec![edge(ORDERS, "amount", "model.shop.orders", "amount", "rename")], Vec::new(), Vec::new());
+        let h = project(
+            &[Src(ORDERS, "raw", "orders", "RAW", "D")],
+            &names(&["model.shop.orders"]),
+            &[],
+            vec![edge(ORDERS, "amount", "model.shop.orders", "amount", "rename")],
+            Vec::new(),
+            Vec::new(),
+        );
         let (out, _, _) = run(&h, &t, &ask("orders.amount"), Output::Json);
         let v: serde_json::Value = serde_json::from_str(&out).unwrap();
         assert_eq!(v["candidates_considered"], 26);
@@ -1742,7 +1827,14 @@ mod tests {
             Vec::new(),
             Vec::new(),
         );
-        let h = project(&[Src(ORDERS, "raw", "orders", "RAW", "D")], &names(&["model.shop.orders"]), &[], vec![edge(ORDERS, "amount", "model.shop.orders", "amount", "rename")], Vec::new(), Vec::new());
+        let h = project(
+            &[Src(ORDERS, "raw", "orders", "RAW", "D")],
+            &names(&["model.shop.orders"]),
+            &[],
+            vec![edge(ORDERS, "amount", "model.shop.orders", "amount", "rename")],
+            Vec::new(),
+            Vec::new(),
+        );
         let (out, _, _) = run(&h, &t, &ask("orders.amount"), Output::Name);
         let order: Vec<&str> = out.lines().filter(|l| l.contains("shares")).map(|l| l.trim().split("   ").next().unwrap()).collect();
         assert_eq!(order, ["z_copy.amount", "a_calc.amount"], "{out}");
@@ -1805,7 +1897,11 @@ mod tests {
     /// below by value, filter and join-key edges, with rules on every model.
     fn layered(pkg: &str, layers: usize, width: usize, cols: usize) -> Graph {
         let src_ids: Vec<String> = (0..width).map(|t| format!("source.{pkg}.raw.t{t}")).collect();
-        let srcs: Vec<Src> = src_ids.iter().enumerate().map(|(t, id)| Src(Box::leak(id.clone().into_boxed_str()), "raw", Box::leak(format!("t{t}").into_boxed_str()), "RAW", "D")).collect();
+        let srcs: Vec<Src> = src_ids
+            .iter()
+            .enumerate()
+            .map(|(t, id)| Src(Box::leak(id.clone().into_boxed_str()), "raw", Box::leak(format!("t{t}").into_boxed_str()), "RAW", "D"))
+            .collect();
         let mut models = Vec::new();
         let mut edges = Vec::new();
         let mut rules = Vec::new();

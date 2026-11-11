@@ -53,10 +53,7 @@ fn parse_shell(line: &str) -> Option<ShellSpec> {
     }
     if let Some(rest) = line.strip_prefix('"') {
         let (program, args) = rest.split_once('"').unwrap_or((rest, ""));
-        return Some(ShellSpec {
-            program: program.to_string(),
-            args: args.split_whitespace().map(str::to_string).collect(),
-        });
+        return Some(ShellSpec { program: program.to_string(), args: args.split_whitespace().map(str::to_string).collect() });
     }
     if Path::new(line).is_file() {
         return Some(ShellSpec { program: line.to_string(), args: Vec::new() });
@@ -258,23 +255,14 @@ pub struct PtySession {
 
 impl PtySession {
     pub fn spawn(
-        shell: &ShellSpec,
-        cwd: &Path,
-        cols: u16,
-        rows: u16,
-        out: tokio::sync::mpsc::Sender<FromPty>,
+        shell: &ShellSpec, cwd: &Path, cols: u16, rows: u16, out: tokio::sync::mpsc::Sender<FromPty>,
     ) -> anyhow::Result<PtySession> {
         let activate = crate::venv::activated().and_then(|venv| activation(shell, &venv));
         Self::start(shell, cwd, cols, rows, out, activate)
     }
 
     fn start(
-        shell: &ShellSpec,
-        cwd: &Path,
-        cols: u16,
-        rows: u16,
-        out: tokio::sync::mpsc::Sender<FromPty>,
-        activate: Option<String>,
+        shell: &ShellSpec, cwd: &Path, cols: u16, rows: u16, out: tokio::sync::mpsc::Sender<FromPty>, activate: Option<String>,
     ) -> anyhow::Result<PtySession> {
         let pty = portable_pty::native_pty_system();
         let pair = pty.openpty(portable_pty::PtySize { rows, cols, pixel_width: 0, pixel_height: 0 })?;
@@ -374,10 +362,7 @@ mod tests {
             spec(r#""C:\Program Files\Git\bin\bash.exe" -i"#),
             Some((r"C:\Program Files\Git\bin\bash.exe".into(), vec!["-i".into()])),
         );
-        assert_eq!(
-            spec(r#""C:\Program Files\Git\bin\bash.exe""#),
-            Some((r"C:\Program Files\Git\bin\bash.exe".into(), vec![])),
-        );
+        assert_eq!(spec(r#""C:\Program Files\Git\bin\bash.exe""#), Some((r"C:\Program Files\Git\bin\bash.exe".into(), vec![])),);
         // An unterminated quote still yields the path rather than nothing.
         assert_eq!(spec(r#""/opt/my shell"#), Some(("/opt/my shell".into(), vec![])));
     }
@@ -447,10 +432,7 @@ mod tests {
     fn bash_reports_its_venv_at_each_prompt() {
         let dir = std::env::temp_dir().join(format!("dbt-edith-osc-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
-        let bash = ShellSpec {
-            program: "bash".into(),
-            args: vec!["--norc".into(), "--noprofile".into(), "-i".into()],
-        };
+        let bash = ShellSpec { program: "bash".into(), args: vec!["--norc".into(), "--noprofile".into(), "-i".into()] };
         let (tx, mut rx) = tokio::sync::mpsc::channel(512);
         let session = PtySession::start(&bash, &dir, 400, 24, tx, None).unwrap();
         // HISTFILE unset keeps these lines out of the developer's own history.
@@ -466,9 +448,7 @@ mod tests {
             match rx.try_recv() {
                 Ok(FromPty::Output(bytes)) => seen.push_str(&String::from_utf8_lossy(&bytes)),
                 Ok(FromPty::Exited) => break,
-                Err(tokio::sync::mpsc::error::TryRecvError::Empty) => {
-                    std::thread::sleep(Duration::from_millis(20))
-                }
+                Err(tokio::sync::mpsc::error::TryRecvError::Empty) => std::thread::sleep(Duration::from_millis(20)),
                 Err(_) => break,
             }
         }
@@ -555,10 +535,7 @@ mod tests {
         // found in the echoed path whenever that id began with 42. Unsetting
         // HISTFILE keeps the line out of the developer's own history.
         let venv = fake_venv("typed", &[("activate", "unset HISTFILE\necho activated-$((40 + 2))\n")]);
-        let bash = ShellSpec {
-            program: "bash".into(),
-            args: vec!["--norc".into(), "--noprofile".into(), "-i".into()],
-        };
+        let bash = ShellSpec { program: "bash".into(), args: vec!["--norc".into(), "--noprofile".into(), "-i".into()] };
         let line = activation(&bash, &venv).unwrap();
         let (tx, mut rx) = tokio::sync::mpsc::channel(512);
         // Wide enough for the line not to wrap, which would split it in the output.
@@ -570,9 +547,7 @@ mod tests {
             match rx.try_recv() {
                 Ok(FromPty::Output(bytes)) => seen.push_str(&String::from_utf8_lossy(&bytes)),
                 Ok(FromPty::Exited) => break,
-                Err(tokio::sync::mpsc::error::TryRecvError::Empty) => {
-                    std::thread::sleep(Duration::from_millis(20))
-                }
+                Err(tokio::sync::mpsc::error::TryRecvError::Empty) => std::thread::sleep(Duration::from_millis(20)),
                 Err(_) => break,
             }
         }

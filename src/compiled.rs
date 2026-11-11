@@ -240,12 +240,7 @@ pub fn look_up(root: &Path, target: &Path, kind: Kind, s: &Subject, max_bytes: u
 /// `look_up` with the newest macro handed in, asked for only once a file is
 /// found: a caller looking up many nodes walks `macros/` once, not once each.
 pub fn look_up_with(
-    root: &Path,
-    target: &Path,
-    kind: Kind,
-    s: &Subject,
-    max_bytes: u64,
-    newest_macro: impl FnOnce() -> Option<(u64, String)>,
+    root: &Path, target: &Path, kind: Kind, s: &Subject, max_bytes: u64, newest_macro: impl FnOnce() -> Option<(u64, String)>,
 ) -> CompiledInfo {
     let mut info = CompiledInfo { kind: kind.dir().to_string(), ..Default::default() };
     let tried = candidates(kind, s);
@@ -331,11 +326,7 @@ mod tests {
 
     /// A project holding one model, with whichever artifacts the test names.
     fn project(artifacts: &[(&str, &str)]) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!(
-            "edith-compiled-{}-{}",
-            std::process::id(),
-            N.fetch_add(1, Ordering::Relaxed)
-        ));
+        let dir = std::env::temp_dir().join(format!("edith-compiled-{}-{}", std::process::id(), N.fetch_add(1, Ordering::Relaxed)));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(dir.join("models/marts")).unwrap();
         std::fs::write(dir.join("models/marts/orders.sql"), "select 1").unwrap();
@@ -456,10 +447,7 @@ mod tests {
     fn the_project_file_is_an_input_too() {
         // vars: and the config blocks that decide materialization are in it, so
         // saving it can change what dbt would compile without touching a model.
-        let dir = project(&[
-            ("target/compiled/shop/models/marts/orders.sql", "select 1"),
-            ("dbt_project.yml", "name: shop"),
-        ]);
+        let dir = project(&[("target/compiled/shop/models/marts/orders.sql", "select 1"), ("dbt_project.yml", "name: shop")]);
         backdate(&dir, "models/marts/orders.sql", 300);
         backdate(&dir, "target/compiled/shop/models/marts/orders.sql", 120);
 
@@ -541,10 +529,7 @@ mod tests {
 
     #[test]
     fn a_schema_file_counts_as_the_source_too() {
-        let dir = project(&[
-            ("target/compiled/shop/models/marts/orders.sql", "select 1"),
-            ("models/marts/schema.yml", "version: 2"),
-        ]);
+        let dir = project(&[("target/compiled/shop/models/marts/orders.sql", "select 1"), ("models/marts/schema.yml", "version: 2")]);
         for p in ["target/compiled/shop/models/marts/orders.sql", "models/marts/orders.sql"] {
             backdate(&dir, p, 120);
         }
@@ -644,10 +629,8 @@ mod tests {
     #[test]
     fn a_recorded_path_is_read_under_the_target_actually_in_use() {
         let dir = project(&[("elsewhere/compiled/shop/target/generic_tests/unique_orders_id.sql", "select 1")]);
-        let s = Subject {
-            compiled: "target/compiled/shop/target/generic_tests/unique_orders_id.sql",
-            ..subject("models/marts/schema.yml")
-        };
+        let s =
+            Subject { compiled: "target/compiled/shop/target/generic_tests/unique_orders_id.sql", ..subject("models/marts/schema.yml") };
         let info = look_up(&dir, &dir.join("elsewhere"), Kind::Compiled, &s, 1 << 20);
         assert!(info.found, "tried {:?}", info.candidates);
         assert_eq!(info.rel, "elsewhere/compiled/shop/target/generic_tests/unique_orders_id.sql");
@@ -659,10 +642,7 @@ mod tests {
     /// that declares it, one .sql per test.
     #[test]
     fn a_generic_test_without_a_recorded_path_is_looked_for_beside_its_schema_file() {
-        let dir = project(&[(
-            "target/compiled/shop/models/marts/schema.yml/not_null_orders_id.sql",
-            "select 1",
-        )]);
+        let dir = project(&[("target/compiled/shop/models/marts/schema.yml/not_null_orders_id.sql", "select 1")]);
         let by_name = Subject { name: "not_null_orders_id", ..subject("models/marts/schema.yml") };
         assert!(look_up(&dir, &dir.join("target"), Kind::Compiled, &by_name, 1 << 20).found);
 

@@ -98,7 +98,9 @@ fn split_key(s: &str) -> Option<(String, &str)> {
                     quote = Some(c);
                 } else if c == b':' && (i + 1 == b.len() || b[i + 1] == b' ' || b[i + 1] == b'\t') {
                     let key = s[..i].trim();
-                    let key = key.strip_prefix('"').and_then(|k| k.strip_suffix('"'))
+                    let key = key
+                        .strip_prefix('"')
+                        .and_then(|k| k.strip_suffix('"'))
                         .or_else(|| key.strip_prefix('\'').and_then(|k| k.strip_suffix('\'')))
                         .unwrap_or(key);
                     return Some((key.to_string(), &s[i + 1..]));
@@ -327,28 +329,17 @@ pub fn scan(text: &str) -> ProjectVars {
                 if bad {
                     out.unparsed.push(Unparsed { line: j + 1, message: "a sequence of anything but plain items is not read" });
                 } else {
-                    push_var(&mut out, ProjectVar {
-                        name,
-                        line: j + 1,
-                        raw: items.join(", "),
-                        list: Some(items),
-                        jinja: false,
-                        null: false,
-                    });
+                    push_var(
+                        &mut out,
+                        ProjectVar { name, line: j + 1, raw: items.join(", "), list: Some(items), jinja: false, null: false },
+                    );
                 }
                 j = k;
                 continue;
             }
 
             if count == 0 {
-                push_var(&mut out, ProjectVar {
-                    name,
-                    line: j + 1,
-                    raw: String::new(),
-                    list: None,
-                    jinja: false,
-                    null: true,
-                });
+                push_var(&mut out, ProjectVar { name, line: j + 1, raw: String::new(), list: None, jinja: false, null: true });
             } else {
                 out.packages.push(PackageVars { package: name, line: j + 1, count });
             }
@@ -358,14 +349,9 @@ pub fn scan(text: &str) -> ProjectVars {
 
         match parse_value(rest) {
             Value::Bad(message) => out.unparsed.push(Unparsed { line: j + 1, message }),
-            Value::List(items) => push_var(&mut out, ProjectVar {
-                name,
-                line: j + 1,
-                raw: items.join(", "),
-                list: Some(items),
-                jinja: false,
-                null: false,
-            }),
+            Value::List(items) => {
+                push_var(&mut out, ProjectVar { name, line: j + 1, raw: items.join(", "), list: Some(items), jinja: false, null: false })
+            }
             Value::Scalar(s) => {
                 let jinja = s.contains("{{") || s.contains("{%");
                 push_var(&mut out, ProjectVar { name, line: j + 1, raw: s, list: None, jinja, null: false });
@@ -416,9 +402,7 @@ pub enum DispatchOrder {
 pub fn dispatch_in(text: &str) -> DispatchOrder {
     use DispatchOrder::{Default, Given, Unreadable};
     let lines: Vec<&str> = text.lines().collect();
-    let head = lines.iter().position(|l| {
-        indent_of(l) == Some(0) && !skippable(l) && split_key(l).is_some_and(|(k, _)| k == "dispatch")
-    });
+    let head = lines.iter().position(|l| indent_of(l) == Some(0) && !skippable(l) && split_key(l).is_some_and(|(k, _)| k == "dispatch"));
     let Some(head) = head else { return Default };
     let rest = split_key(lines[head]).map(|(_, r)| r.trim()).unwrap_or("");
     if !rest.is_empty() && !rest.starts_with('#') {
@@ -496,7 +480,11 @@ pub fn dispatch_in(text: &str) -> DispatchOrder {
 }
 
 fn parse_value_or_empty(v: &str) -> Value {
-    if v.trim().is_empty() { Value::Bad("no value") } else { parse_value(v) }
+    if v.trim().is_empty() {
+        Value::Bad("no value")
+    } else {
+        parse_value(v)
+    }
 }
 
 /// A `search_order`, as a flow sequence on its own line or a block one below
@@ -790,13 +778,7 @@ fn installed_package(root: &Path, name: &str) -> Option<String> {
 /// each block is dropped; a first key naming an installed package is looked
 /// for where `dbt deps` puts it, under that package's conventional roots,
 /// since reading its own `dbt_project.yml` is refused (0036).
-pub fn place(
-    root: &Path,
-    paths: &ProjectPaths,
-    name: Option<&str>,
-    block: &str,
-    chain: &[String],
-) -> Option<Placed> {
+pub fn place(root: &Path, paths: &ProjectPaths, name: Option<&str>, block: &str, chain: &[String]) -> Option<Placed> {
     let (own_roots, exts) = paths.block(block)?;
     let own_roots = own_roots.as_slice();
     // A key holding a separator is one name to dbt and matches no resource, so
@@ -815,11 +797,7 @@ pub fn place(
     };
     let (prefixes, roots, rest): (Vec<String>, &[String], &[String]) = match (first, &package) {
         (Some(f), _) if Some(f) == name => (vec![String::new()], own_roots, &chain[1..]),
-        (Some(_), Some(dir)) => (
-            vec![format!("{dir}/")],
-            default_roots.as_deref().unwrap_or(own_roots),
-            &chain[1..],
-        ),
+        (Some(_), Some(dir)) => (vec![format!("{dir}/")], default_roots.as_deref().unwrap_or(own_roots), &chain[1..]),
         _ => (vec![String::new()], own_roots, chain),
     };
 
@@ -833,9 +811,7 @@ pub fn place(
 
     // Through files::resolve, so a chain climbing out with `..`, a drive letter
     // or a folder symlinked in from elsewhere is refused like any other path.
-    let on_disk = |rel: &String, dir: bool| {
-        crate::files::resolve(root, rel).is_ok_and(|p| if dir { p.is_dir() } else { p.is_file() })
-    };
+    let on_disk = |rel: &String, dir: bool| crate::files::resolve(root, rel).is_ok_and(|p| if dir { p.is_dir() } else { p.is_file() });
     let mut dirs = candidates.iter().filter(|rel| on_disk(rel, true));
     if let Some(first) = dirs.next() {
         return Some(Placed { path: first.clone(), dir: true, also: dirs.cloned().collect() });
@@ -843,10 +819,7 @@ pub fn place(
     if tail.is_empty() {
         return package.filter(|_| rest.is_empty()).map(|dir| Placed { path: dir, dir: true, also: Vec::new() });
     }
-    let mut files = candidates
-        .iter()
-        .flat_map(|rel| exts.iter().map(move |ext| format!("{rel}.{ext}")))
-        .filter(|rel| on_disk(rel, false));
+    let mut files = candidates.iter().flat_map(|rel| exts.iter().map(move |ext| format!("{rel}.{ext}"))).filter(|rel| on_disk(rel, false));
     if let Some(first) = files.next() {
         return Some(Placed { path: first, dir: false, also: files.collect() });
     }
@@ -918,11 +891,7 @@ mod tests {
     #[test]
     fn unquoted_scalars_keep_their_shape() {
         let p = scan(concat!(
-            "vars:\n",
-            "  zone: Europe/London\n",
-            "  lag: 60 minutes\n",
-            "  stamp: current_timestamp()\n",
-            "  prefix: EXT_\n",
+            "vars:\n", "  zone: Europe/London\n", "  lag: 60 minutes\n", "  stamp: current_timestamp()\n", "  prefix: EXT_\n",
         ));
         assert_eq!(raw(&p, "zone"), "Europe/London");
         assert_eq!(raw(&p, "lag"), "60 minutes");
@@ -989,10 +958,7 @@ mod tests {
         // for a package scope, which would make the var vanish silently.
         let p = scan("vars:\n  regions:\n    - EU\n    - 'US'\n  alpha: 1\n");
         assert_eq!(names(&p), ["regions", "alpha"]);
-        assert_eq!(
-            p.vars[0].list.as_deref(),
-            Some(["EU".to_string(), "US".to_string()].as_slice())
-        );
+        assert_eq!(p.vars[0].list.as_deref(), Some(["EU".to_string(), "US".to_string()].as_slice()));
         assert_eq!(raw(&p, "regions"), "EU, US");
         assert!(p.packages.is_empty());
         assert!(p.unparsed.is_empty());
@@ -1350,9 +1316,15 @@ mod tests {
     #[test]
     fn no_entry_for_dbt_leaves_dbt_s_own_order() {
         assert_eq!(dispatch_in("name: shop\n"), DispatchOrder::Default);
-        assert_eq!(dispatch_in("dispatch:\n  - macro_namespace: dbt_utils\n    search_order: ['shop', 'dbt_utils']\n"), DispatchOrder::Default);
+        assert_eq!(
+            dispatch_in("dispatch:\n  - macro_namespace: dbt_utils\n    search_order: ['shop', 'dbt_utils']\n"),
+            DispatchOrder::Default
+        );
         // Another namespace's order is not read, so its shape does not matter.
-        assert_eq!(dispatch_in("dispatch:\n  - macro_namespace: dbt_utils\n    search_order: \"{{ var('x') }}\"\n"), DispatchOrder::Default);
+        assert_eq!(
+            dispatch_in("dispatch:\n  - macro_namespace: dbt_utils\n    search_order: \"{{ var('x') }}\"\n"),
+            DispatchOrder::Default
+        );
         // Nested under a model folder, it is a folder name, not the block.
         assert_eq!(dispatch_in("models:\n  dispatch:\n    - macro_namespace: dbt\n"), DispatchOrder::Default);
     }
@@ -1366,7 +1338,9 @@ mod tests {
         unreadable("dispatch:\n  - macro_namespace: dbt\n    search_order: [\"{{ project_name }}\", dbt]\n");
         unreadable("dispatch:\n  - macro_namespace: dbt\n");
         unreadable("dispatch:\n  - search_order: [shop, dbt]\n");
-        unreadable("dispatch:\n  - macro_namespace: dbt\n    search_order: [shop, dbt]\n  - macro_namespace: dbt\n    search_order: [dbt]\n");
+        unreadable(
+            "dispatch:\n  - macro_namespace: dbt\n    search_order: [shop, dbt]\n  - macro_namespace: dbt\n    search_order: [dbt]\n",
+        );
         unreadable("dispatch:\n  macro_namespace: dbt\n");
         unreadable("dispatch:\n\t- macro_namespace: dbt\n");
     }

@@ -6,7 +6,8 @@ const IGNORED: &[&str] = &[".git", ".DS_Store", "node_modules", "__pycache__", "
 /// Skipped by the file index only: the tree still browses them, but they are
 /// generated or vendored and would drown a search. `target` alone holds more
 /// files than the whole project.
-const NOT_INDEXED: &[&str] = &["target", "logs", ".git", "node_modules", "__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache", ".cortex"];
+const NOT_INDEXED: &[&str] =
+    &["target", "logs", ".git", "node_modules", "__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache", ".cortex"];
 const MAX_INDEXED: usize = 60_000;
 const MAX_READ_BYTES: u64 = 4 * 1024 * 1024;
 
@@ -262,12 +263,7 @@ pub fn stamp(path: &Path) -> Option<String> {
 }
 
 fn stamp_of(meta: &std::fs::Metadata) -> String {
-    let at = meta
-        .modified()
-        .ok()
-        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-        .map(|d| d.as_nanos())
-        .unwrap_or(0);
+    let at = meta.modified().ok().and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map(|d| d.as_nanos()).unwrap_or(0);
     format!("{}-{at}", meta.len())
 }
 
@@ -417,8 +413,7 @@ fn find_ci(hay: &str, needle: &str) -> Option<usize> {
     // 12 000 files take seconds rather than a fraction of one.
     if hay.is_ascii() && needle.is_ascii() {
         let (h, n) = (hay.as_bytes(), needle.as_bytes());
-        return (0..=h.len() - n.len())
-            .find(|i| h[*i..*i + n.len()].iter().zip(n).all(|(a, b)| a.to_ascii_lowercase() == *b));
+        return (0..=h.len() - n.len()).find(|i| h[*i..*i + n.len()].iter().zip(n).all(|(a, b)| a.to_ascii_lowercase() == *b));
     }
     for (i, _) in hay.char_indices() {
         let mut got = hay[i..].chars().flat_map(char::to_lowercase);
@@ -514,7 +509,11 @@ enum Searched {
     TooBig,
     /// Opened, but unreadable or binary.
     Unread,
-    Read { hits: Vec<Hit>, more: usize, total: usize },
+    Read {
+        hits: Vec<Hit>,
+        more: usize,
+        total: usize,
+    },
 }
 
 /// One batch of files, read by `threads` threads taking the next file as each
@@ -720,10 +719,7 @@ mod tests {
 
     #[test]
     fn grep_finds_a_word_whatever_its_case() {
-        let files: &[(&str, &[u8])] = &[
-            ("models/a.sql", b"select CustomerId\nfrom t\n"),
-            ("models/b.sql", b"-- nothing here\n"),
-        ];
+        let files: &[(&str, &[u8])] = &[("models/a.sql", b"select CustomerId\nfrom t\n"), ("models/b.sql", b"-- nothing here\n")];
         let dir = grep_dir("case", files);
         let r = grep(&dir, &index(files), "customerid", 50, 10);
         assert_eq!(r.total, 1);
@@ -762,10 +758,7 @@ mod tests {
     #[test]
     fn grep_skips_binaries_and_oversized_files() {
         let big = vec![b'x'; (GREP_MAX_FILE_BYTES + 1) as usize];
-        let files: &[(&str, &[u8])] = &[
-            ("data/blob.bin", b"xx\0xx needle\n"),
-            ("models/a.sql", b"needle\n"),
-        ];
+        let files: &[(&str, &[u8])] = &[("data/blob.bin", b"xx\0xx needle\n"), ("models/a.sql", b"needle\n")];
         let dir = grep_dir("skip", files);
         std::fs::write(dir.join("big.sql"), &big).unwrap();
         let mut idx = index(files);
@@ -828,8 +821,7 @@ mod tests {
 
     #[test]
     fn grep_stops_at_the_file_ceiling_and_says_so() {
-        let files: &[(&str, &[u8])] =
-            &[("a.sql", b"x\n"), ("b.sql", b"x\n"), ("c.sql", b"x\n")];
+        let files: &[(&str, &[u8])] = &[("a.sql", b"x\n"), ("b.sql", b"x\n"), ("c.sql", b"x\n")];
         let dir = grep_dir("ceiling", files);
         let r = grep(&dir, &index(files), "x", 2, 10);
         assert_eq!(r.files.len(), 2);

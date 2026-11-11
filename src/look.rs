@@ -132,11 +132,7 @@ pub struct Look {
 impl Look {
     /// The theme kept, or the defaults when there is none or it is unreadable.
     pub fn read(&self) -> Kept {
-        self.path
-            .as_deref()
-            .and_then(|p| std::fs::read(p).ok())
-            .and_then(|b| serde_json::from_slice(&b).ok())
-            .unwrap_or_default()
+        self.path.as_deref().and_then(|p| std::fs::read(p).ok()).and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default()
     }
 
     /// Keeps `kept` and returns it. A file that cannot be written loses the
@@ -219,9 +215,16 @@ mod tests {
             assert!(matches!(dress(page, &same), std::borrow::Cow::Borrowed(_)), "Night and Follow leave the page as it is");
         }
         let late = b"<html lang=\"en\"><body data-theme=\"night\"></body></html>";
-        assert_eq!(dress(late, &kept(Theme::Light, false, true, Boxes::Tombstone)).as_ref(), &late[..], "a data-theme after the tag is untouched");
+        assert_eq!(
+            dress(late, &kept(Theme::Light, false, true, Boxes::Tombstone)).as_ref(),
+            &late[..],
+            "a data-theme after the tag is untouched"
+        );
         let none = b"<html><body></body></html>";
-        assert!(matches!(dress(none, &kept(Theme::Light, false, true, Boxes::Tombstone)), std::borrow::Cow::Borrowed(_)), "no attribute, no change");
+        assert!(
+            matches!(dress(none, &kept(Theme::Light, false, true, Boxes::Tombstone)), std::borrow::Cow::Borrowed(_)),
+            "no attribute, no change"
+        );
     }
 
     #[test]
@@ -242,11 +245,7 @@ mod tests {
         assert_eq!(look.read(), kept(Theme::Light, true, false, Boxes::Coffin));
         for odd in [r#""skull""#, "7", "null", r#""Coffin""#] {
             std::fs::write(&path, format!(r#"{{"theme":"halloween","apparitions":false,"boxes":{odd}}}"#)).unwrap();
-            assert_eq!(
-                look.read(),
-                kept(Theme::Halloween, false, false, Boxes::Tombstone),
-                "{odd} reads as headstone and keeps the rest"
-            );
+            assert_eq!(look.read(), kept(Theme::Halloween, false, false, Boxes::Tombstone), "{odd} reads as headstone and keeps the rest");
         }
         let _ = std::fs::remove_dir_all(&dir);
     }

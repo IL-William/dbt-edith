@@ -180,17 +180,8 @@ fn is_zero(n: &usize) -> bool {
 
 /// The order a summary names the kinds in: what is built first, then what
 /// checks it, then the rest.
-const KIND_ORDER: &[Kind] = &[
-    Kind::Model,
-    Kind::Snapshot,
-    Kind::Seed,
-    Kind::Test,
-    Kind::Analysis,
-    Kind::Operation,
-    Kind::Exposure,
-    Kind::Source,
-    Kind::Other,
-];
+const KIND_ORDER: &[Kind] =
+    &[Kind::Model, Kind::Snapshot, Kind::Seed, Kind::Test, Kind::Analysis, Kind::Operation, Kind::Exposure, Kind::Source, Kind::Other];
 
 /// Where a kind sorts in `KIND_ORDER`.
 pub fn kind_rank(kind: Kind) -> usize {
@@ -201,7 +192,11 @@ pub fn kind_rank(kind: Kind) -> usize {
 /// package for any other's.
 pub fn call_of(macros: &Macros, m: u32) -> String {
     let mac = macros.at(m);
-    if mac.package == macros.root() { mac.name.clone() } else { format!("{}.{}", mac.package, mac.name) }
+    if mac.package == macros.root() {
+        mac.name.clone()
+    } else {
+        format!("{}.{}", mac.package, mac.name)
+    }
 }
 
 impl MacroUse {
@@ -211,11 +206,7 @@ impl MacroUse {
     /// each strategy macro. An id no macro of `macros` has, and a macro
     /// calling itself, are passed over.
     pub fn build(
-        macros: &Macros,
-        nodes: usize,
-        listed: Vec<(u32, Vec<String>)>,
-        written: Vec<(u32, Vec<u32>)>,
-        calls: Vec<(String, Vec<String>)>,
+        macros: &Macros, nodes: usize, listed: Vec<(u32, Vec<String>)>, written: Vec<(u32, Vec<u32>)>, calls: Vec<(String, Vec<String>)>,
         runs: HashMap<String, usize>,
     ) -> MacroUse {
         let n = macros.len();
@@ -256,8 +247,7 @@ impl MacroUse {
         }
         // Down from every macro a node calls, along what each one calls.
         let mut reached = vec![false; n];
-        let mut stack: Vec<u32> =
-            (0..n as u32).filter(|&m| !users[m as usize].is_empty() || !found[m as usize].is_empty()).collect();
+        let mut stack: Vec<u32> = (0..n as u32).filter(|&m| !users[m as usize].is_empty() || !found[m as usize].is_empty()).collect();
         for &m in &stack {
             reached[m as usize] = true;
         }
@@ -377,12 +367,7 @@ impl MacroUse {
     pub fn summary(&self, macros: &Macros, nodes: &[Node], adapter: &str, m: u32) -> &Summary {
         self.summaries[m as usize].get_or_init(|| {
             let (counts, through, written) = self.tally(nodes, m);
-            let by = KIND_ORDER
-                .iter()
-                .zip(counts)
-                .filter(|&(_, n)| n > 0)
-                .map(|(kind, n)| KindCount { kind: kind.as_str(), n })
-                .collect();
+            let by = KIND_ORDER.iter().zip(counts).filter(|&(_, n)| n > 0).map(|(kind, n)| KindCount { kind: kind.as_str(), n }).collect();
             let (why, run, from) = if self.reached(m) {
                 (None, None, String::new())
             } else {
@@ -549,8 +534,7 @@ impl MacroUse {
 
     /// The root project's macros no node reaches, by name.
     pub fn unreached(&self, macros: &Macros) -> Vec<u32> {
-        let mut out: Vec<u32> =
-            (0..macros.len() as u32).filter(|&m| !self.reached(m) && macros.at(m).package == macros.root()).collect();
+        let mut out: Vec<u32> = (0..macros.len() as u32).filter(|&m| !self.reached(m) && macros.at(m).package == macros.root()).collect();
         out.sort_unstable_by(|&a, &b| by_name(macros, a, b));
         out
     }
@@ -602,9 +586,8 @@ fn materialization_wins(macros: &Macros, adapter: &str, at: u32) -> bool {
     // reason. Every candidate tied at the best rank wins instead, which errs
     // toward "explained", as this feature must never call a macro unused.
     let mut candidates: Vec<((u8, u8), u32)> = Vec::new();
-    let chain = std::iter::once(adapter)
-        .chain(PARENTS.iter().filter(|&&(c, _)| c == adapter).map(|&(_, p)| p))
-        .chain(std::iter::once("default"));
+    let chain =
+        std::iter::once(adapter).chain(PARENTS.iter().filter(|&&(c, _)| c == adapter).map(|&(_, p)| p)).chain(std::iter::once("default"));
     for b in chain {
         for mac in macros.named(&format!("materialization_{m}_{b}")) {
             let (Some(near), Some(pos)) = (nearness(adapter, b), macros.position(&mac.id)) else { continue };
@@ -771,8 +754,7 @@ fn variant<'a>(macros: &Macros, name: &'a str) -> Option<(&'a str, &'a str)> {
     if prefix.is_empty() || rest.is_empty() {
         return None;
     }
-    let found = macros.named(rest).next().is_some()
-        || (prefix != "default" && macros.named(&format!("default__{rest}")).next().is_some());
+    let found = macros.named(rest).next().is_some() || (prefix != "default" && macros.named(&format!("default__{rest}")).next().is_some());
     found.then_some((prefix, rest))
 }
 
@@ -824,8 +806,7 @@ mod tests {
             ("macro.shop.test_unused", mac("test_unused", "shop", &[])),
             ("macro.shop.generate_schema_name", mac("generate_schema_name", "shop", &["macro.shop.schema_helper"])),
             ("macro.shop.schema_helper", mac("schema_helper", "shop", &[])),
-            ("macro.shop.materialization_table_default",
-                mac("materialization_table_default", "shop", &["macro.shop.mat_helper"])),
+            ("macro.shop.materialization_table_default", mac("materialization_table_default", "shop", &["macro.shop.mat_helper"])),
             ("macro.shop.mat_helper", mac("mat_helper", "shop", &[])),
             ("macro.shop.materialization_table_postgres", mac("materialization_table_postgres", "shop", &[])),
             ("macro.shop.materialization_test_default", mac("materialization_test_default", "shop", &[])),
@@ -851,11 +832,9 @@ mod tests {
             // called, and a project's override of one says nothing more.
             ("macro.dbt.datediff", mac_at("datediff", "dbt", "macros/utils/datediff.sql", &[])),
             ("macro.shop.datediff", mac("datediff", "shop", &[])),
-            ("macro.dbt.dateadd",
-                mac_at("dateadd", "dbt", "macros/utils/dateadd.sql", &["macro.shop.duckdb__dateadd"])),
+            ("macro.dbt.dateadd", mac_at("dateadd", "dbt", "macros/utils/dateadd.sql", &["macro.shop.duckdb__dateadd"])),
             ("macro.shop.duckdb__dateadd", mac("duckdb__dateadd", "shop", &[])),
-            ("macro.dbt.test_accepted_values",
-                mac_at("test_accepted_values", "dbt", "tests/generic/builtin.sql", &[])),
+            ("macro.dbt.test_accepted_values", mac_at("test_accepted_values", "dbt", "tests/generic/builtin.sql", &[])),
             // But a helper dbt's own macros call bare runs, and the bare call
             // reaches the project's override first: `equals` in a snapshot.
             ("macro.dbt.default__snapshot_staging_table", {
@@ -868,19 +847,18 @@ mod tests {
             // The adapter's own view beats the project's default one, which
             // shares its name with dbt's own default.
             ("macro.dbt_duckdb.materialization_view_duckdb", mac("materialization_view_duckdb", "dbt_duckdb", &[])),
-            ("macro.dbt.materialization_view_default",
-                mac_at("materialization_view_default", "dbt", "macros/materializations/models/view.sql", &[])),
-            ("macro.shop.materialization_view_default",
-                mac("materialization_view_default", "shop", &["macro.shop.view_helper"])),
+            (
+                "macro.dbt.materialization_view_default",
+                mac_at("materialization_view_default", "dbt", "macros/materializations/models/view.sql", &[]),
+            ),
+            ("macro.shop.materialization_view_default", mac("materialization_view_default", "shop", &["macro.shop.view_helper"])),
             ("macro.shop.view_helper", mac("view_helper", "shop", &[])),
             // A package's materialization runs for its models, and so does
             // what it calls.
-            ("macro.kit.materialization_fancy2_default",
-                mac("materialization_fancy2_default", "kit", &["macro.shop.fancy_helper"])),
+            ("macro.kit.materialization_fancy2_default", mac("materialization_fancy2_default", "kit", &["macro.shop.fancy_helper"])),
             ("macro.shop.fancy_helper", mac("fancy_helper", "shop", &[])),
             ("macro.shop.nulls", serde_json::json!({ "name": "nulls", "package_name": "shop", "depends_on": null })),
-            ("macro.shop.null_list",
-                serde_json::json!({ "name": "null_list", "package_name": "shop", "depends_on": { "macros": null } })),
+            ("macro.shop.null_list", serde_json::json!({ "name": "null_list", "package_name": "shop", "depends_on": { "macros": null } })),
         ]
         .into_iter()
         .map(|(id, m)| (id.to_string(), m))
@@ -951,11 +929,8 @@ mod tests {
         assert_eq!(names(&g, &u.direct), ["customers", "orders"]);
         // stg_payments lists round_amount alone, which calls cents; customers
         // lists both, so it is counted once, as listing cents itself.
-        let through: Vec<(String, String)> = u
-            .through
-            .iter()
-            .map(|&(n, via)| (g.nodes[n as usize].name.clone(), g.macros.at(via).name.clone()))
-            .collect();
+        let through: Vec<(String, String)> =
+            u.through.iter().map(|&(n, via)| (g.nodes[n as usize].name.clone(), g.macros.at(via).name.clone())).collect();
         // stg_payments also calls cents in an `is_incremental()` branch: what
         // dbt recorded, through round_amount, comes first.
         assert_eq!(through, [("stg_payments".to_string(), "round_amount".to_string())]);
@@ -983,13 +958,7 @@ mod tests {
         // Inside `{% if is_incremental() %}`, in a `{% call %}` body, and in
         // hooks, which dbt Fusion does not record, as `{ sql }`, a string in a
         // list, or a string alone.
-        for id in [
-            "macro.shop.watermark",
-            "macro.shop.in_call",
-            "macro.shop.hook_helper",
-            "macro.shop.pre_helper",
-            "macro.shop.one_hook",
-        ] {
+        for id in ["macro.shop.watermark", "macro.shop.in_call", "macro.shop.hook_helper", "macro.shop.pre_helper", "macro.shop.one_hook"] {
             assert!(g.macro_use.reached(at(&g, id)), "{id}");
         }
         let u = g.macro_use.usage(at(&g, "macro.shop.watermark"));
@@ -998,9 +967,7 @@ mod tests {
         let s = summary(&g, "macro.shop.watermark");
         assert_eq!((s.by.clone(), s.written), (vec![KindCount { kind: "model", n: 1 }], 1));
         assert_eq!(
-            jinja_calls(
-                "select 1 {% if x %}{{ a() }}{% endif %} b() {# {{ c() }} #} {{ \"d()\" }} {{ e.f() }} {{ g.h.i() }}"
-            ),
+            jinja_calls("select 1 {% if x %}{{ a() }}{% endif %} b() {# {{ c() }} #} {{ \"d()\" }} {{ e.f() }} {{ g.h.i() }}"),
             ["a", "e.f"],
             "SQL outside the Jinja, a comment, a string and three names deep are no calls"
         );
@@ -1053,11 +1020,7 @@ mod tests {
         assert_eq!(why(&g, "macro.shop.duckdb__set_query_tag"), dbt("dbt.set_query_tag"));
         assert_eq!(why(&g, "macro.shop.postgres__set_query_tag").0, Why::Dispatch);
         // A macro of dbt's own, or of its adapter's, overridden by its name.
-        let overrides = [
-            "macro.shop.create_table_as",
-            "macro.shop.list_relations_without_caching",
-            "macro.shop.duckdb__list_relations",
-        ];
+        let overrides = ["macro.shop.create_table_as", "macro.shop.list_relations_without_caching", "macro.shop.duckdb__list_relations"];
         for id in overrides {
             assert_eq!(why(&g, id), dbt(""), "{id}");
         }
@@ -1097,8 +1060,7 @@ mod tests {
         let macros: serde_json::Map<String, serde_json::Value> = macros
             .iter()
             .map(|&(package, name)| {
-                let m =
-                    serde_json::json!({ "name": name, "package_name": package, "original_file_path": "macros/m.sql" });
+                let m = serde_json::json!({ "name": name, "package_name": package, "original_file_path": "macros/m.sql" });
                 (format!("macro.{package}.{name}"), m)
             })
             .collect();
@@ -1214,10 +1176,7 @@ mod tests {
             (Why::Dbt, None, "kit.materialization_fancy_default".to_string()),
             "a tie errs toward explained"
         );
-        assert_eq!(
-            why(&first, "macro.kat.kat_helper"),
-            (Why::Dbt, None, "kat.materialization_fancy_default".to_string())
-        );
+        assert_eq!(why(&first, "macro.kat.kat_helper"), (Why::Dbt, None, "kat.materialization_fancy_default".to_string()));
         assert_eq!(why(&first, "macro.kit.materialization_fancy_default").1, Some(("materialized fancy".to_string(), 1)));
         assert_eq!(why(&first, "macro.kat.materialization_fancy_default").1, Some(("materialized fancy".to_string(), 1)));
         for order in [[0, 1, 2, 3, 4], [4, 3, 2, 1, 0], [2, 3, 0, 1, 4], [3, 0, 4, 1, 2]] {
@@ -1276,20 +1235,8 @@ mod tests {
         assert_eq!(
             lit,
             [
-                "datediff",
-                "duckdb__dateadd",
-                "grant_select",
-                "helper",
-                "materialization_fancy_default",
-                "null_list",
-                "nulls",
-                "orphan",
-                "ping",
-                "pong",
-                "snapshot_other_strategy",
-                "test_accepted_values",
-                "test_unused",
-                "view_helper"
+                "datediff", "duckdb__dateadd", "grant_select", "helper", "materialization_fancy_default", "null_list", "nulls", "orphan",
+                "ping", "pong", "snapshot_other_strategy", "test_accepted_values", "test_unused", "view_helper"
             ]
         );
         let first: *const Summary = summary(&g, "macro.shop.cents");

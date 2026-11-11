@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Everything that has to pass before a change is done: Rust tests, Clippy, the release
+# Everything that has to pass before a change is done: Rust tests, Clippy, rustfmt, the release
 # notes, both audits, the Snowflake script's tests, the selection engine against
 # dbt itself, the MCP server against the command line, the guided tour walked in Chrome, the browser harnesses, and a
 # syntax check on the frontend the harnesses cannot catch.
@@ -47,6 +47,30 @@ else
     [ -n "$found" ] || printf '%s\n' "$out" | tail -10
     echo "$(printf '%s\n' "$found" | grep -c .) finding(s), run: cargo clippy --all-targets --locked -- -D warnings"
     echo "CLIPPY FAILED"
+    failed=$((failed + 1))
+  fi
+fi
+
+echo
+echo "== rustfmt =="
+# Only the Rust code is formatted, by rustfmt.toml (0172). The file names alone,
+# at most 30, then the count: `cargo fmt` rewrites them.
+if ! cargo fmt --version > /dev/null 2>&1; then
+  echo "SKIPPED: no rustfmt. Install it with: rustup component add rustfmt"
+  skip "rustfmt"
+else
+  out=$(cargo fmt --check -- -l 2>&1)
+  if [ $? -eq 0 ]; then
+    echo "rustfmt ok"
+  else
+    # -l prints the physical path of each file that differs; any other line is
+    # rustfmt's own (a file it cannot parse, say), shown as it is.
+    found=$(printf '%s\n' "$out" | grep -E '^/[^ ]*\.rs$' | sed "s|^$(pwd -P)/||")
+    other=$(printf '%s\n' "$out" | grep -vE '^/[^ ]*\.rs$')
+    printf '%s\n' "$found" | head -30
+    [ -z "$other" ] || printf '%s\n' "$other" | tail -10
+    [ -z "$found" ] || echo "$(printf '%s\n' "$found" | grep -c .) file(s) to format, run: cargo fmt"
+    echo "RUSTFMT FAILED"
     failed=$((failed + 1))
   fi
 fi

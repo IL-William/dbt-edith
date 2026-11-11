@@ -432,9 +432,16 @@ mod tests {
     fn a_run_with_indirect_edges_is_compared_without_them_to_one_with_none() {
         let t = dir("rows");
         let value = ("model.p.a", "id", "model.p.m", "id", "passthrough");
-        let report = |indirect: u64| Some(serde_json::json!({ "totals": { "models": 3, "edges_indirect": indirect, "row_deciding_reads": 4 }, "models": [] }));
+        let report = |indirect: u64| {
+            Some(serde_json::json!({ "totals": { "models": 3, "edges_indirect": indirect, "row_deciding_reads": 4 }, "models": [] }))
+        };
         run(&t, "0.9.0", &[value], report(0));
-        run(&t, "0.10.0", &[value, ("model.p.a", "status", "model.p.m", "id", "filter"), ("model.p.a", "status", "model.p.m", "n", "dedup_key")], report(2));
+        run(
+            &t,
+            "0.10.0",
+            &[value, ("model.p.a", "status", "model.p.m", "id", "filter"), ("model.p.a", "status", "model.p.m", "n", "dedup_key")],
+            report(2),
+        );
         let c = compare(&t, "0.9.0", "0.10.0").unwrap();
         assert!(c.rows_left_out);
         assert!(c.totals.iter().any(|d| d.key == "models"), "{:?}", c.totals);

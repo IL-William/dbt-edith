@@ -78,13 +78,7 @@ impl Macros {
                 package,
                 path: crate::graph::slashed(m.original_file_path.unwrap_or_default()),
                 description: m.description.unwrap_or_default(),
-                args: m
-                    .arguments
-                    .unwrap_or_default()
-                    .into_iter()
-                    .filter_map(|a| a.name)
-                    .filter(|a| !a.is_empty())
-                    .collect(),
+                args: m.arguments.unwrap_or_default().into_iter().filter_map(|a| a.name).filter(|a| !a.is_empty()).collect(),
                 body: m.macro_sql.strategy.unwrap_or_default(),
                 reads: m.macro_sql.reads.into(),
             });
@@ -193,9 +187,7 @@ impl Macros {
         };
         // Through files::resolve, so a macro path climbing out with `..`, or a
         // package symlinked in from elsewhere, is refused like any other path.
-        candidates
-            .into_iter()
-            .find(|rel| crate::files::resolve_under(project, canon, rel).is_ok_and(|p| p.is_file()))
+        candidates.into_iter().find(|rel| crate::files::resolve_under(project, canon, rel).is_ok_and(|p| p.is_file()))
     }
 
     /// Every macro of that name, whatever its package.
@@ -238,9 +230,7 @@ impl Macros {
             hits.push((step, m.package != self.root, m.name.len(), m));
         }
         // The pair closes every tie, so the order is the same on every start (0055).
-        hits.sort_unstable_by(|a, b| {
-            (a.0, a.1, a.2, &a.3.name, &a.3.package).cmp(&(b.0, b.1, b.2, &b.3.name, &b.3.package))
-        });
+        hits.sort_unstable_by(|a, b| (a.0, a.1, a.2, &a.3.name, &a.3.package).cmp(&(b.0, b.1, b.2, &b.3.name, &b.3.package)));
         hits.into_iter().map(|h| h.3).collect()
     }
 
@@ -263,10 +253,9 @@ impl Macros {
             }
             if m.package != self.root
                 && !*installed.entry(&m.package).or_insert_with(|| {
-                    PACKAGE_DIRS.iter().any(|dir| {
-                        crate::files::resolve_under(project, &canon, &format!("{dir}/{}", m.package))
-                            .is_ok_and(|p| p.is_dir())
-                    })
+                    PACKAGE_DIRS
+                        .iter()
+                        .any(|dir| crate::files::resolve_under(project, &canon, &format!("{dir}/{}", m.package)).is_ok_and(|p| p.is_dir()))
                 })
             {
                 continue;
@@ -520,8 +509,7 @@ fn tag_at(text: &str, start: usize) -> (&str, &str) {
 /// Whether what follows a `macro` keyword names `name` and opens its
 /// arguments.
 fn opens(after: &str, name: &str) -> bool {
-    after.starts_with(char::is_whitespace)
-        && after.trim_start().strip_prefix(name).is_some_and(|rest| rest.trim_start().starts_with('('))
+    after.starts_with(char::is_whitespace) && after.trim_start().strip_prefix(name).is_some_and(|rest| rest.trim_start().starts_with('('))
 }
 
 /// The name dbt gives the materialization a tag declares: its first argument
@@ -668,20 +656,20 @@ mod tests {
     #[test]
     fn a_search_finds_only_the_macros_written_in_the_project() {
         let m = macros();
-        let dir = project(
-            "find",
-            &["macros/vault/hub.sql", "macros/money.sql", "dbt_packages/automate_dv/macros/internal/prefix.sql"],
-        );
+        let dir = project("find", &["macros/vault/hub.sql", "macros/money.sql", "dbt_packages/automate_dv/macros/internal/prefix.sql"]);
         let found = |q: &str, limit: usize| -> Vec<(String, String)> {
             m.find(&dir, q, limit).into_iter().map(|(m, file)| (m.name.clone(), file)).collect()
         };
         // automate_dv is installed without its `hub.sql`, and dbt's own macros
         // are never in the project.
         assert_eq!(found("hub", 10), vec![("hub".to_string(), "macros/vault/hub.sql".to_string())]);
-        assert_eq!(found("e", 10), vec![
-            ("cents".to_string(), "macros/money.sql".to_string()),
-            ("prefix".to_string(), "dbt_packages/automate_dv/macros/internal/prefix.sql".to_string()),
-        ]);
+        assert_eq!(
+            found("e", 10),
+            vec![
+                ("cents".to_string(), "macros/money.sql".to_string()),
+                ("prefix".to_string(), "dbt_packages/automate_dv/macros/internal/prefix.sql".to_string()),
+            ]
+        );
         // The limit counts what was found, not what was looked at.
         assert_eq!(found("e", 1).len(), 1);
         let _ = std::fs::remove_dir_all(&dir);
@@ -872,7 +860,8 @@ mod tests {
             let raw: HashMap<String, RawMacro> = list.map(|(id, v)| (id, serde_json::from_value(v).unwrap())).collect();
             Macros::build(raw, "shop")
         };
-        let both = from_ids(&[("macro.dbt.q", "dbt"), ("macro.dbt_duckdb.q", "dbt_duckdb"), ("macro.shop.q", "shop"), ("macro.pkg.r", "pkg")]);
+        let both =
+            from_ids(&[("macro.dbt.q", "dbt"), ("macro.dbt_duckdb.q", "dbt_duckdb"), ("macro.shop.q", "shop"), ("macro.pkg.r", "pkg")]);
         let package_of = |name: &str, adapter: &str| both.lookup(name, adapter).map(|at| both.at(at).package.clone());
         assert_eq!(package_of("q", "duckdb").as_deref(), Some("shop"));
         assert_eq!(package_of("pkg.r", "duckdb").as_deref(), Some("pkg"));
