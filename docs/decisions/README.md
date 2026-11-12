@@ -182,6 +182,7 @@ it; these files say why it is built this way, for whoever changes it next.
 | [0176](0176-edith-s-menu-lists-the-pull-requests-a-user-would-notice.md) | Edith's menu lists the pull requests a user would notice | changing what Edith's menu or the Updates section lists for a release, or what a look fetches from git to list it |
 | [0177](0177-a-static-site-is-written-from-dbts-artifacts.md) | A static site is written from dbt's artifacts | changing what `--site` reads or writes, what the page it writes may do, or how it answers a question the server answers |
 | [0178](0178-the-site-is-written-inside-the-project-into-a-marked-folder.md) | The site is written inside the project, into a folder Edith marks | changing where `--site` writes, what it empties, or adding a way to write elsewhere |
+| [0179](0179-the-virustotal-badge-reads-the-json-s-message.md) | The VirusTotal badge reads the JSON's message | changing the README's VirusTotal badge, the host that draws it, or its colour |
 
 ## Keeping these honest
 

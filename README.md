@@ -1,6 +1,6 @@
 # dbt-edith
 
-[![VirusTotal](https://img.shields.io/endpoint?url=https%3A%2F%2Fgithub.com%2FIL-William%2Fdbt-edith%2Freleases%2Flatest%2Fdownload%2Fvirustotal.json)](https://github.com/IL-William/dbt-edith/releases/latest)
+[![VirusTotal](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fgithub.com%2FIL-William%2Fdbt-edith%2Freleases%2Flatest%2Fdownload%2Fvirustotal.json&query=%24.message&label=VirusTotal&color=blue)](https://github.com/IL-William/dbt-edith/releases/latest)
 
 A small browser IDE for dbt projects: file tree, editor, terminal and lineage,
 read straight from `target/manifest.json`.

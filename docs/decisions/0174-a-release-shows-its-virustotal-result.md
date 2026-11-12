@@ -1,6 +1,6 @@
 # 0174. A release shows its VirusTotal result
 
-Date: 2026-11-12 · Status: accepted · Amends 0152
+Date: 2026-11-12 · Status: accepted · Amends 0152 · amended by 0179
 
 **Trigger:** read before changing what the `virustotal` job hands to the
 release, the table in a release's notes, the `virustotal.json` asset, or the
