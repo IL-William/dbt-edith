@@ -415,6 +415,9 @@ fn answer_capped(graphs: &mut Graphs, line: &str, stop: &AtomicBool, locate: imp
     let narrow = narrowing(&question, output);
     let (mut out, mut err) = (Vec::new(), Vec::new());
     let written = match question {
+        // Refused by the line's allow-list before it gets here: a site is a
+        // folder written, which a tool that only answers never does (0177).
+        Question::Site(_) => return Outcome::failed("--site writes a folder, which this tool does not do"),
         Question::Select(query, count) => match graphs.manifest() {
             Ok(graph) => ls::respond(&root, graph, &query, count, output, &mut out, &mut err),
             Err(why) => return Outcome::failed(&why),
@@ -539,6 +542,7 @@ fn narrowing(question: &Question, output: ls::Output) -> String {
         ls::Output::Name => "",
     };
     match question {
+        Question::Site(_) => String::new(),
         Question::Select(_, None) => {
             format!("--count-by folder (or kind, tag, package) counts instead of listing; a narrower --select lists less{compact}")
         }

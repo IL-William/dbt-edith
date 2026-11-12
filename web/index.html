@@ -188,6 +188,9 @@
   <button id="brand" class="brand" type="button" aria-haspopup="menu" aria-label="Edith"><span class="hw-ghost" aria-hidden="true"><svg class="calm" viewBox="0 0 24 28" aria-hidden="true"><use href="#hw-s-ghost"/></svg><svg class="warm" viewBox="0 0 24 28" aria-hidden="true"><use href="#hw-s-ghost-warm"/></svg></span><svg class="brandmk" viewBox="0 0 64 64" width="16" height="16" aria-hidden="true" focusable="false"><path class="bm-arm" d="M21,32 C32,32 31,10 42,10"/><path class="bm-arm" d="M21,32 L42,32"/><path class="bm-arm" d="M21,32 C32,32 31,54 42,54"/><path class="bm-pk b0" d="M21,32 C32,32 31,10 42,10" pathLength="1"/><path class="bm-pk b1" d="M21,32 L42,32" pathLength="1"/><path class="bm-pk b2" d="M21,32 C32,32 31,54 42,54" pathLength="1"/><rect class="bm-to b0" x="42" y="4" width="20" height="12" rx="3.5"/><rect class="bm-to b1" x="42" y="26" width="20" height="12" rx="3.5"/><rect class="bm-to b2" x="42" y="48" width="20" height="12" rx="3.5"/><rect class="bm-from" x="1" y="21" width="21" height="22" rx="5"/></svg><b>Ed<span class="wi">ı<i></i></span>th</b></button>
   <span class="sep"></span>
   <span id="project" class="muted">loading…</span>
+  <!-- A site's header (0177): the environment, the commit as a link, when dbt wrote the manifest, dbt's version.
+       Empty and hidden on the server's page; paintSiteStamp() fills it from text, never from markup. -->
+  <span id="site-stamp" class="site-stamp hidden"></span>
   <!-- The spaces: one is in front at a time, Code when no panel is down. A tab never
        toggles; the lit one is the place you are in (0140). Each has its glyph drawn
        here, like the dock's. Reports is dimmed while no report has anything to show

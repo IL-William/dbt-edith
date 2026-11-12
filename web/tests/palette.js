@@ -1,5 +1,6 @@
 // Search palette: nodes, macros and plain files in one list, without duplicates.
 // Run from the repository root: jsc web/tests/palette.js
+var S = { site: false };
 var src = read('web/app.js');
 // A single eval: a `const` declaration does not leak from one eval to the next,
 // so `base` has to live in the same scope as `mergeHits`.

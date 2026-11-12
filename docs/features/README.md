@@ -21,6 +21,7 @@ pull request.
 | [jobs-and-reports.md](jobs-and-reports.md) | the Jobs tab, job coverage, Reports, Last run |
 | [snowflake.md](snowflake.md) | the Snowflake switch, Snowsight links, Clone into my schema, Query history |
 | [terminal-and-git.md](terminal-and-git.md) | the terminal, the Python environment, the Git tab |
+| [site.md](site.md) | `--site`: a documentation site written from the manifest and the catalog, opened from `file://` or any static host, with what it reads, where it writes and what its page holds |
 | [updates.md](updates.md) | how it learns a newer release is out, and what it offers |
 | [look.md](look.md) | the themes, Night, Graphite, Light and Halloween, picked from the top bar or the settings: Follow the system, what an export takes, and Halloween's box styles, silk edges and characters, and the rules the design gave the code |
 

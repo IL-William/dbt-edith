@@ -7,7 +7,7 @@
   "files": {
     // web/tests/ eval slices of app.js, so every name there is "undeclared"
     // and eval is the point; web/vendor/ is third-party code (0085).
-    "includes": ["web/app.js", "web/lineage.js"],
+    "includes": ["web/app.js", "web/lineage.js", "web/site.js"],
     // app.js is over the 1 MiB default.
     "maxSize": 10000000
   },
@@ -36,6 +36,6 @@
   },
   "javascript": {
     // Loaded by <script> tags from web/vendor/ and lineage.js, not imported.
-    "globals": ["CodeMirror", "Terminal", "FitAddon", "diff_match_patch", "Lineage"]
+    "globals": ["CodeMirror", "Terminal", "FitAddon", "diff_match_patch", "Lineage", "EdithSite"]
   }
 }

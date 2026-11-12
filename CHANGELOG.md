@@ -20,6 +20,14 @@ and bumps nothing.
 
 ## Unreleased
 
+## 2.24.0 - 2026-11-12
+
+- Write a static documentation site from the manifest and the catalog with
+  `--site`, a folder that opens from `file://` or any static host and asks for
+  nothing, with the project's model folders as a tree, the Models list, Cmd+K,
+  the lineage and the Catalog, and the environment, the commit as a link and the
+  dbt version in its header (0177, 0178).
+
 ## 2.23.0 - 2026-11-12
 
 - Show each release's VirusTotal result in its notes, and the latest one on a

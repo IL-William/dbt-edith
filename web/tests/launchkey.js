@@ -32,6 +32,7 @@ var fetch = function (path, init) {
   return Promise.resolve({ ok: ok, status: ok ? 200 : 401 });
 };
 
+var S = { site: false };
 var KEY_STORE = 'dbt-edith-key';
 var launchKey = '';
 var keyPending = '';

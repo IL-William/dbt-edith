@@ -44,6 +44,7 @@ mod select;
 mod selectors;
 mod settings;
 mod sidecar;
+mod site;
 mod skill;
 mod tour;
 mod unused_paths;
@@ -189,6 +190,33 @@ struct Args {
     #[arg(long, conflicts_with_all = ["select", "selector", "column", "describe", "overview", "job", "job_order"])]
     job_coverage: bool,
 
+    /// Write a static documentation site from the manifest, and the catalog when there is one, into DIR (default: PROJECT/target/edith-site), and exit, without serving. DIR must be inside the project and empty, or one an earlier run wrote. The site opens from file:// and any static host, reads no .env and reaches no network. Not over MCP
+    #[arg(
+        long,
+        value_name = "DIR",
+        num_args = 0..=1,
+        default_missing_value = "",
+        // PathBuf's own parser refuses the empty word that stands for "no folder".
+        value_parser = clap::builder::TypedValueParser::map(clap::builder::OsStringValueParser::new(), PathBuf::from),
+        conflicts_with_all = [
+            "port", "column_lineage", "shell", "no_open", "no_update_check", "select", "exclude", "selector", "column", "up", "down",
+            "stop_at", "indirect", "rules", "casts", "column_tool", "run_collin", "compiled", "describe", "sql", "compiled_sql", "columns", "overview", "job", "job_order", "job_coverage", "count_by", "depth", "output", "against", "with",
+        ]
+    )]
+    site: Option<PathBuf>,
+
+    /// With --site, the environment the manifest was built for, as a label in the page's header and title
+    #[arg(long, value_name = "NAME")]
+    environment: Option<String>,
+
+    /// With --site, the commit the site is for, 7 to 64 hexadecimal characters (default: HEAD, read through git)
+    #[arg(long, value_name = "SHA")]
+    commit: Option<String>,
+
+    /// With --site, the repository's https address, for the link to the commit (default: from remote.origin.url, for github.com, gitlab.com and bitbucket.org only)
+    #[arg(long, value_name = "URL")]
+    repo_url: Option<String>,
+
     /// Count what --select or --selector matched instead of listing it, one row per value of KEY and a total
     #[arg(long, value_enum, value_name = "KEY")]
     count_by: Option<ls::CountBy>,
@@ -206,7 +234,7 @@ struct Args {
         long,
         conflicts_with_all = [
             "port", "column_lineage", "shell", "no_open", "no_update_check", "select", "exclude", "selector", "column", "up", "down",
-            "stop_at", "indirect", "rules", "casts", "column_tool", "run_collin", "compiled", "describe", "sql", "compiled_sql", "columns", "overview", "job", "job_order", "job_coverage", "count_by", "depth", "output", "skill", "against", "with",
+            "stop_at", "indirect", "rules", "casts", "column_tool", "run_collin", "compiled", "describe", "sql", "compiled_sql", "columns", "overview", "job", "job_order", "job_coverage", "count_by", "depth", "output", "skill", "against", "with", "site", "environment", "commit", "repo_url",
         ]
     )]
     mcp: bool,
@@ -220,7 +248,7 @@ struct Args {
         conflicts_with_all = [
             "project", "port", "manifest", "catalog", "column_lineage", "shell", "no_open", "no_update_check", "select", "exclude", "selector",
             "column", "up", "down", "stop_at", "indirect", "rules", "casts", "column_tool", "run_collin", "compiled", "describe", "sql", "compiled_sql", "columns", "overview", "job", "job_order",
-            "job_coverage", "count_by", "depth", "output", "mcp", "against", "with",
+            "job_coverage", "count_by", "depth", "output", "mcp", "against", "with", "site", "environment", "commit", "repo_url",
         ]
     )]
     skill: Option<skill::Kind>,
@@ -245,6 +273,9 @@ fn stray(args: &Args) -> Option<String> {
         (args.depth.is_some(), "--depth", "--overview or --count-by folder", args.overview || args.count_by == Some(ls::CountBy::Folder)),
         (args.against.is_some(), "--against", "--column", args.column.is_some()),
         (args.with.is_some(), "--with", "--against", args.against.is_some()),
+        (args.environment.is_some(), "--environment", "--site", args.site.is_some()),
+        (args.commit.is_some(), "--commit", "--site", args.site.is_some()),
+        (args.repo_url.is_some(), "--repo-url", "--site", args.site.is_some()),
         (args.up.is_some(), "--up", "--column", args.column.is_some()),
         (args.down.is_some(), "--down", "--column", args.column.is_some()),
         (!args.stop_at.is_empty(), "--stop-at", "--column", args.column.is_some()),
@@ -303,6 +334,8 @@ fn stray(args: &Args) -> Option<String> {
 /// the question is asked: the command line's arguments, or the MCP server's
 /// own.
 enum Question {
+    /// The documentation site, written to a folder (0177).
+    Site(site::Ask),
     /// A selection, listed or, with a `Count`, counted (0112).
     Select(ls::Query, Option<ls::Count>),
     Describe {
@@ -330,10 +363,22 @@ enum Question {
 /// The question the arguments ask, or None for the page. One mapping from
 /// flags to mode, so the command line and the MCP tool cannot read the same
 /// flags two ways. A selection is looked at first, then a name to describe,
-/// the overview, a job, the order between jobs, the coverage of the jobs and the column, which is the order the modes were added in.
+/// the overview, a job, the order between jobs, the coverage of the jobs and the column, which is the order the modes were added in. The
+/// site is asked first: it conflicts with all of them.
 fn question_of(args: &Args) -> Option<Question> {
     // The depth's 3 is applied here, as the overview's is below.
     let count = args.count_by.map(|by| ls::Count { by, depth: args.depth.unwrap_or(3) });
+    // Checked first: it conflicts with every other question, so it is the only
+    // one asked when it is there.
+    if let Some(dir) = &args.site {
+        return Some(Question::Site(site::Ask {
+            // `--site` with no folder parses as an empty one (`default_missing_value`).
+            dir: Some(dir.clone()).filter(|d| !d.as_os_str().is_empty()),
+            environment: args.environment.clone(),
+            commit: args.commit.clone(),
+            repo_url: args.repo_url.clone(),
+        }));
+    }
     match (&args.select, &args.selector) {
         (Some(select), _) if args.columns => {
             return Some(Question::SelectColumns(ls::Query::Line {
@@ -399,6 +444,7 @@ impl Question {
     fn run(&self, args: &Args) -> i32 {
         let (project, manifest, catalog) = (&args.project, args.manifest.as_deref(), args.catalog.as_deref());
         match self {
+            Question::Site(ask) => site::run(project, manifest, catalog, ask),
             Question::Select(query, count) => ls::run(project, manifest, query, *count, args.output),
             Question::Describe { names, sql, compiled_sql, rules } => {
                 describe::run_describe(project, manifest, catalog, names, *sql, *compiled_sql, *rules, args.output)
@@ -787,6 +833,51 @@ mod tests {
     }
 
     #[test]
+    fn site_is_a_question_of_its_own_with_three_flags_that_go_with_it() {
+        let ask = |line: &str| match question_of(&asked(line)) {
+            Some(Question::Site(ask)) => ask,
+            _ => panic!("{line} was not read as --site"),
+        };
+        // No folder is the default, as `--skill` takes no word and means its first.
+        let bare = ask("--site");
+        assert_eq!((bare.dir, bare.environment, bare.commit, bare.repo_url), (None, None, None, None));
+        assert_eq!(ask("--site docs_site").dir, Some(PathBuf::from("docs_site")));
+        assert_eq!(ask("/work/shop --site docs_site").dir, Some(PathBuf::from("docs_site")));
+        let all =
+            ask("--site --environment prod --commit abcdef1 --repo-url https://github.com/acme/shop --manifest m.json --catalog c.json");
+        assert_eq!(
+            (all.environment.as_deref(), all.commit.as_deref(), all.repo_url.as_deref()),
+            (Some("prod"), Some("abcdef1"), Some("https://github.com/acme/shop"))
+        );
+        // The project comes first: a word after `--site` is the folder.
+        let args = asked("--site /work/shop");
+        assert_eq!((args.project, args.site), (PathBuf::from("."), Some(PathBuf::from("/work/shop"))));
+        // The three flags are named, not dropped, without --site.
+        for (line, flag) in
+            [("--environment prod", "--environment"), ("--commit abcdef1", "--commit"), ("--repo-url https://github.com/a/b", "--repo-url")]
+        {
+            assert_eq!(stray(&asked(line)), Some(format!("{flag} goes with --site")), "{line}");
+        }
+        assert_eq!(stray(&asked("--site --environment prod")), None);
+    }
+
+    #[test]
+    fn site_is_refused_beside_the_page_and_every_other_question() {
+        for flag in [
+            "--port 4321", "--no-open", "--no-update-check", "--shell bash", "--column-lineage c.json", "-s orders", "--selector nightly",
+            "--column a.b", "--describe orders", "--overview", "--job jaffle_daily", "--job-order", "--job-coverage", "--output json",
+            "--against ../legacy", "--mcp", "--skill",
+        ] {
+            let line = format!("--site {flag}");
+            let why = match Args::try_parse_from(std::iter::once("dbt-edith").chain(line.split_whitespace())) {
+                Ok(_) => panic!("{line} was accepted"),
+                Err(e) => e.to_string(),
+            };
+            assert!(why.contains("'--site"), "{line}: {why}");
+        }
+    }
+
+    #[test]
     fn mcp_goes_alone_with_the_project_the_manifest_and_the_catalog() {
         for line in
             ["--mcp", "--mcp /work/jaffle_shop", "--mcp . --manifest m.json", "--mcp --manifest m.json --catalog c.json /work/jaffle_shop"]
@@ -835,6 +926,10 @@ mod tests {
             ("--depth", "--mcp --depth 2"),
             ("--output", "--mcp --output json"),
             ("--skill", "--mcp --skill"),
+            ("--site", "--mcp --site"),
+            ("--environment", "--mcp --environment prod"),
+            ("--commit", "--mcp --commit abcdef1"),
+            ("--repo-url", "--mcp --repo-url https://github.com/acme/shop"),
         ] {
             let why = match Args::try_parse_from(std::iter::once("dbt-edith").chain(line.split_whitespace())) {
                 Ok(_) => panic!("{line} was accepted"),
@@ -867,10 +962,27 @@ mod tests {
         assert!(args.skill == Some(skill::Kind::Command) && !args.mcp && question_of(&args).is_none() && stray(&args).is_none());
         assert_eq!((args.port, args.output), (4321, ls::Output::Name));
         for line in [
-            "--skill .", "--skill /work/jaffle_shop", "--skill --manifest m.json", "--skill --catalog c.json", "--skill --port 4321",
-            "--skill -s orders", "--skill --describe orders", "--skill --compiled-sql", "--skill --overview", "--skill --job jaffle_daily",
-            "--skill --job-order", "--skill --job-coverage", "--skill --output json", "--skill --mcp", "--skill --against ../legacy",
-            "--skill --with a.b", "--mcp --skill",
+            "--skill .",
+            "--skill /work/jaffle_shop",
+            "--skill --manifest m.json",
+            "--skill --catalog c.json",
+            "--skill --port 4321",
+            "--skill -s orders",
+            "--skill --describe orders",
+            "--skill --compiled-sql",
+            "--skill --overview",
+            "--skill --job jaffle_daily",
+            "--skill --job-order",
+            "--skill --job-coverage",
+            "--skill --output json",
+            "--skill --mcp",
+            "--skill --against ../legacy",
+            "--skill --with a.b",
+            "--mcp --skill",
+            "--skill --site",
+            "--skill --environment prod",
+            "--skill --commit abcdef1",
+            "--skill --repo-url https://github.com/acme/shop",
         ] {
             let why = match Args::try_parse_from(std::iter::once("dbt-edith").chain(line.split_whitespace())) {
                 Ok(_) => panic!("{line} was accepted"),
@@ -963,6 +1075,7 @@ mod tests {
     #[test]
     fn each_mode_is_the_question_its_flags_ask() {
         let text = |line: &str| match question_of(&asked(line)) {
+            Some(Question::Site(ask)) => format!("site {}", ask.dir.map_or("default".to_string(), |d| d.display().to_string())),
             Some(Question::Select(ls::Query::Line { select, exclude }, None)) => format!("select {select} | {exclude}"),
             Some(Question::Select(ls::Query::Named(name), None)) => format!("selector {name}"),
             Some(Question::Select(_, Some(ls::Count { by, depth }))) => format!("count {by:?} {depth}"),
@@ -1016,6 +1129,8 @@ mod tests {
             text("--column orders.amount --against ../legacy --with fct_orders.amount"),
             "column orders.amount 0 0 [] produce=false against=../legacy with=fct_orders.amount"
         );
+        assert_eq!(text("--site"), "site default");
+        assert_eq!(text("--site docs_site"), "site docs_site");
         assert_eq!(text(""), "page");
     }
 

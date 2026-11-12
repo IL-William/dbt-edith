@@ -372,7 +372,7 @@ pub struct Node {
     pub parents: Vec<u32>,
     pub children: Vec<u32>,
     pub tests: Vec<u32>,
-    search_key: String,
+    pub(crate) search_key: String,
 }
 
 #[derive(serde::Serialize, Clone, Default)]
@@ -2441,50 +2441,82 @@ impl Graph {
             indirect_hidden: false,
             most: 0,
             levels: None,
-            nodes: members
-                .iter()
-                .map(|&i| {
-                    let n = &self.nodes[i as usize];
-                    LineageNode {
-                        id: std::borrow::Cow::Borrowed(&n.id),
-                        name: &n.name,
-                        sub: String::new(),
-                        kind: n.kind,
-                        file: n.on_disk(),
-                        schema: &n.schema,
-                        materialized: &n.materialized,
-                        disabled: n.disabled,
-                        context: false,
-                        attached: self.attached_at(n, &pos),
-                        test_name: &n.test_name,
-                        column: &n.column,
-                        namespace: &n.namespace,
-                        warn: n.warn,
-                        host: self.host_name(n),
-                        incremental: n.strategy_facts(),
-                        unique_key: n.box_key(),
-                        depth: depth[&i],
-                        tests: n.tests.len(),
-                        parents: n.parents.len(),
-                        children: n.children.len(),
-                        hidden_up: n.parents.iter().filter(|p| !pos.contains_key(p)).count(),
-                        hidden_up_rows: 0,
-                        rows_by: Vec::new(),
-                        rows_by_more: 0,
-                        rows_of: Vec::new(),
-                        rows_of_more: 0,
-                        hidden_down: n.children.iter().filter(|c| !pos.contains_key(c)).count(),
-                        at: None,
-                        generated: None,
-                        expression: None,
-                        partial: Vec::new(),
-                        rules: Vec::new(),
-                        rules_more: 0,
-                        outside: false,
-                    }
-                })
-                .collect(),
+            nodes: members.iter().map(|&i| self.model_box(i, &pos, depth[&i])).collect(),
             edges,
+        }
+    }
+
+    /// One node as the model lineage draws it, `pos` being where each drawn
+    /// node sits among the drawn ones (what `attached` and the two hidden
+    /// counts are measured against) and `depth` its signed distance.
+    fn model_box(&self, i: u32, pos: &HashMap<u32, usize>, depth: i32) -> LineageNode<'_> {
+        let n = &self.nodes[i as usize];
+        LineageNode {
+            id: std::borrow::Cow::Borrowed(&n.id),
+            name: &n.name,
+            sub: String::new(),
+            kind: n.kind,
+            file: n.on_disk(),
+            schema: &n.schema,
+            materialized: &n.materialized,
+            disabled: n.disabled,
+            context: false,
+            attached: self.attached_at(n, pos),
+            test_name: &n.test_name,
+            column: &n.column,
+            namespace: &n.namespace,
+            warn: n.warn,
+            host: self.host_name(n),
+            incremental: n.strategy_facts(),
+            unique_key: n.box_key(),
+            depth,
+            tests: n.tests.len(),
+            parents: n.parents.len(),
+            children: n.children.len(),
+            hidden_up: n.parents.iter().filter(|p| !pos.contains_key(p)).count(),
+            hidden_up_rows: 0,
+            rows_by: Vec::new(),
+            rows_by_more: 0,
+            rows_of: Vec::new(),
+            rows_of_more: 0,
+            hidden_down: n.children.iter().filter(|c| !pos.contains_key(c)).count(),
+            at: None,
+            generated: None,
+            expression: None,
+            partial: Vec::new(),
+            rules: Vec::new(),
+            rules_more: 0,
+            outside: false,
+        }
+    }
+
+    /// What a model's box says whatever the walk that draws it: the node as
+    /// `model_box` serializes it, minus the four keys that depend on which
+    /// other nodes are drawn. The static site ships this once per node and
+    /// lets the page fill the four in per answer.
+    pub(crate) fn box_base(&self, i: u32) -> serde_json::Value {
+        let mut v = serde_json::to_value(self.model_box(i, &HashMap::new(), 0)).unwrap_or_default();
+        if let Some(o) = v.as_object_mut() {
+            for k in ["depth", "hidden_up", "hidden_down", "attached"] {
+                o.remove(k);
+            }
+        }
+        v
+    }
+
+    /// What a node counts as in the depth menu's tally: a model by how it is
+    /// materialized, anything else by its kind.
+    pub(crate) fn level_label(&self, i: u32) -> String {
+        let n = &self.nodes[i as usize];
+        if n.kind == Kind::Model {
+            let m = n.materialized.to_lowercase();
+            if m.is_empty() {
+                "unknown".to_string()
+            } else {
+                m
+            }
+        } else {
+            n.kind.as_str().to_string()
         }
     }
 
@@ -2505,17 +2537,11 @@ impl Graph {
                 for &cur in &frontier {
                     let node = &self.nodes[cur as usize];
                     for &nb in if upstream { &node.parents } else { &node.children } {
-                        let n = &self.nodes[nb as usize];
-                        if !n.kind.is_graph_node() || !seen.insert(nb) {
+                        if !self.nodes[nb as usize].kind.is_graph_node() || !seen.insert(nb) {
                             continue;
                         }
                         next.push(nb);
-                        if n.kind == Kind::Model {
-                            let m = n.materialized.to_lowercase();
-                            tally.add(if m.is_empty() { "unknown" } else { &m }, (nb, 0));
-                        } else {
-                            tally.add(n.kind.as_str(), (nb, 0));
-                        }
+                        tally.add(&self.level_label(nb), (nb, 0));
                     }
                 }
                 if next.is_empty() {
@@ -2724,10 +2750,15 @@ impl Graph {
     /// Where a drawn test's declaring model sits among the drawn nodes: dbt's
     /// `attached_node`, which a singular test, having no YAML, does not have.
     fn attached_at(&self, n: &Node, pos: &HashMap<u32, usize>) -> Option<usize> {
+        self.attached_index(n).and_then(|i| pos.get(&i)).copied()
+    }
+
+    /// The node `attached_at` looks for among the drawn ones.
+    pub(crate) fn attached_index(&self, n: &Node) -> Option<u32> {
         if n.kind != Kind::Test || n.attached.is_empty() {
             return None;
         }
-        self.index.get(&n.attached).and_then(|i| pos.get(i)).copied()
+        self.index.get(&n.attached).copied()
     }
 
     /// Draws an arbitrary set of nodes, the one a selector expression resolved
