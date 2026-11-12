@@ -118,12 +118,20 @@ frontend fix does not exist in a release binary until it is rebuilt (see 0005).
   data-only ones pauses git there (0121). A link the repository
   commits is held to the project, a `profiles.yml` included; one the user made
   outside it, a dotfiles one, is followed and kept (0094).
-- **Bump the version in `Cargo.toml`** for anything anyone installs, and turn
-  `## Unreleased` into `## <version> - <date>` in the same pull request: CI
-  refuses one without the other. Merging it is the whole release: the release
-  workflow tags that commit and publishes the section as its notes (0045).
-  Between tags the build stamp tells builds apart; the version is what says a
-  release happened.
+- **A pull request never bumps the version.** It adds its line under
+  `## Unreleased`. Whoever merges a batch of pull requests groups them into
+  versions: a large feature is a minor of its own, small fixes share a patch or
+  take several when unrelated, an unrelated batch is its own release, a major
+  only on the maintainer's word. The bump (`Cargo.toml`, the root entry of
+  `Cargo.lock`, and in CHANGELOG.md a dated `## <version> - <merge day>` cut
+  from `## Unreleased`, which stays above it, empty) rides on the last pull
+  request of its group that adds a CHANGELOG line, never a `no changelog` one,
+  added at its turn and never as a pull request of its own: CI refuses a version without its section, or the reverse. A batch ends
+  with no line waiting under `## Unreleased`, and a fix needed at once may
+  still bump alone. Merging the bump is the whole release: the release workflow
+  tags that commit and publishes the section as its notes (0045, 0175). Between
+  tags the build stamp tells builds apart; the version is what says a release
+  happened.
 - **Read the deferred list before starting a feature**, in
   [docs/state.md](docs/state.md). The work is usually already there, in the
   order it was chosen, with the trap that deferred it written down: that trap is
@@ -293,7 +301,7 @@ frontend fix does not exist in a release binary until it is rebuilt (see 0005).
 | add a picture to the README or to a feature page, or retake one | [0082](docs/decisions/0082-the-readmes-pictures-are-committed-and-retaken-by-a-script.md), [0144](docs/decisions/0144-the-pictures-also-illustrate-the-feature-pages-and-are-retaken-by-name.md) |
 | pick up the next piece of work | [docs/state.md](docs/state.md) |
 | find out when something shipped, or in which version | [CHANGELOG.md](CHANGELOG.md) |
-| release a version, or change how one is tagged and published | [0045](docs/decisions/0045-merging-a-version-bump-releases-it.md) |
+| release a version, change how one is tagged and published, or choose which pull request bumps it | [0045](docs/decisions/0045-merging-a-version-bump-releases-it.md), [0175](docs/decisions/0175-a-version-gathers-a-group-of-pull-requests.md) |
 | make dbt-edith reach the network on its own, or change the update offer | [0068](docs/decisions/0068-a-newer-dbt-edith-is-looked-for-once-a-day-through-git.md) |
 | change when a newer release is looked for, or what Edith's menu shows | [0079](docs/decisions/0079-an-update-is-looked-for-hourly-through-the-paris-night-and-on-demand.md), [0068](docs/decisions/0068-a-newer-dbt-edith-is-looked-for-once-a-day-through-git.md) |
 | change what the update types, or what the menu offers once it has run | [0095](docs/decisions/0095-the-update-says-when-it-is-installed-and-brings-its-tags.md), [0111](docs/decisions/0111-the-update-ends-on-a-line-and-a-card-and-a-failed-build-is-a-failure.md), [0120](docs/decisions/0120-the-update-empties-the-clones-target-once-installed.md), [0129](docs/decisions/0129-the-update-brings-the-clone-up-to-the-tag-it-announced.md) |

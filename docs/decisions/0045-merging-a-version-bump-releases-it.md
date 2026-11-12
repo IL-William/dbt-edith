@@ -1,9 +1,10 @@
 # 0045. Merging a version bump releases it
 
-Date: 2026-10-07 · Status: accepted
+Date: 2026-10-07 · Status: accepted, amended by 0175
 
 **Trigger:** read before changing how a release is started, what makes the tag,
-what a release's notes say, or the headings of CHANGELOG.md.
+what a release's notes say, the headings of CHANGELOG.md, or which pull request
+bumps the version (0175).
 
 ## Context
 
@@ -50,3 +51,8 @@ A version's date is written in its bump and stands for the day it merges: a
 bump left open past that day has its date moved before it lands. A release
 that fails leaves its version untagged, and `workflow_dispatch` on main starts
 it again.
+
+*Amended by [0175](0175-a-version-gathers-a-group-of-pull-requests.md)*: the
+bump is no longer in every pull request. It rides on the last one that adds a
+CHANGELOG line of a group chosen by whoever merges the batch, and the rest add
+their line under `## Unreleased`.

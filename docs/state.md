@@ -2,8 +2,9 @@
 
 Rewritten as things change, unlike [decisions/](decisions/) and
 [../CHANGELOG.md](../CHANGELOG.md), which are appended to. What shipped and in
-which version belongs there; what is half done, deferred or waiting on someone
-belongs here. Last updated 2026-11-11.
+which version belongs there (from 0175 on, a Shipped paragraph names its
+decision and no version, since a pull request no longer knows it); what is half
+done, deferred or waiting on someone belongs here. Last updated 2026-11-12.
 
 ## Shipped
 
@@ -2582,6 +2583,18 @@ formatted. `scripts/lint.py` runs Ruff on the Python, ShellCheck on the shell
 and Biome on `web/app.js` and `web/lineage.js`, each fetched at a pinned version
 and checked by SHA-256, in `check.sh` and in a lint job of CI. None of the three
 runs on the Monday run, which stays for advisories.
+
+A version gathers a group of pull requests (0175). A pull request no longer
+bumps: it adds its line under `## Unreleased`, and whoever merges a batch groups
+the pull requests into versions, a large feature as a minor of its own, small
+fixes sharing a patch or taking several when unrelated, an unrelated batch as
+its own release, a major only on the maintainer's word. The bump rides on the
+last pull request of its group that adds a CHANGELOG line and leaves an empty `## Unreleased` above its
+section; a `changelog` job step refuses a line added under a dated heading by a
+pull request that does not change the version. Sixteen releases in two days
+took four fifths of VirusTotal's daily quota and made every open pull request
+conflict on `Cargo.toml` and `Cargo.lock`; the release workflow did not have
+to change.
 
 ## Deferred, in the order they were chosen
 

@@ -50,7 +50,7 @@ it; these files say why it is built this way, for whoever changes it next.
 | [0042](0042-collin-runs-on-demand-beside-the-binary.md) | collin runs on demand, as an executable found beside the binary | starting collin from the server, changing when it runs, or bundling a column lineage producer |
 | [0043](0043-collin-is-updated-by-the-command-that-installs-it.md) | collin is updated by the command that installs it, and its version decides how | raising the collin version dbt-edith accepts, or changing what the menu offers once collin is installed |
 | [0044](0044-the-terminal-copies-like-windows-terminal.md) | The terminal copies and pastes the way Windows Terminal does | handling a key inside the terminal, or changing what Ctrl + C does there |
-| [0045](0045-merging-a-version-bump-releases-it.md) | Merging a version bump releases it | changing how a release is started, what makes the tag, what a release's notes say, or the headings of CHANGELOG.md |
+| [0045](0045-merging-a-version-bump-releases-it.md) | Merging a version bump releases it | changing how a release is started, what makes the tag, what a release's notes say, the headings of CHANGELOG.md, or which pull request bumps the version ([0175](0175-a-version-gathers-a-group-of-pull-requests.md)) |
 | [0048](0048-the-query-history-is-read-live-and-never-kept.md) | The query history is read live, twenty at a time, and never kept | showing anything read from Snowflake other than column lineage, linking to Snowsight, or changing when the Snowflake script starts or stops |
 | [0049](0049-the-profile-is-found-where-dbt-looks.md) | The profile is found where dbt looks, whatever the warehouse | changing which `profiles.yml` dbt-edith opens, or what decides whether it can be opened |
 | [0050](0050-the-terminal-activates-the-venv-it-was-handed.md) | The terminal activates the venv dbt-edith was started in | changing what the terminal types on its own, or which Python environment its shell starts with |
@@ -177,6 +177,7 @@ it; these files say why it is built this way, for whoever changes it next.
 | [0171](0171-clippy-runs-on-stable-with-every-lint-an-error.md) | Clippy runs on stable with every lint an error | silencing a Clippy lint or adding an `#[allow]`, changing the Clippy step of `check.sh` or CI, or pinning a toolchain |
 | [0172](0172-only-the-rust-code-is-formatted-by-rustfmt-with-a-packed-config.md) | Only the Rust code is formatted, by rustfmt with a packed config | changing `rustfmt.toml`, formatting another language, or resolving a conflict in formatted code |
 | [0173](0173-the-linters-are-fetched-by-hash-and-aim-at-bugs.md) | The linters are fetched by hash, and their rules aim at bugs | adding or changing a linter rule, bumping a linter, or covering a new file type |
+| [0175](0175-a-version-gathers-a-group-of-pull-requests.md) | A version gathers a group of pull requests | changing which pull request bumps the version, who chooses a batch's versions, or what `## Unreleased` holds between releases |
 
 ## Keeping these honest
 

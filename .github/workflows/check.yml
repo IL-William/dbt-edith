@@ -130,7 +130,7 @@ jobs:
   # the way out for a refactor, a dependency bump or a documentation fix, since
   # those change src/ or web/ without changing anything a user would notice.
   changelog:
-    if: github.event_name == 'pull_request' && !contains(github.event.pull_request.labels.*.name, 'no changelog')
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -139,6 +139,7 @@ jobs:
           # Both ends of the pull request have to be reachable to diff them.
           fetch-depth: 0
       - name: An entry under Unreleased, or the "no changelog" label
+        if: ${{ !contains(github.event.pull_request.labels.*.name, 'no changelog') }}
         env:
           BASE: ${{ github.event.pull_request.base.sha }}
           HEAD: ${{ github.event.pull_request.head.sha }}
@@ -156,6 +157,41 @@ jobs:
           echo "Add a line under '## Unreleased' saying what it does, or label the"
           echo "pull request 'no changelog' if it changes nothing a user would notice."
           exit 1
+
+      # A pull request does not bump the version (0175), so a line it adds to
+      # CHANGELOG.md belongs above the first dated heading, under Unreleased.
+      # One that changes the version dates that section itself and is exempt.
+      # This step also runs on a pull request labelled 'no changelog'.
+      - name: New changelog lines sit under Unreleased
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          # Against where the branch left base, so one not rebased after a
+          # group's bump is still judged by what it adds.
+          fork=$(git merge-base "$BASE" "$HEAD")
+          version() { git show "$1:Cargo.toml" | sed -n 's/^version = "\(.*\)"$/\1/p' | head -n 1; }
+          if [ "$(version "$fork")" != "$(version "$HEAD")" ]; then
+            echo "the version changes: this pull request dates its own section"
+            exit 0
+          fi
+          first=$(git show "$HEAD:CHANGELOG.md" | grep -nE '^## [0-9]+\.[0-9]+\.[0-9]+ - [0-9]{4}-[0-9]{2}-[0-9]{2}$' | head -n 1 | cut -d: -f1 || true)
+          if [ -z "$first" ]; then
+            exit 0
+          fi
+          late=$(git diff -U0 --no-color "$fork" "$HEAD" -- CHANGELOG.md | awk -v first="$first" '
+            /^@@/ { split($3, p, ","); n = substr(p[1], 2) - 1; next }
+            /^\+\+\+/ { next }
+            /^\+/ { n++; if (n >= first) print n ": " substr($0, 2) }
+          ')
+          if [ -n "$late" ]; then
+            echo "These lines sit under a dated heading of CHANGELOG.md, but this pull request"
+            echo "does not change the version. A line belongs under '## Unreleased', above the"
+            echo "first dated heading; the bump of the group's last pull request dates it."
+            echo "$late"
+            exit 1
+          fi
+          echo "every added line sits under Unreleased"
 
   # The branch list and the pull request list get read far more often than they
   # get written, which is the whole reason both have a shape. AGENTS.md, under
