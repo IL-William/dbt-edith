@@ -3451,6 +3451,56 @@ of its own, and each panel updates the tour, its page under
     - The pictures of `docs/design/` differ from the page in three ways, listed
       in its README; they are to be redrawn from the boards.
     - No test pins the second sentence of the header `jobs.yml` is written with.
+58. **The static site's limits (0177, 0178, `--site`).** What the first
+    version leaves out, each with the trap that keeps it out:
+    - **SQL and links to the repository's files (next).** `raw_code` and
+      `compiled_code` are in the manifest, v12 and Fusion's alike, but a link to
+      a file needs the host's blob pattern at the commit and a path relative to
+      the repository's root, which the project is not always: a dbt project in a
+      sub-folder of the repository would link to a file that does not exist. It
+      needs the project's place in the repository, from `git rev-parse
+      --show-prefix`, through the gate (0121), before a link is drawn.
+    - **Column lineage (after).** collin's cache is a file under `target/`; the
+      site would carry it as another bucketed script, and `/api/collineage`
+      computes a walk the page would write again. The cache is large (the
+      comparison with the server must be by walk, not by size), and a lineage
+      drawn from a cache older than the manifest is a wrong picture published
+      with a commit's name on it.
+    - **Jobs.** They come from `.dbt-edith/jobs.yml` and the job repository the
+      pipeline clones beside the dbt repository, a path that already allows
+      `../`. The Jobs tab's reads are the server's (a YAML parse, a cron in a
+      zone) and are not pure functions of the manifest; each would move to a
+      script or be precomputed, and a job file that is not in the pipeline's
+      checkout must say so rather than show no job.
+    - **Sources and the tree's other files.** The Project tab lists only what a
+      model, a seed or a snapshot is built from. Sources live in YAML, so they
+      have no file to list, and a Sources group would have to name each by its
+      source and table, with a click that focuses the node. Macros and analyses
+      are files of the project the manifest records with a path (`macros` carry
+      one, an analysis is a node), but opening one shows nothing the site holds
+      until the SQL does: they wait for the SQL entry above.
+    - **dbt selector expressions.** `src/select.rs` is large, and the golden
+      comparison with `dbt ls` (0033) is by the server; a port to JavaScript
+      needs the same oracle, and the Lineage space is a panel the site hides.
+    - **Output outside the project.** Refused by 0178 because the folder is
+      emptied first; a pipeline moves the folder afterwards. Allowing a path
+      outside needs a rule for what may be emptied that a marker alone, which
+      lives in the folder, cannot give.
+    - **A mark for a dirty working tree.** Under Fusion the pipeline's own
+      `deps` rewrites `package-lock.yml`, so the tree is always dirty and the
+      mark would say nothing; it would have to ignore the lock file.
+    - **Firefox is not verified.** `script-src 'self'` allows a page's own
+      scripts from `file://` in Chrome (measured, scripts appended at run time
+      included); Firefox may treat a `file:` page's origin differently, and no one
+      has opened a site in it. If it blocks, the fallback is `'self' file:`,
+      which weakens nothing over HTTP, where `file:` URLs never load. No
+      Edge or Safari run either: Edge is Chromium.
+    - **Smaller leaves.** The page's hash is replaced, not pushed, so Back
+      leaves the site; the theme is per browser, not per site; a site
+      loads its whole index, which grows with the project, before the first
+      paint, and
+      over a network it is the file's size that counts: gzip is the host's to
+      switch on.
 
 Left by the pull requests of 2026-10-14, each a known limit written in
 its pull request, unranked:

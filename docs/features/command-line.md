@@ -1,6 +1,6 @@
 # Command line
 
-Six questions dbt-edith answers without a page: what a selection matches, what
+Six questions dbt-edith answers without a page, and one thing it writes, [a site](#a-site): what a selection matches, what
 a column reaches, what a node is, what the project holds, what a job runs, and
 which dependencies the jobs leave unordered. Each reads the
 manifest dbt already wrote, prints and exits, so a script or an AI agent can
@@ -1049,6 +1049,19 @@ present only with a sources file, `jobs_sources`, `jobs_not_read` for sources
 that were not read, and `jobs_refused` in its place when the file does not read), `tags` (all of them) and `folders`, a flat list in tree order,
 parents before their children, each with its `path`, its `depth` and the
 counts of its subtree, a zero left out.
+
+## A site
+
+`--site [DIR]` writes a static documentation site and exits
+([0177](../decisions/0177-a-static-site-is-written-from-dbts-artifacts.md),
+[0178](../decisions/0178-the-site-is-written-inside-the-project-into-a-marked-folder.md)):
+the manifest, the catalog beside it and git's `HEAD` and origin, nothing else,
+into `PROJECT/target/edith-site/` or the empty or marked folder inside the
+project it names. `--environment`, `--commit` and `--repo-url` go with it only.
+The project comes first: a word after `--site` is the folder. It takes the
+exit codes above, 2 for a refused folder and a bad value too. What it writes,
+and what the page does, is in [site.md](site.md). It is not over MCP: a tool
+that only answers writes no folder.
 
 ## For an agent
 

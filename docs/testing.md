@@ -105,6 +105,8 @@ $JSC web/tests/shapes.js      # one shape per meaning: no marker round, every st
 $JSC web/tests/catalog.js     # the Catalog: the words beside the name, its tabs, the filter's count, a Lineage cell's halves, a job chip, and the rules of its one look
 $JSC web/tests/fileicons.js   # a file's icon: its shape by extension, its colour by what the manifest builds it as, the tree's git letters
 $JSC web/tests/tabkinds.js    # the editor's tabs and Open editors: a model's tab draws its kind's bar, a row its file's icon, a late mark draws the tabs once more
+$JSC web/tests/site.js        # the static site's answers: web/site.js against Rust's, from tests/fixtures/site_case.js, and the pieces its walks lean on
+$JSC web/tests/sitepage.js    # a site's page: the header's facts and link, the tab's title, the node an address names
 ```
 
 The Snowflake script has tests of its own, against a fake connector and a fake
@@ -116,7 +118,7 @@ python3 tools/test_sf_lineage.py
 
 The linters run alone with `python3 scripts/lint.py` (`--github` for CI's
 annotations): Ruff on the Python and ShellCheck on the shell scripts git
-tracks or would add, Biome on `web/app.js` and `web/lineage.js`, with the rules
+tracks or would add, Biome on `web/app.js`, `web/lineage.js` and `web/site.js`, with the rules
 of `ruff.toml` and `biome.jsonc` (0173). Each is downloaded once, from its
 upstream release and against a SHA-256 pinned in the script, into
 `target/lint-tools/<tool>-<version>-<hash>/`, and run from there; delete that
@@ -215,4 +217,42 @@ keyboard, each of its rows saving what it says (0153):
 
 ```
 /tmp/dbt/bin/python scripts/walk_export.py
+```
+
+The static site (0177) is `dbt-edith PROJECT --site`, a folder that opens from
+`file://` and from any static host. Its answers are Rust's, held in two places.
+The first is a golden file: `tests/fixtures/site_case.js` is written by a Rust
+test from an invented graph (a diamond, a test guarding two models, a disabled
+node, a versioned model, an operation, an exposure, a chain 22 levels deep, a
+fan-out, accents and emoji, one name in two packages), with what `/api/lineage`,
+`/api/search` and `/api/node` answer, and `web/tests/site.js` makes the same
+requests of `web/site.js` and compares them key for key. A change to a walk in
+`src/graph.rs` or `src/api.rs` that moves an answer fails the Rust test until
+the file is written again, and the jsc test until `web/site.js` follows:
+
+```
+DBT_EDITH_BLESS=1 cargo test site_case     # writes the file; without it the test compares
+/System/Library/Frameworks/JavaScriptCore.framework/Versions/A/Helpers/jsc web/tests/site.js
+```
+
+The second is a walk in Chrome. It writes the site on Jaffle Shop, built with
+its catalog, and on Fivetran's Shopify at the pinned tag (0056), parsed only,
+each a git repository with an invented github.com origin and a `.env` that holds
+a canary. It compares every node's lineage at 1+1, 2+2 and 20+20 with the tests
+on and off, and at 2+2 under a cap of 5, every card but its location resolved
+against a `.env`, a set of searches, and every folder of the project tree the page
+lists against the server's `/api/dir`, cut to the files that carry a kind and the
+folders that hold one, between the server and the page opened
+from the folder; reads the page as a person does (the header and its commit
+link, the Models list, a click, a box, the Catalog and its Columns, Cmd+K, an
+address that names a node, a click on what the site hides); and fails on a
+request outside the folder, an exception, a console error, a violation of the
+page's policy, an absolute path or the canary in what was written. Then it does
+the same over `http.server` under a sub-path, counting what the host was asked
+for. It needs dbt and Chrome, and skips without either, exit 2; without git or
+the network Shopify alone is skipped, and the exit is 2 even when Jaffle Shop
+agreed:
+
+```
+/tmp/dbt/bin/python scripts/walk_site.py
 ```

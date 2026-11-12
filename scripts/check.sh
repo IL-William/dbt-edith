@@ -138,7 +138,7 @@ fi
 
 echo
 echo "== lint =="
-# Ruff on the Python, ShellCheck on the shell, Biome on app.js and lineage.js
+# Ruff on the Python, ShellCheck on the shell, Biome on app.js, lineage.js and site.js
 # (0173). scripts/lint.py fetches each at the version CI runs, by hash, so
 # nothing is installed here; offline with nothing cached, or on a platform it
 # pins no build for, it exits 2 and the part skips itself.
@@ -268,6 +268,29 @@ else
 fi
 
 echo
+echo "== the static site in Chrome =="
+# dbt-edith --site written on Jaffle Shop (built, with its catalog) and on Shopify, each a git repository
+# with an invented origin and a .env that holds a canary, opened from file:// and from a static host under
+# a sub-path (0177): every node's lineage, card and a set of searches are the server's, the page reads, and
+# it asks for nothing outside its folder. Driven the same way, and skipped the same way; Shopify alone is
+# skipped without git or the network, Jaffle Shop having agreed.
+if ! command -v "$py" > /dev/null 2>&1; then
+  echo "SKIPPED: no $py"
+  skip "the static site"
+else
+  out=$("$py" scripts/walk_site.py 2>&1)
+  case $? in
+    0) echo "site ok ($(printf '%s\n' "$out" | grep -c '^PASS') checks)" ;;
+    2) printf '%s\n' "$out" | tail -1
+       case $(printf '%s\n' "$out" | tail -1) in
+         "SKIPPED: Shopify"*) skip "Shopify in the static site" ;;
+         *) skip "the static site" ;;
+       esac ;;
+    *) printf '%s\n' "$out" | grep -v '^PASS' | tail -30; echo "SITE FAILED"; failed=$((failed + 1)) ;;
+  esac
+fi
+
+echo
 echo "== browser tests =="
 if [ ! -x "$JSC" ] && ! command -v "$JSC" > /dev/null 2>&1; then
   echo "SKIPPED: no JavaScript shell at $JSC. Set JSC to one to run these."
@@ -299,7 +322,7 @@ else
   # Whole files, because a harness reads only slices of them: a syntax error
   # outside every slice would pass them all.
   syntax=$(mktemp)
-  for f in web/app.js web/lineage.js; do
+  for f in web/app.js web/lineage.js web/site.js; do
     printf "try { new Function(read('%s')); print('ok'); }\ncatch (e) { print('SYNTAX ERROR ' + e); }\n" "$f" > "$syntax"
     if [ "$("$JSC" "$syntax")" = "ok" ]; then
       echo "ok      $f"

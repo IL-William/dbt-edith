@@ -46,6 +46,9 @@ dbt-edith
 - **[Terminal and Git](docs/features/terminal-and-git.md)**: a real shell in
   your Python environment, and a Git tab that stages, commits, pulls, diffs and
   resolves conflicts, with no command that can destroy work.
+- **[A static site](docs/features/site.md)**: `--site` writes the manifest and
+  the catalog as a folder that opens from `file://` or any static host, with the
+  lineage, the Catalog and search, and asks for nothing.
 - **[Snowflake](docs/features/snowflake.md)**, switched on per project: your
   query history, Snowsight links, and the statements that clone a model into
   your schema.
@@ -209,13 +212,17 @@ dbt-edith [PROJECT]                       dbt project root, default the current 
          [--job-coverage]                print the models no scheduled job runs, and the steps that select nothing, from .dbt-edith/jobs.yml, and exit
          [--depth N]                     how many folder levels --overview lists or --count-by folder counts, default 3
          [--output name|json|compact]    what those modes print, default one name per line
+         [--site [DIR]]                  write a static documentation site from the manifest and the catalog into DIR, default <project>/target/edith-site, and exit; DIR goes right after the flag, so the project comes first
+         [--environment NAME]            with --site, the environment shown in the header and the title
+         [--commit SHA]                  with --site, the commit the site is for, default HEAD
+         [--repo-url URL]                with --site, the repository's https address for the commit link, default derived from origin on github.com, gitlab.com and bitbucket.org
          [--mcp]                         answer an MCP client over stdio, through one tool taking these flags, and exit when it closes
          [--skill [command|mcp]]         print the agent skill (a SKILL.md) matching this version, `mcp` for a client that defers MCP tools, and exit, with nothing beside it
          [-V, --version]                 print the version and the build it came from, and exit
 ```
 
-A relative path in `--manifest`, `--catalog`, `--column-lineage`, `--compiled`
-or `--against` is relative to where you run the command, not to the project.
+A relative path in `--manifest`, `--catalog`, `--column-lineage`, `--compiled`,
+`--against` or `--site` is relative to where you run the command, not to the project.
 `dbt-edith --help` prints the same list.
 
 ## Changing dbt-edith

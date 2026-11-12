@@ -136,7 +136,7 @@ const SNOWFLAKE_OFF: &str = "Snowflake features are off for this project: switch
 
 #[derive(rust_embed::RustEmbed)]
 #[folder = "web/"]
-struct Assets;
+pub(crate) struct Assets;
 
 /// The manifest with the catalog merged, and no column lineage: what `base`
 /// holds.
@@ -1636,7 +1636,7 @@ struct SearchQuery {
 }
 
 #[derive(serde::Serialize)]
-struct Hit<'a> {
+pub(crate) struct Hit<'a> {
     id: &'a str,
     name: &'a str,
     kind: Kind,
@@ -1652,7 +1652,7 @@ struct Hit<'a> {
     column: &'a str,
 }
 
-fn parse_kinds(spec: &str) -> Vec<Kind> {
+pub(crate) fn parse_kinds(spec: &str) -> Vec<Kind> {
     spec.split(',')
         .filter(|s| !s.is_empty())
         .filter_map(|s| match s {
@@ -1668,34 +1668,39 @@ fn parse_kinds(spec: &str) -> Vec<Kind> {
 }
 
 /// The most nodes one search answers with.
-const SEARCH_MAX: usize = 200_000;
+pub(crate) const SEARCH_MAX: usize = 200_000;
 
 async fn search(State(st): State<Arc<AppState>>, Query(q): Query<SearchQuery>) -> Response {
     let graph = st.graph.read().await.clone();
-    let kinds = parse_kinds(&q.kind);
+    Json(search_answer(&graph, &q.q, &q.kind, q.limit)).into_response()
+}
+
+/// What `/api/search` answers.
+pub(crate) fn search_answer<'a>(graph: &'a Graph, query: &str, kind: &str, limit: Option<usize>) -> Vec<Hit<'a>> {
+    let kinds = parse_kinds(kind);
     // A page asks for a few hundred; the builds report asks for every model
     // of a project, which this bound is far above and only keeps a stray
     // request from walking the whole vector into a reply.
-    let hits = graph.search(&q.q, &kinds, q.limit.unwrap_or(200).min(SEARCH_MAX));
-    let body: Vec<Hit> = hits
-        .iter()
-        .map(|&i| {
-            let n = &graph.nodes[i as usize];
-            Hit {
-                id: &n.id,
-                name: &n.name,
-                kind: n.kind,
-                file: n.on_disk(),
-                schema: &n.schema,
-                materialized: &n.materialized,
-                tests: n.tests.len(),
-                disabled: n.disabled,
-                test_name: &n.test_name,
-                column: &n.column,
-            }
-        })
-        .collect();
-    Json(body).into_response()
+    let hits = graph.search(query, &kinds, limit.unwrap_or(SEARCH_DEFAULT).min(SEARCH_MAX));
+    hits.iter().map(|&i| hit(graph, i)).collect()
+}
+
+/// One search answer, which the static site ships for every node and the
+/// server builds per request.
+pub(crate) fn hit(graph: &Graph, i: u32) -> Hit<'_> {
+    let n = &graph.nodes[i as usize];
+    Hit {
+        id: &n.id,
+        name: &n.name,
+        kind: n.kind,
+        file: n.on_disk(),
+        schema: &n.schema,
+        materialized: &n.materialized,
+        tests: n.tests.len(),
+        disabled: n.disabled,
+        test_name: &n.test_name,
+        column: &n.column,
+    }
 }
 
 #[derive(Deserialize)]
@@ -1790,7 +1795,7 @@ struct Location<'a> {
 }
 
 #[derive(serde::Serialize)]
-struct NodeDetail<'a> {
+pub(crate) struct NodeDetail<'a> {
     id: &'a str,
     name: &'a str,
     /// A versioned model's version and its model's latest, as `name.v<version>`
@@ -1865,14 +1870,24 @@ async fn node(State(st): State<Arc<AppState>>, Query(q): Query<NodeQuery>) -> Re
     let Some(idx) = idx else {
         return (StatusCode::NOT_FOUND, "unknown node").into_response();
     };
-    let n = &graph.nodes[idx as usize];
-    let note = collin_report(&st, collin::tool_of(&graph.meta.cll_source)).await.and_then(|r| r.notes.get(&n.id).cloned());
+    let note =
+        collin_report(&st, collin::tool_of(&graph.meta.cll_source)).await.and_then(|r| r.notes.get(&graph.nodes[idx as usize].id).cloned());
     // A handful of files of a few kilobytes each, read fresh so an edit to a
     // .env file shows up on the next click.
     let env_files = {
         let root = st.root.clone();
         tokio::task::spawn_blocking(move || envs::discover(&root)).await.unwrap_or_default()
     };
+    Json(node_detail(&graph, idx, note, Some(&env_files))).into_response()
+}
+
+/// The card of a node. The server passes collin's note and the `.env` files it
+/// found; the static site passes neither: a published page never carries a
+/// location resolved against a `.env`, and has no collin run to take a note from.
+pub(crate) fn node_detail<'a>(
+    graph: &'a Graph, idx: u32, note: Option<collin_run::ModelNote>, env_files: Option<&[envs::EnvFile]>,
+) -> NodeDetail<'a> {
+    let n = &graph.nodes[idx as usize];
     let has_location = !n.written.database.is_empty() || !n.written.schema.is_empty() || !n.parsed.database.is_empty();
     let as_ref = |i: &u32| {
         let t = &graph.nodes[*i as usize];
@@ -1892,7 +1907,7 @@ async fn node(State(st): State<Arc<AppState>>, Query(q): Query<NodeQuery>) -> Re
             unique_key: t.box_key(),
         }
     };
-    Json(NodeDetail {
+    NodeDetail {
         id: &n.id,
         name: &n.name,
         version: n.version.as_ref().map(|v| v.text()).unwrap_or_default(),
@@ -1912,7 +1927,7 @@ async fn node(State(st): State<Arc<AppState>>, Query(q): Query<NodeQuery>) -> Re
         materialized: &n.materialized,
         strategy: &n.strategy,
         unique_key: &n.unique_key,
-        keys: crate::keys::keys(&graph, idx),
+        keys: crate::keys::keys(graph, idx),
         incremental: n.strategy_facts(),
         package: &n.package,
         description: &n.description,
@@ -1930,7 +1945,10 @@ async fn node(State(st): State<Arc<AppState>>, Query(q): Query<NodeQuery>) -> Re
             written: &n.written,
             parsed: &n.parsed,
             built: Place { database: n.database.clone(), schema: n.schema.clone(), alias: n.alias.clone() },
-            envs: if has_location { envs::resolve_all(&env_files, &n.written, &n.parsed) } else { Default::default() },
+            envs: match env_files {
+                Some(files) if has_location => envs::resolve_all(files, &n.written, &n.parsed),
+                _ => Default::default(),
+            },
         },
         columns: n
             .columns
@@ -1971,8 +1989,7 @@ async fn node(State(st): State<Arc<AppState>>, Query(q): Query<NodeQuery>) -> Re
         parents: n.parents.iter().map(as_ref).collect(),
         children: n.children.iter().map(as_ref).collect(),
         tests: n.tests.iter().map(as_ref).collect(),
-    })
-    .into_response()
+    }
 }
 
 #[derive(Deserialize)]
@@ -2240,18 +2257,40 @@ struct LineageQuery {
     max: Option<usize>,
 }
 fn two() -> u32 {
-    2
+    LINEAGE_DEPTH
 }
+
+/// What `/api/lineage` draws unless the page asks otherwise, and the most it
+/// draws whatever the page asks: shared with the static site, whose router
+/// answers by the same numbers.
+pub(crate) const LINEAGE_DEPTH: u32 = 2;
+pub(crate) const LINEAGE_DEPTH_MAX: u32 = 20;
+pub(crate) const LINEAGE_NODES: usize = 400;
+pub(crate) const LINEAGE_NODES_MAX: usize = 3000;
+/// How many hits `/api/search` answers with unless the page asks for more.
+pub(crate) const SEARCH_DEFAULT: usize = 200;
 
 async fn lineage(State(st): State<Arc<AppState>>, Query(q): Query<LineageQuery>) -> Response {
     let graph = st.graph.read().await.clone();
     let Some(&idx) = graph.index.get(&q.id) else {
         return (StatusCode::NOT_FOUND, "unknown node").into_response();
     };
-    let mut sub = graph.lineage(idx, q.up.min(20), q.down.min(20), q.tests == 1, q.max.unwrap_or(400).min(3000));
+    Json(lineage_answer(&graph, idx, q.up, q.down, q.tests == 1, q.max)).into_response()
+}
+
+/// What `/api/lineage` answers, clamps included: the static site writes the
+/// same answers into its golden fixture, so the two cannot drift.
+pub(crate) fn lineage_answer(graph: &Graph, idx: u32, up: u32, down: u32, tests: bool, max: Option<usize>) -> crate::graph::Lineage<'_> {
+    let mut sub = graph.lineage(
+        idx,
+        up.min(LINEAGE_DEPTH_MAX),
+        down.min(LINEAGE_DEPTH_MAX),
+        tests,
+        max.unwrap_or(LINEAGE_NODES).min(LINEAGE_NODES_MAX),
+    );
     // The depth menu lists the levels past the nodes drawn (0158).
     sub.levels = Some(graph.levels(idx));
-    Json(sub).into_response()
+    sub
 }
 
 /// Names sent back for the copy button. Far past any selection worth reading,

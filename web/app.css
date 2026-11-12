@@ -3810,6 +3810,26 @@ span.envpill:hover { filter: none; }
 .jbkind { margin: 4px 0 1px 16px; font-size: 11px; color: var(--fg-dim); }
 .jbfine { margin: 2px 0 4px 16px; }
 
+/* A static site (0177): the page the server draws, minus what reads the project or runs something.
+   Hidden by the page's own attribute, so the server's page is untouched. The editor and its open files, the
+   search and git tabs, the terminal and the dock's other tabs, the spaces, settings and the manifest
+   pill have nothing to open here; the dock fills the window the editor left. The Files tab stays, as the
+   project's folders of models (Project), and its tree opens no file. */
+html[data-site] :is(
+  #spaces, #manifest-pill, #keys-btn, #github-btn, #settings-btn,
+  #editor-pane, #gutter-dock,
+  #sidebar .tabs [data-side="search"], #sidebar .tabs [data-side="git"],
+  #side-git, #side-search, #open-editors, #reveal-btn,
+  #dock > .tabs [data-dock]:not([data-dock="lineage"], [data-dock="catalog"]),
+  #status-where, #status-venv, #status-env, #status-branch, #status-shell, #status-update
+) { display: none !important; }
+html[data-site] #dock { flex: 1 1 auto; height: auto; }
+.site-stamp { display: inline-flex; align-items: center; gap: 8px; min-width: 0; overflow: hidden; white-space: nowrap; font-size: 11.5px; color: var(--fg-dim); }
+.site-stamp .env { padding: 1px 7px; border-radius: 8px; background: var(--bg-3); color: var(--fg); font-weight: 600; }
+.site-stamp a { color: var(--accent); text-decoration: none; font-family: var(--mono); }
+.site-stamp a:hover, .site-stamp a:focus-visible { text-decoration: underline; }
+.site-stamp .sha { font-family: var(--mono); }
+
 /* ------------------------------------------------------ halloween look -- */
 /* What the Halloween theme draws, as opposed to its colours, which are its
    block at the top, hangs from html[data-theme="halloween"] (0106, 0150). Its

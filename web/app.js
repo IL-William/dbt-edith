@@ -4,6 +4,8 @@ const $ = (s) => document.querySelector(s);
 const $$ = (s) => [...document.querySelectorAll(s)];
 
 const S = {
+  // The static site (0177): the page was written by --site, and answers itself from EdithSite, with no server behind it.
+  site: typeof document !== 'undefined' && document.documentElement.hasAttribute('data-site'),
   meta: null,
   open: new Map(),   // path -> {doc, dirty, stamp, disk}
   order: [],
@@ -201,7 +203,8 @@ function keyRefused() {
   return true;
 }
 
-takeLaunchKey();
+// A site has no server to hand a key to, and nothing here may touch the address or the storage for one.
+if (!S.site) takeLaunchKey();
 
 /* Sent on every request: a header is not a cookie, so only this page's own
    code, and no other server on the host, ever carries it. */
@@ -291,11 +294,13 @@ async function request(path, init = {}) {
 
 const api = {
   async get(path) {
+    if (S.site) return EdithSite.get(path);
     const r = await request(path);
     if (!r.ok) throw apiError(await refusal(r), r.statusText);
     return r.json();
   },
   async send(path, method, body) {
+    if (S.site) return EdithSite.send(path, method, body);
     const r = await request(path, { method, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
     if (!r.ok) throw apiError(await refusal(r), r.statusText);
     return r.json();
@@ -1674,6 +1679,7 @@ async function openMacro(t) {
 /* The model's file opened as a macro's is, with the names a card lists lit in
    it (0145). */
 async function openFileOnNames(file, names) {
+  if (S.site) return;
   pushJump();
   await openFile(file, { focusLineage: false, preview: true });
   const f = S.open.get(file);
@@ -1738,7 +1744,7 @@ async function openVarDef(t) {
    cursor already sits on, the first half of a double click among them, is no
    new place to come back to, so it records none. */
 async function openTest(t, { pin = false, focus = true } = {}) {
-  if (!t || !t.file) return;
+  if (S.site || !t || !t.file) return;
   const spot = (f) => {
     if (!f || !f.doc) return null;
     const text = f.doc.getValue();
@@ -2518,6 +2524,8 @@ const dirOf = (path) => {
    one, the way a single click does in VS Code. Editing it, or opening it again
    with preview off, pins it. */
 async function openFile(path, { focusLineage = true, preview = false } = {}) {
+  // A site holds no file but its own pages (0177).
+  if (S.site) return;
   closeHoverCard();
   if (S.open.has(path)) {
     if (!preview && S.preview === path) S.preview = null;
@@ -4681,6 +4689,11 @@ async function loadDir(container, path, depth) {
         }
         await row.expand();
       });
+    } else if (S.site) {
+      // A site holds no file: the row stands for the node its file builds, which a click focuses as the Models list does.
+      const focus = () => { if (entry.id) { closePanel(); focusNode(entry.id); } };
+      row.addEventListener('click', focus);
+      row.addEventListener('dblclick', focus);
     } else {
       row.addEventListener('click', () => openFile(entry.path, { preview: true }));
       row.addEventListener('dblclick', () => openFile(entry.path));
@@ -5534,6 +5547,13 @@ async function focusNode(id, { open = false, keepDepth = false } = {}) {
   S.colFocus = null;
   S.colDraw++;                                // a column answer still on its way is not drawn over this
   leaveColumnWait();
+  // A site's address names the node, so a link to it opens on it. Storage and the address bar can
+  // be refused where the file is opened from, and then there is simply no link.
+  if (S.site) {
+    try { history.replaceState(null, '', siteHash(id)); } catch { /* no link to this node */ }
+    // Its file is lit in the tree, as the editor's is: opened up to it, and marked selected.
+    revealInTree(EdithSite.treePath(id)).catch(() => {});
+  }
   askDepth('m|' + id);
   paintMode();
   const up = +$('#up').value, down = +$('#down').value;
@@ -10756,7 +10776,7 @@ function renderCatalog(n) {
     chip.title = version.title;
     title.appendChild(chip);
   }
-  if (n.file) {
+  if (n.file && !S.site) {
     const open = document.createElement('button');
     open.className = 'btn ghost';
     open.textContent = 'Open file';
@@ -12264,7 +12284,8 @@ const SPACE_OF = { '': 'code', select: 'lineage', reports: 'reports', settings: 
 const spaceNow = () => SPACE_OF[S.panel] || 'code';
 
 function goSpace(name) {
-  if (name === spaceNow()) return;
+  // The spaces are the editor's, the reports' and the settings': none is in a site.
+  if (S.site || name === spaceNow()) return;
   if (name === 'code') {
     // Cleared first: the settings opened from Reports would give Reports back.
     S.settingsFrom = '';
@@ -17809,6 +17830,7 @@ function catalogTags(body, n) {
    per node, so drawing the Catalog again asks nothing until the jobs may have
    changed (forgetCatalogJobs). Nothing shows until a source is named. */
 function catalogJobs(body, n) {
+  if (S.site) return;
   const box = jel('div', 'cat-jobs');
   box.dataset.node = n.id;
   body.appendChild(box);
@@ -19341,7 +19363,7 @@ function termInput(d) {
 const VENV_OSC = 6973;
 
 function initTerm() {
-  if (S.term) return;
+  if (S.term || S.site) return;
   S.term = new Terminal({
     fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
     // xterm.js multiplies the font's own cell height (15px at 12.5px on macOS) by lineHeight: 19 / 15 is the design's 19px rows.
@@ -19514,6 +19536,7 @@ function restartShell() {
 }
 
 function connectTerm() {
+  if (S.site) return;
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
   // A browser cannot set a header on a socket, so the key rides in its address (0122).
   const key = launchKey ? '&key=' + encodeURIComponent(launchKey) : '';
@@ -19641,8 +19664,8 @@ function paletteGroups(hits, q, capped, opened) {
   add('nodes', nodeGroupTitle(nodes.map((h) => h.node.kind)), nodes, !!capped.nodes);
   if (word) add('macros', 'Macros', hits.filter((h) => h.kind === 'macro'), !!capped.macros);
   add('files', 'Files', hits.filter((h) => h.kind === 'file'), !!capped.files);
-  // The Search tab's own minimum, so the hand-over never lands on its refusal.
-  if (word.length >= 3) groups.push({ key: 'grep', title: 'Inside the files', count: '', rows: [{ kind: 'grep', q: word }] });
+  // The Search tab's own minimum, so the hand-over never lands on its refusal. A site has no files to search in.
+  if (word.length >= 3 && !S.site) groups.push({ key: 'grep', title: 'Inside the files', count: '', rows: [{ kind: 'grep', q: word }] });
   return groups;
 }
 
@@ -20163,6 +20186,7 @@ function wireTabs() {
 /* Pulled out of wireTabs because a link into the file tree has to bring the
    tree back into view before there is anything to reveal. */
 function showSide(which) {
+  if (S.site && which !== 'models' && which !== 'files') return;
   $$('[data-side]').forEach((x) => x.classList.toggle('active', x.dataset.side === which));
   $('#side-files').classList.toggle('hidden', which !== 'files');
   $('#side-models').classList.toggle('hidden', which !== 'models');
@@ -20191,6 +20215,8 @@ function paintArtifactTools(which) {
    its answer lands, seconds later with Snowflake, and must not roll up a
    panel opened since. What the user asks for rolls them up itself. */
 function showDock(which, { look = true, id = '' } = {}) {
+  // Only the lineage and the Catalog are in a site: the rest read the project or run something.
+  if (S.site && which !== 'lineage' && which !== 'catalog') return null;
   let loading = null;
   S.dock = which;
   $$('[data-dock]').forEach((x) => x.classList.toggle('active', x.dataset.dock === which));
@@ -21903,6 +21929,7 @@ function applyInfo(info) {
    recorded, so Back returns to a pinned tab it left, but it pins nothing: a
    preview it leaves is replaced, as the next click in the tree would. */
 function previewBox(n) {
+  if (S.site) return;
   // A generic test lands on its line, in the file already shown too (0041).
   if (n.kind === 'test' && n.test_name) return openTest(n, { focus: false });
   if (!n.file || n.file === S.active) return;
@@ -21915,7 +21942,7 @@ function previewBox(n) {
    opened the file as the preview and recorded where it came from, so this one
    pins it in place. */
 function pinBoxFile(n) {
-  if (!n.file) return;
+  if (S.site || !n.file) return;
   if (S.active !== n.file) pushJump();
   openFile(n.file, { focusLineage: false });
   revealInTree(n.file);
@@ -22521,6 +22548,8 @@ async function boot() {
   $('#settings-btn').addEventListener('click', () => goSpace('settings'));
   wireLook();
   loadLook();
+  // The site has no /api/meta, and none of what follows it: no shell, no files, no git, no update, no tour.
+  if (S.site) return bootSite();
   const info = await api.get('/api/meta');
   applyInfo(info);
   $('#status-shell').textContent = info.shell;
@@ -22567,6 +22596,109 @@ async function boot() {
   document.addEventListener('visibilitychange', poll);
   window.addEventListener('resize', () => Lineage.fit());
   offerTour();
+}
+
+/* The static site's header, as plain facts the page paints (0177): the environment the manifest was
+   built for, the commit's first seven characters and where it is on the host, when dbt wrote the
+   manifest as the reader's own clock says it, and dbt's version. A link only if it is https: the
+   page's own policy would refuse another, and a link that does nothing is worse than none. Pure,
+   for web/tests/site.js; `fmt` is the clock's wording, which a harness fixes. */
+function siteStamp(meta, fmt = (d) => d.toLocaleString()) {
+  const at = meta.generated_at ? new Date(meta.generated_at) : null;
+  return {
+    env: meta.environment || '',
+    sha: (meta.commit || '').slice(0, 7),
+    url: /^https:\/\//.test(meta.commit_url || '') ? meta.commit_url : '',
+    when: at && !Number.isNaN(at.getTime()) ? fmt(at) : '',
+    dbt: meta.dbt_version ? 'dbt ' + meta.dbt_version : '',
+  };
+}
+
+/* The tab's title, as the server's `title_of` words the site's own: the project, the environment
+   when there is one, then the tool. */
+function siteTitle(meta) {
+  return [meta.project, meta.environment, 'dbt-edith'].filter(Boolean).join(' · ');
+}
+
+/* The node a site's address names, `#<unique_id>` with its characters escaped, or '' for none. */
+function siteHashId(hash) {
+  const raw = String(hash || '').replace(/^#/, '');
+  try { return decodeURIComponent(raw); } catch { return ''; }
+}
+
+function siteHash(id) { return '#' + encodeURIComponent(id); }
+
+function paintSiteStamp(meta) {
+  const stamp = siteStamp(meta);
+  const el = $('#site-stamp');
+  el.textContent = '';
+  const part = (cls, text) => {
+    const span = document.createElement('span');
+    span.className = cls;
+    span.textContent = text;
+    return span;
+  };
+  if (stamp.env) el.append(part('env', stamp.env));
+  if (stamp.sha) {
+    let sha;
+    if (stamp.url) {
+      sha = document.createElement('a');
+      sha.textContent = stamp.sha;
+      sha.setAttribute('href', stamp.url);
+      sha.setAttribute('target', '_blank');
+      sha.setAttribute('rel', 'noopener noreferrer');
+      sha.setAttribute('title', 'This commit, on the repository\'s host');
+      sha.className = 'sha';
+    } else {
+      sha = part('sha', stamp.sha);
+    }
+    el.append(sha);
+  }
+  if (stamp.when) el.append(part('when', stamp.when));
+  if (stamp.dbt) el.append(part('dbt', stamp.dbt));
+  el.classList.toggle('hidden', !el.childNodes.length);
+}
+
+/* What the page knows of itself in place of /api/meta: the header, the title, the counts and the
+   dbt version in the status bar. Nothing here is a path or a mtime: the site holds neither. */
+function applySiteMeta(meta) {
+  S.meta = Object.assign({ counts: {}, sandbox: '' }, meta, { manifest_mtime: 0 });
+  S.version = meta.edith || '';
+  document.title = siteTitle(meta);
+  $('#project').textContent = meta.project || '(no project)';
+  $('#project').title = meta.project || '';
+  $('#tree-title').textContent = meta.project || 'Project';
+  paintSiteStamp(meta);
+  $('#status-counts').textContent = statusCounts(meta.counts);
+  $('#status-manifest').textContent = `dbt ${meta.dbt_version || '?'}`;
+  $('#status-build').textContent = meta.edith ? 'dbt-edith ' + meta.edith : '';
+  $('#status-where').textContent = '';
+  // The files the manifest builds from, as the project's folders: an overview, not the project's disk.
+  $('#sidebar .tabs [data-side=files]').textContent = 'Project';
+  // Models and sources only: no macro, no file is in a site.
+  $('#palette-btn .ph').textContent = 'Search models and sources';
+  $('#palette-btn').setAttribute('aria-label', 'Search models and sources');
+  $('#palette-btn').title = `Search models and sources (${keyLabel('Mod+K', IS_MAC)})`;
+  $('#palette-input').placeholder = 'Models and sources…';
+}
+
+/* Boot for a site: what boot does before /api/meta, then the header, the Models list and the
+   lineage, and the node the address names. The poll, the tree, git, the update look and the tour
+   are the server's and are not started. */
+async function bootSite() {
+  applySiteMeta(EdithSite.meta);
+  await loadDir($('#tree'), '', 0);
+  showSide('files');
+  showDock('lineage');
+  window.addEventListener('resize', () => Lineage.fit());
+  const fromAddress = () => {
+    const id = siteHashId(location.hash);
+    if (!id || id === S.focus) return;
+    try { EdithSite.number(id); } catch { return; }
+    focusNode(id, { keepDepth: true });
+  };
+  window.addEventListener('hashchange', fromAddress);
+  fromAddress();
 }
 
 /* What bash said at its prompt (0069), said again at every prompt. A folder no

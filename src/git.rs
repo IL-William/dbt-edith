@@ -915,6 +915,45 @@ pub fn head(root: &Path) -> Head {
     }
 }
 
+/// The full name of the commit `HEAD` is at, for a link that must keep naming
+/// that commit (`head` abbreviates, which is for showing). Err says why there
+/// is none, in a line a person can read: not in a repository, git paused there
+/// (0121), or a repository with no commit yet. Hooks are off, as for the poll.
+pub fn head_commit(root: &Path) -> Result<String, String> {
+    if !in_repository(root) {
+        return Err("not a git repository".to_string());
+    }
+    let r = run_auto(root, &["rev-parse", "--verify", "HEAD"], ENGLISH, Duration::from_secs(20));
+    if !r.ok {
+        // What edith says itself, paused or no git, is a sentence to give as it is; what git says is not.
+        if r.stderr.starts_with("git is paused here") || r.stderr.starts_with("cannot run git") {
+            return Err(reason(&r));
+        }
+        return Err(if r.stderr.contains("Needed a single revision") {
+            "the repository has no commit yet".to_string()
+        } else {
+            "git could not name HEAD".to_string()
+        });
+    }
+    let sha = r.stdout.trim();
+    // A sha-1 or a sha-256 repository: anything else is not a commit name.
+    if matches!(sha.len(), 40 | 64) && sha.bytes().all(|b| b.is_ascii_hexdigit()) {
+        Ok(sha.to_ascii_lowercase())
+    } else {
+        Err("HEAD does not name a commit".to_string())
+    }
+}
+
+/// The address `remote.origin.url` holds, as written, for the one that links
+/// to the repository on a host it recognises. None without a repository, an
+/// origin, or an answer: git paused counts as no answer, and the site then
+/// asks for `--repo-url` instead.
+pub fn origin_url(root: &Path) -> Option<String> {
+    let url = read_auto(root, &["config", "--get", "remote.origin.url"])?;
+    let url = url.trim();
+    (!url.is_empty()).then(|| url.to_string())
+}
+
 #[derive(serde::Serialize, Clone, Default)]
 pub struct Drift {
     /// The default branch as this clone knows it, `origin/main` or similar.
@@ -1299,6 +1338,49 @@ mod tests {
         let found = walk(&two, &only_c, &[("v2", "c")], "a").unwrap();
         assert_eq!(found, [("v2".to_string(), vec!["Colour (#3)".to_string()])], "b did not touch the changelog");
         assert_eq!(walk(&two[..2], &only_c, &[("v2", "c")], "a"), None, "no floor, no answer");
+    }
+
+    #[test]
+    fn head_commit_and_origin_are_read_from_the_repository() {
+        let dir = scratch("head-commit");
+        repo(&dir);
+        let want = git(&dir, &["rev-parse", "HEAD"]).trim().to_string();
+        assert_eq!(head_commit(&dir), Ok(want));
+        assert_eq!(origin_url(&dir), None);
+        git(&dir, &["remote", "add", "origin", "git@github.com:acme/shop.git"]);
+        assert_eq!(origin_url(&dir).as_deref(), Some("git@github.com:acme/shop.git"));
+        // From a folder below the root, which is where a dbt project may sit.
+        write(&dir, "dbt/dbt_project.yml", "name: shop\n");
+        assert_eq!(head_commit(&dir.join("dbt")), head_commit(&dir));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn head_commit_says_why_there_is_none() {
+        let loose = scratch("head-commit-loose");
+        assert_eq!(head_commit(&loose), Err("not a git repository".to_string()));
+        assert_eq!(origin_url(&loose), None);
+
+        // A repository with no commit has a HEAD that names nothing.
+        let unborn = scratch("head-commit-unborn");
+        git(&unborn, &["init", "-q", "-b", "main"]);
+        assert_eq!(head_commit(&unborn), Err("the repository has no commit yet".to_string()));
+        let _ = std::fs::remove_dir_all(&loose);
+        let _ = std::fs::remove_dir_all(&unborn);
+    }
+
+    /// Neither is asked of a repository whose configuration names a program: the
+    /// site then has no commit and no link, and says so.
+    #[test]
+    fn neither_is_read_from_a_paused_repository() {
+        let dir = scratch("head-commit-paused");
+        repo(&dir);
+        git(&dir, &["remote", "add", "origin", "https://github.com/acme/shop.git"]);
+        git(&dir, &["config", "filter.evil.clean", "cat"]);
+        let why = head_commit(&dir).unwrap_err();
+        assert!(why.contains("git is paused here"), "{why}");
+        assert_eq!(origin_url(&dir), None);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// What came with a clone, asked case aside and as spelt, from a folder
