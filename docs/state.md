@@ -3176,7 +3176,6 @@ of its own, and each panel updates the tour, its page under
     - A new stable Clippy or rustfmt can fail a push with no code change; it is
       fixed in that push (0171), not pinned.
     - zizmor and actionlint found nothing on the workflows and are not run.
-    - collin has none of the three yet.
 43. **The depth control's limits (0158, 2.9.0).**
     - Metrics, semantic models, saved queries and functions are not loaded,
       though dbt's graph holds them as parents and children, so `dbt ls` can
@@ -3500,7 +3499,19 @@ of its own, and each panel updates the tour, its page under
       loads its whole index, which grows with the project, before the first
       paint, and
       over a network it is the file's size that counts: gzip is the host's to
-      switch on.
+      switch on. The model in focus is not highlighted in the Models list. The
+      dbt version shows twice in the header. The Columns tab's hint about
+      missing types still names Snowflake and `dbt compile --write-catalog`; in
+      a site it could say to run `--site` after the step that writes
+      `catalog.json`.
+59. **What the release and update changes left (0174, 0175, 0176, 2.22.2).**
+    - The hover card keeps half the row for the file in Firefox even when its
+      path is shorter, as that browser does not know `calc-size()`.
+    - A pull request that changes `CHANGELOG.md` only to set up the release
+      process (as the one for 0175, labelled `no changelog`) still shows as a
+      row in Edith's menu (0176); accepted.
+    - Releases before 2.23.0 have no `virustotal.json`; the README's badge
+      shows the scan at a release's publication, never a new scan (0174).
 
 Left by the pull requests of 2026-10-14, each a known limit written in
 its pull request, unranked:
