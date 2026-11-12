@@ -2608,6 +2608,20 @@ for 1, orange for 2, red from 3, and only a run forced past a flag can publish
 a non-zero one. It shows the scan at publication, and releases published before
 this change have no file.
 
+Edith's menu lists the pull requests a release holds that changed
+CHANGELOG.md (0176, amending 0079): a row for each under the version, the first
+eight and a count of the rest, forty rows of changes and then up to two rows
+for each further release, and the same in the settings'
+Updates section, where it listed one row per release. The changes are the
+first-parent commits between a release's tag and the one below it that changed
+that file, fetched in one request through git with `--filter=blob:none` and
+`--shallow-exclude` the tag two below the run, kept in `update.json` by version
+beside the titles, which stay as the fallback of one row, as does the tagged
+commit's subject for a release none of whose commits touched the file. A fetch
+that failed is not repeated by a look on demand for the same releases; the
+next scheduled look tries again. An older
+`update.json` still reads, and an older binary shows one row per release.
+
 ## Deferred, in the order they were chosen
 
 Item numbers move as items are struck. Decisions 0022, 0065, 0100, 0101, 0103,

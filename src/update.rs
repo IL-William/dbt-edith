@@ -4,10 +4,11 @@
 //! The one question this binary puts to the network unasked, besides the
 //! project's own fetch behind the freshness badge (0025): which `vX.Y.Z` tags
 //! dbt-edith's public repository holds, and, when the running one is behind,
-//! the subjects of the commits the newer ones name, its pull requests' titles,
-//! once per release for the machine. git asks both, through `ls-remote` and a
-//! fetch of those commits alone, as a pull of that repository would, so no
-//! HTTP client comes in (0003), and nothing about the project goes with it.
+//! the subjects of the commits the newer ones hold, its pull requests' titles,
+//! once per release for the machine (0176). git asks both, through
+//! `ls-remote` and a fetch of those commits alone, as a pull of that
+//! repository would, so no HTTP client comes in (0003), and nothing about the
+//! project goes with it.
 //!
 //! Three rules hold here:
 //!   - an answer stands until the next turn, every hour on the hour from
@@ -64,18 +65,28 @@ pub struct Seen {
     /// older dbt-edith wrote, which reads past it in turn.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub releases: Vec<String>,
-    /// The title of a release, its pull request's, by version: fetched once
-    /// for every dbt-edith on the machine, since it never changes.
+    /// The title of a release's pull request, by version, for the release
+    /// whose changes could not be listed: the one it falls back to (0176), and
+    /// all a file an older dbt-edith wrote holds. Fetched once for every
+    /// dbt-edith on the machine, since it never changes.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub titles: BTreeMap<String, String>,
+    /// The titles of every pull request a release holds, newest first, by
+    /// version, kept the same way (0176). Absent from a file an older
+    /// dbt-edith wrote, which reads past it in turn.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub changes: BTreeMap<String, Vec<String>>,
 }
 
 impl Seen {
-    /// The later of two answers, with the titles both know.
+    /// The later of two answers, with the titles and changes both know.
     fn merged(self, other: Seen) -> Seen {
         let (mut later, earlier) = if self.checked >= other.checked { (self, other) } else { (other, self) };
         for (version, title) in earlier.titles {
             later.titles.entry(version).or_insert(title);
+        }
+        for (version, changes) in earlier.changes {
+            later.changes.entry(version).or_insert(changes);
         }
         later
     }
@@ -254,20 +265,77 @@ pub fn ask(scratch: &Path) -> Result<Vec<String>, String> {
     Ok(found)
 }
 
-/// The pull request title each of `versions` was released by. Every release
-/// is one pull request, squashed into one commit whose subject is its title,
-/// and the release workflow tags that commit (0045), so the tagged commits are
-/// all it takes: fetched through git, as the look is, without a file.
-pub fn titles(scratch: &Path, versions: Vec<String>) -> Result<Vec<(String, String)>, String> {
-    let tags: Vec<String> = versions.iter().map(|v| format!("v{v}")).collect();
-    let found = crate::git::tag_subjects(scratch, REPO, &tags).map_err(|e| plain(&e))?;
-    Ok(found.into_iter().filter_map(|(tag, subject)| Some((tag.strip_prefix('v')?.to_string(), title(&subject)))).collect())
+/// What a look asks of git for the releases it is behind and holds no changes
+/// for (0176).
+pub struct Wanted {
+    /// Consecutive releases, newest first, from the newest one asked for to
+    /// the oldest, those between included: a release holds the commits down
+    /// to the next tag, so one skipped would hand its pull requests to the
+    /// release above it.
+    pub range: Vec<String>,
+    /// The release listed just older than the oldest of them, where the list
+    /// of changes stops, and the one older than that, where the fetch does
+    /// (`git::tag_changes`). None when either is missing, or when the same
+    /// fetch failed already in this process, and the titles are all it gets.
+    pub base: Option<(String, String)>,
+    /// Those of them with no title kept either, which the fallback fetches.
+    pub untitled: Vec<String>,
+}
+
+/// What git answered, by version.
+#[derive(Default)]
+pub struct Learned {
+    pub changes: BTreeMap<String, Vec<String>>,
+    pub titles: BTreeMap<String, String>,
+    /// The fetch of the changes was made and failed, which this process does
+    /// not repeat for the same releases on every look.
+    pub range_failed: bool,
+}
+
+/// The pull requests each of `wanted.range` holds that changed the
+/// changelog. A release is one or more pull requests, each squashed into one
+/// commit whose subject is its title (0045, 0175), so the first-parent commits
+/// between two tags that changed `CHANGELOG.md` are the list, fetched through
+/// git, as the look is, without a file. Where that fails, or there are not two
+/// tags older to stop at, each release gives the title of its tagged commit
+/// alone (0079), which any release can.
+pub fn titles(scratch: &Path, wanted: Wanted) -> Result<Learned, String> {
+    let tag = |v: &String| format!("v{v}");
+    let mut learned = Learned::default();
+    if let Some((base, below)) = &wanted.base {
+        let tags: Vec<String> = wanted.range.iter().map(tag).collect();
+        match crate::git::tag_changes(scratch, REPO, &tags, &tag(base), &tag(below)) {
+            Ok(found) => {
+                for (name, subjects) in found {
+                    if let Some(version) = name.strip_prefix('v') {
+                        learned.changes.insert(version.to_string(), subjects.iter().map(|s| title(s)).collect());
+                    }
+                }
+            }
+            Err(_) => learned.range_failed = true,
+        }
+    }
+    let alone: Vec<String> = wanted.untitled.iter().filter(|v| !learned.changes.contains_key(*v)).map(tag).collect();
+    if !alone.is_empty() {
+        match crate::git::tag_subjects(scratch, REPO, &alone) {
+            Ok(found) => {
+                for (name, subject) in found {
+                    if let Some(version) = name.strip_prefix('v') {
+                        learned.titles.insert(version.to_string(), title(&subject));
+                    }
+                }
+            }
+            Err(why) if learned.changes.is_empty() => return Err(plain(&why)),
+            Err(_) => {}
+        }
+    }
+    Ok(learned)
 }
 
 /// Where git runs for a look, given the file the answer is kept in: its
 /// directory, the config one, which is the user's own, rather than the
 /// temporary one, which on a shared machine is every account's. There,
-/// another account could put a directory or a link where the titles'
+/// another account could put a directory or a link where the scratch
 /// repository is made, under a name the pid makes predictable, or a `.git` for
 /// `ls-remote` to find. Without a config directory, or when it cannot be made,
 /// the temporary one serves, and the repository is then made only where
@@ -298,6 +366,10 @@ struct Known {
     /// The next waits an hour, not until the next turn, so a start made
     /// before the network was up is not left without an answer until midnight.
     failed: Option<(u64, String)>,
+    /// The run of releases whose changes this process failed to fetch, so
+    /// that no look on demand repeats a request that failed: the next
+    /// scheduled look and a new release, which makes another run, try again.
+    range_failed: Option<Vec<String>>,
 }
 
 /// What `/api/update` says of the looks.
@@ -316,11 +388,23 @@ pub struct Status {
     /// When the next look is due, 0 while one is on its way.
     pub next: u64,
     /// The releases after the running one, newest first, each with its
-    /// title, while it is behind and every one listed has its title. Empty
+    /// changes, while it is behind and every one listed has a title. Empty
     /// otherwise, and the menu links the newest one's notes alone.
-    pub releases: Vec<(String, String)>,
+    pub releases: Vec<Release>,
     /// How many older ones the list leaves out.
     pub older: usize,
+}
+
+/// A release the menu lists.
+#[derive(Debug, PartialEq, Clone)]
+pub struct Release {
+    pub version: String,
+    /// The first change's title, or the one title kept when the changes could
+    /// not be listed.
+    pub title: String,
+    /// The title of each pull request it holds, newest first. Empty when only
+    /// the one title is known (0176).
+    pub changes: Vec<String>,
 }
 
 /// The next turn, or an hour after a look that got no answer while no answer
@@ -336,16 +420,44 @@ fn next_look(k: &Known, now: u64) -> u64 {
     }
 }
 
-/// The releases after `current` with their titles, and how many older ones
-/// are left out, if every release listed has its title. A list missing one
+/// The releases after `current` with their changes, and how many older ones
+/// are left out, if every release listed has a title. A list missing one
 /// would read as complete, so it is all or nothing.
-fn titled(seen: &Seen, current: &str) -> (Vec<(String, String)>, usize) {
+fn titled(seen: &Seen, current: &str) -> (Vec<Release>, usize) {
     let (after, older) = missed(&seen.releases, current);
-    let listed: Option<Vec<(String, String)>> = after.into_iter().map(|v| seen.titles.get(&v).map(|t| (v, t.clone()))).collect();
+    let listed: Option<Vec<Release>> = after
+        .into_iter()
+        .map(|version| {
+            let changes = seen.changes.get(&version).cloned().unwrap_or_default();
+            let title = changes.first().or_else(|| seen.titles.get(&version))?.clone();
+            Some(Release { version, title, changes })
+        })
+        .collect();
     match listed {
         Some(listed) if !listed.is_empty() => (listed, older),
         _ => (Vec::new(), 0),
     }
+}
+
+/// What is left to ask git: the releases after `current`, up to the twenty
+/// listed, that hold no changes yet, as the consecutive run from the newest
+/// of them to the oldest, with the two releases just older than that to stop at.
+/// A release with only a title, as an older dbt-edith kept it, is asked again,
+/// and keeps its title if that fails. None when nothing is left.
+fn still_wanted(
+    releases: &[String], current: &str, titles: &BTreeMap<String, String>, changes: &BTreeMap<String, Vec<String>>,
+) -> Option<Wanted> {
+    let (listed, _) = missed(releases, current);
+    let lacking = |v: &String| !changes.contains_key(v);
+    let first = listed.iter().position(lacking)?;
+    let last = listed.iter().rposition(lacking)?;
+    let range = listed[first..=last].to_vec();
+    // The list is newest first, so the run's oldest release sits at `last`
+    // among `releases` too: the next two are the tags older than it.
+    let at = releases.iter().position(|v| *v == listed[last]);
+    let base = at.and_then(|at| Some((releases.get(at + 1)?.clone(), releases.get(at + 2)?.clone())));
+    let untitled = range.iter().filter(|v| lacking(v) && !titles.contains_key(*v)).cloned().collect();
+    Some(Wanted { range, base, untitled })
 }
 
 pub struct Update {
@@ -476,13 +588,13 @@ impl Update {
         self.look(now_secs(), true, move || ask(&look_dir(asked.as_deref())), move |v| titles(&look_dir(titled.as_deref()), v)).await
     }
 
-    /// `ask` lists the releases; `titler` names the ones this dbt-edith is
-    /// behind and no answer kept has a title for, and only when it is behind.
-    /// The look is on its way until both have answered.
+    /// `ask` lists the releases; `titler` lists the changes of the ones this
+    /// dbt-edith is behind and no answer kept has them for, and only when it
+    /// is behind. The look is on its way until both have answered.
     async fn look<F, G>(&self, now: u64, now_anyway: bool, ask: F, titler: G)
     where
         F: FnOnce() -> Result<Vec<String>, String> + Send + 'static,
-        G: FnOnce(Vec<String>) -> Result<Vec<(String, String)>, String> + Send + 'static,
+        G: FnOnce(Wanted) -> Result<Learned, String> + Send + 'static,
     {
         if self.off {
             return;
@@ -500,6 +612,11 @@ impl Update {
             k.seen = seen;
             if due {
                 k.checking = true;
+                // A scheduled look, which comes hours after the last, tries
+                // the changes again; a button pressed in between does not.
+                if !now_anyway {
+                    k.range_failed = None;
+                }
             }
             due
         };
@@ -510,17 +627,35 @@ impl Update {
         let listed = tokio::task::spawn_blocking(ask).await.unwrap_or_else(|_| Err("the look stopped".to_string()));
         let answer = match listed {
             Ok(releases) if !releases.is_empty() => {
-                let mut titles = self.known.lock().ok().and_then(|k| k.seen.as_ref().map(|s| s.titles.clone())).unwrap_or_default();
-                let wanted: Vec<String> = missed(&releases, &self.current).0.into_iter().filter(|v| !titles.contains_key(v)).collect();
-                if !wanted.is_empty() {
+                let (mut titles, mut changes, failed) = self
+                    .known
+                    .lock()
+                    .ok()
+                    .map(|k| {
+                        let (titles, changes) = k.seen.as_ref().map(|s| (s.titles.clone(), s.changes.clone())).unwrap_or_default();
+                        (titles, changes, k.range_failed.clone())
+                    })
+                    .unwrap_or_default();
+                if let Some(mut wanted) = still_wanted(&releases, &self.current, &titles, &changes) {
+                    // The same releases whose changes could not be fetched
+                    // are left to their titles until another comes out.
+                    if failed.as_ref() == Some(&wanted.range) {
+                        wanted.base = None;
+                    }
+                    let range = wanted.range.clone();
                     // Without them the menu links the newest release's notes
                     // alone, as before, and the next look tries again.
                     if let Ok(Ok(found)) = tokio::task::spawn_blocking(move || titler(wanted)).await {
-                        titles.extend(found);
+                        if let Ok(mut k) = self.known.lock() {
+                            k.range_failed = found.range_failed.then_some(range).or(failed);
+                        }
+                        titles.extend(found.titles);
+                        changes.extend(found.changes);
                     }
                 }
                 titles.retain(|v, _| releases.contains(v));
-                Ok(Seen { checked: now, latest: releases[0].clone(), releases, titles })
+                changes.retain(|v, _| releases.contains(v));
+                Ok(Seen { checked: now, latest: releases[0].clone(), releases, titles, changes })
             }
             Ok(_) => Err("GitHub listed no release".to_string()),
             Err(why) => Err(why),
@@ -1088,7 +1223,7 @@ mod tests {
     }
 
     /// For a dbt-edith ahead of every release listed, which wants no title.
-    fn never(_: Vec<String>) -> Result<Vec<(String, String)>, String> {
+    fn never(_: Wanted) -> Result<Learned, String> {
         panic!("a title was asked for with no release to list")
     }
 
@@ -1229,13 +1364,20 @@ mod tests {
         let path = seen_path(&dir);
         std::fs::write(&path, r#"{"checked": 42, "latest": "1.17.0"}"#).unwrap();
         let old = load(&path).unwrap();
-        assert_eq!((old.latest.as_str(), old.releases.len(), old.titles.len()), ("1.17.0", 0, 0));
+        assert_eq!((old.latest.as_str(), old.releases.len(), old.titles.len(), old.changes.len()), ("1.17.0", 0, 0, 0));
 
         let titles = |pairs: &[(&str, &str)]| pairs.iter().map(|(v, t)| (v.to_string(), t.to_string())).collect();
         let earlier = Seen { checked: 1, latest: "1.14.0".into(), titles: titles(&[("1.14.0", "Colour the venv")]), ..Seen::default() };
         let later = Seen { checked: 2, latest: "1.15.0".into(), titles: titles(&[("1.15.0", "Sort the jobs")]), ..Seen::default() };
         let both = later.clone().merged(earlier.clone());
         assert_eq!((both.checked, both.titles.len()), (2, 2));
+        assert_eq!(earlier.clone().merged(later.clone()), both);
+
+        let kept = |v: &str, c: &[&str]| BTreeMap::from([(v.to_string(), c.iter().map(|s| s.to_string()).collect::<Vec<_>>())]);
+        let earlier = Seen { changes: kept("1.14.0", &["Colour the venv", "Sort the jobs"]), ..earlier };
+        let later = Seen { changes: kept("1.15.0", &["Pan from a box"]), ..later };
+        let both = later.clone().merged(earlier.clone());
+        assert_eq!(both.changes.len(), 2);
         assert_eq!(earlier.merged(later), both);
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -1246,24 +1388,32 @@ mod tests {
         move || Ok(releases)
     }
 
-    /// A titler that records what it was asked for, and names each version,
-    /// or fails.
-    fn titler(
-        works: bool,
-    ) -> (Arc<Mutex<Vec<Vec<String>>>>, impl FnOnce(Vec<String>) -> Result<Vec<(String, String)>, String> + Send + 'static) {
+    /// A titler that records the run of releases it was asked for, and lists
+    /// two changes for each, or fails.
+    fn titler(works: bool) -> (Arc<Mutex<Vec<Vec<String>>>>, impl FnOnce(Wanted) -> Result<Learned, String> + Send + 'static) {
         let asked = Arc::new(Mutex::new(Vec::new()));
         let record = asked.clone();
-        (asked, move |versions: Vec<String>| {
-            record.lock().unwrap().push(versions.clone());
+        (asked, move |wanted: Wanted| {
+            record.lock().unwrap().push(wanted.range.clone());
             if !works {
                 return Err("Could not resolve host: github.com".to_string());
             }
-            Ok(versions.into_iter().map(|v| (v.clone(), format!("Release {v}"))).collect())
+            let changes = wanted.range.into_iter().map(|v| (v.clone(), vec![format!("Fix {v}"), format!("Add {v}")])).collect();
+            Ok(Learned { changes, ..Learned::default() })
         })
     }
 
+    /// What `titler` lists for each version.
+    fn release(version: &str) -> Release {
+        Release {
+            version: version.to_string(),
+            title: format!("Fix {version}"),
+            changes: vec![format!("Fix {version}"), format!("Add {version}")],
+        }
+    }
+
     #[tokio::test]
-    async fn a_dbt_edith_behind_lists_each_release_since_and_fetches_a_title_once() {
+    async fn a_dbt_edith_behind_lists_each_release_since_and_fetches_a_change_list_once() {
         let dir = scratch("titles");
         let u = Update::new(false, Some(seen_path(&dir)), Err(Why::Elsewhere)).running("1.14.0");
         let (asked, titles) = titler(true);
@@ -1271,16 +1421,15 @@ mod tests {
         assert_eq!(*asked.lock().unwrap(), [["1.16.0", "1.15.0"]]);
         let status = u.status(OCT_14_0300Z);
         assert_eq!(status.latest, "1.16.0");
-        let named = |pairs: &[&str]| pairs.iter().map(|v| (v.to_string(), format!("Release {v}"))).collect::<Vec<_>>();
-        assert_eq!((status.releases, status.older), (named(&["1.16.0", "1.15.0"]), 0));
+        assert_eq!((status.releases, status.older), (vec![release("1.16.0"), release("1.15.0")], 0));
 
         // Another dbt-edith, as far behind, at the next turn: only the new
-        // release's title is fetched, the others are in the file.
+        // release is fetched, the others are in the file.
         let other = Update::new(false, Some(seen_path(&dir)), Err(Why::Elsewhere)).running("1.14.0");
         let (asked, titles) = titler(true);
         other.look(OCT_14_0400Z, false, lister(&["1.17.0", "1.16.0", "1.15.0", "1.14.0"]), titles).await;
         assert_eq!(*asked.lock().unwrap(), [["1.17.0"]]);
-        assert_eq!(other.status(OCT_14_0400Z).releases, named(&["1.17.0", "1.16.0", "1.15.0"]));
+        assert_eq!(other.status(OCT_14_0400Z).releases, vec![release("1.17.0"), release("1.16.0"), release("1.15.0")]);
 
         // One that runs the newest asks for none, and lists none.
         let newest = Update::new(false, Some(seen_path(&dir)), Err(Why::Elsewhere)).running("1.17.0");
@@ -1307,6 +1456,86 @@ mod tests {
         assert_eq!(u.status(OCT_14_0400Z).releases.len(), 2);
     }
 
+    /// The fallback: git could list no changes, only each tagged commit's
+    /// title, and the menu shows one row per release. A later look, which
+    /// has every title, still asks for the changes.
+    #[tokio::test]
+    async fn a_release_with_only_a_title_is_listed_by_it_and_asked_again_for_its_changes() {
+        let u = Update::new(false, None, Err(Why::Elsewhere)).running("1.14.0");
+        let alone = |wanted: Wanted| {
+            assert_eq!(
+                (wanted.range.as_slice(), wanted.base),
+                (["1.16.0", "1.15.0"].map(String::from).as_slice(), Some(("1.14.0".to_string(), "1.13.0".to_string())))
+            );
+            let titles = wanted.untitled.iter().map(|v| (v.clone(), format!("Title {v}"))).collect();
+            Ok(Learned { titles, ..Learned::default() })
+        };
+        u.look(OCT_14_0300Z, false, lister(&["1.16.0", "1.15.0", "1.14.0", "1.13.0"]), alone).await;
+        let titled = |v: &str| Release { version: v.to_string(), title: format!("Title {v}"), changes: Vec::new() };
+        assert_eq!(u.status(OCT_14_0300Z).releases, vec![titled("1.16.0"), titled("1.15.0")]);
+
+        let (asked, titles) = titler(true);
+        u.look(OCT_14_0400Z, false, lister(&["1.16.0", "1.15.0", "1.14.0", "1.13.0"]), titles).await;
+        assert_eq!(*asked.lock().unwrap(), [["1.16.0", "1.15.0"]]);
+        assert_eq!(u.status(OCT_14_0400Z).releases, vec![release("1.16.0"), release("1.15.0")]);
+    }
+
+    /// A fetch of changes that failed is not made again by a look on demand
+    /// for the same releases, and is by the next scheduled look and for the
+    /// next release that comes.
+    #[tokio::test]
+    async fn a_failed_fetch_of_changes_is_not_repeated_for_the_same_releases() {
+        let u = Update::new(false, None, Err(Why::Elsewhere)).running("1.14.0");
+        let asked = Arc::new(Mutex::new(Vec::new()));
+        let failing = |asked: &Arc<Mutex<Vec<(Vec<String>, bool)>>>| {
+            let record = asked.clone();
+            move |wanted: Wanted| {
+                record.lock().unwrap().push((wanted.range.clone(), wanted.base.is_some()));
+                // The titles come, the changes' fetch is said to have failed
+                // when it was made.
+                let titles = wanted.untitled.iter().map(|v| (v.clone(), format!("Title {v}"))).collect();
+                Ok(Learned { titles, range_failed: wanted.base.is_some(), ..Learned::default() })
+            }
+        };
+        let list = ["1.16.0", "1.15.0", "1.14.0", "1.13.0", "1.12.0"];
+        u.look(OCT_14_0300Z, false, lister(&list), failing(&asked)).await;
+        u.look(OCT_14_0300Z + 60, true, lister(&list), failing(&asked)).await;
+        u.look(OCT_14_0400Z, false, lister(&list), failing(&asked)).await;
+        let two = vec!["1.16.0".to_string(), "1.15.0".to_string()];
+        assert_eq!(*asked.lock().unwrap(), [(two.clone(), true), (two.clone(), false), (two, true)]);
+        // The menu is still filled, from the titles.
+        assert_eq!(u.status(OCT_14_0400Z).releases.len(), 2);
+
+        // A release out since makes another set, which is tried.
+        let newer = ["1.17.0", "1.16.0", "1.15.0", "1.14.0", "1.13.0", "1.12.0"];
+        u.look(OCT_14_0600Z, false, lister(&newer), failing(&asked)).await;
+        assert_eq!(asked.lock().unwrap().last().unwrap(), &(vec!["1.17.0".to_string(), "1.16.0".to_string(), "1.15.0".to_string()], true));
+    }
+
+    #[test]
+    fn the_releases_asked_for_run_unbroken_from_the_newest_lacking_to_the_oldest_with_the_tag_below_to_stop_at() {
+        let all: Vec<String> = ["1.6.0", "1.5.0", "1.4.0", "1.3.0", "1.2.0", "1.1.0"].map(String::from).to_vec();
+        let kept = |vs: &[&str]| vs.iter().map(|v| (v.to_string(), vec!["x".to_string()])).collect::<BTreeMap<_, _>>();
+        let (no_titles, none) = (BTreeMap::new(), BTreeMap::new());
+        let titles = BTreeMap::from([("1.3.0".to_string(), "t".to_string())]);
+        // Everything is kept: nothing to ask.
+        assert!(still_wanted(&all, "1.2.0", &no_titles, &kept(&["1.6.0", "1.5.0", "1.4.0", "1.3.0"])).is_none());
+        // Only the newest is new: it alone, stopped at the next tag.
+        let new = still_wanted(&all, "1.2.0", &no_titles, &kept(&["1.5.0", "1.4.0", "1.3.0"])).unwrap();
+        assert_eq!((new.range, new.base), (vec!["1.6.0".to_string()], Some(("1.5.0".to_string(), "1.4.0".to_string()))));
+        // One kept between two that lack: it is asked again with them, or its
+        // commits would be handed to the release above.
+        let hole = still_wanted(&all, "1.2.0", &titles, &kept(&["1.5.0", "1.4.0"])).unwrap();
+        assert_eq!(hole.range, ["1.6.0", "1.5.0", "1.4.0", "1.3.0"]);
+        assert_eq!((hole.base, hole.untitled), (Some(("1.2.0".to_string(), "1.1.0".to_string())), vec!["1.6.0".to_string()]));
+        // The oldest listed release is the last one, or has one tag below it:
+        // a base needs two, so the titles are all that is fetched.
+        let last = still_wanted(&all[..2], "1.4.0", &no_titles, &none).unwrap();
+        assert_eq!((last.range.len(), last.base), (2, None));
+        let one_below = still_wanted(&all[..5], "1.2.0", &no_titles, &none).unwrap();
+        assert_eq!((one_below.range.len(), one_below.base), (4, None));
+    }
+
     #[tokio::test]
     async fn twenty_releases_are_listed_and_the_older_ones_counted() {
         let u = Update::new(false, None, Err(Why::Elsewhere)).running("1.0.0");
@@ -1317,7 +1546,7 @@ mod tests {
         assert_eq!(asked.lock().unwrap()[0].len(), 20);
         let status = u.status(OCT_14_0300Z);
         assert_eq!((status.releases.len(), status.older), (20, 5));
-        assert_eq!(status.releases[19].0, "1.6.0");
+        assert_eq!(status.releases[19].version, "1.6.0");
     }
 
     #[tokio::test]
@@ -2190,18 +2419,13 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// The real git, on a local repository standing for GitHub, which ignores
-    /// the filter GitHub honours: each tag's commit subject, in the order
-    /// asked, a lightweight tag's and an annotated one's alike, and nothing
-    /// left behind.
-    #[test]
-    fn git_fetches_the_subject_of_each_tagged_commit() {
-        let dir = scratch("subjects");
-        let remote = dir.join("remote");
-        let git = |args: &[&str]| {
+    /// A runner of git in the local repository standing for GitHub, kept away
+    /// from the machine's own configuration.
+    fn in_remote(remote: &Path) -> impl Fn(&[&str]) + '_ {
+        move |args: &[&str]| {
             let out = std::process::Command::new("git")
                 .arg("-C")
-                .arg(&remote)
+                .arg(remote)
                 .args(args)
                 .env("GIT_CONFIG_GLOBAL", "/dev/null")
                 .env("GIT_CONFIG_NOSYSTEM", "1")
@@ -2212,8 +2436,19 @@ mod tests {
                 .output()
                 .unwrap();
             assert!(out.status.success(), "git {args:?}: {}", String::from_utf8_lossy(&out.stderr));
-        };
+        }
+    }
+
+    /// The real git, on a local repository standing for GitHub, which ignores
+    /// the filter GitHub honours: each tag's commit subject, in the order
+    /// asked, a lightweight tag's and an annotated one's alike, and nothing
+    /// left behind.
+    #[test]
+    fn git_fetches_the_subject_of_each_tagged_commit() {
+        let dir = scratch("subjects");
+        let remote = dir.join("remote");
         std::fs::create_dir_all(&remote).unwrap();
+        let git = in_remote(&remote);
         git(&["init", "-q"]);
         git(&["commit", "-q", "--allow-empty", "-m", "Pan the lineage from a box (#29)", "-m", "The body, never read."]);
         git(&["tag", "v1.13.2"]);
@@ -2235,6 +2470,75 @@ mod tests {
             ]
         );
         assert!(crate::git::tag_subjects(&scratch_dir, url, &["v9.9.9".to_string()]).is_err());
+        assert_eq!(std::fs::read_dir(&scratch_dir).unwrap().count(), 0, "the bare repository is removed");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The real git again: the commits on the first-parent line that added a
+    /// line to the changelog go to the release above them, a lightweight tag's
+    /// commit and an annotated one's alike, a merged branch's own commits are
+    /// left out, a release with none keeps its tagged commit's subject, and
+    /// nothing from the base down comes. As for the subjects, the local remote
+    /// ignores the filter GitHub honours; `--shallow-exclude` it does not.
+    #[test]
+    fn git_lists_the_commits_that_changed_the_changelog_between_the_tags_of_a_run_of_releases() {
+        let dir = scratch("changes");
+        let remote = dir.join("remote");
+        std::fs::create_dir_all(&remote).unwrap();
+        let git = in_remote(&remote);
+        let log = |subject: &str| {
+            let path = remote.join("CHANGELOG.md");
+            let mut text = std::fs::read_to_string(&path).unwrap_or_default();
+            text.push_str(&format!("- {subject}\n"));
+            std::fs::write(&path, text).unwrap();
+            git(&["add", "CHANGELOG.md"]);
+            git(&["commit", "-q", "-m", subject]);
+        };
+        git(&["init", "-q", "-b", "main"]);
+        log("Name the venv (#20)");
+        git(&["tag", "v1.12.0"]);
+        log("Pan the lineage from a box (#29)");
+        git(&["tag", "v1.13.2"]);
+        // The first commit after the base, the one a fetch cut at the base
+        // itself would show as a root touching everything: no changelog line.
+        git(&["commit", "-q", "--allow-empty", "-m", "Plan the next feature (#33)"]);
+        log("Colour the venv in the status bar (#34)");
+        git(&["tag", "-a", "v1.14.0", "-m", "Release 1.14.0, the tag's own message"]);
+        log("Sort the jobs (#35)");
+        log("Draw the edges (#36)");
+        git(&["tag", "v1.15.0"]);
+        git(&["switch", "-q", "-c", "side"]);
+        log("Work done on a branch");
+        git(&["switch", "-q", "main"]);
+        git(&["merge", "-q", "--no-ff", "-m", "Open the menu on hover (#37)", "side"]);
+        git(&["tag", "v1.16.0"]);
+        git(&["commit", "-q", "--allow-empty", "-m", "Fix a typo in the notes (#38)"]);
+        git(&["tag", "v1.17.0"]);
+        let scratch_dir = dir.join("scratch");
+        std::fs::create_dir_all(&scratch_dir).unwrap();
+
+        let url = remote.to_str().unwrap();
+        let tags: Vec<String> = ["v1.17.0", "v1.16.0", "v1.15.0", "v1.14.0"].map(String::from).to_vec();
+        let found = crate::git::tag_changes(&scratch_dir, url, &tags, "v1.13.2", "v1.12.0").unwrap();
+        let listed: Vec<(&str, Vec<&str>)> = found.iter().map(|(t, c)| (t.as_str(), c.iter().map(String::as_str).collect())).collect();
+        assert_eq!(
+            listed,
+            [
+                ("v1.17.0", vec!["Fix a typo in the notes (#38)"]),
+                ("v1.16.0", vec!["Open the menu on hover (#37)"]),
+                ("v1.15.0", vec!["Draw the edges (#36)", "Sort the jobs (#35)"]),
+                ("v1.14.0", vec!["Colour the venv in the status bar (#34)"]),
+            ]
+        );
+        // The same run without its newest release: what that one holds is not
+        // handed to the one below.
+        let found = crate::git::tag_changes(&scratch_dir, url, &tags[1..], "v1.13.2", "v1.12.0").unwrap();
+        assert_eq!(found.iter().map(|(t, c)| (t.as_str(), c.len())).collect::<Vec<_>>(), [("v1.16.0", 1), ("v1.15.0", 2), ("v1.14.0", 1)]);
+        // A tag below the run, a base that is not below it and a tag the
+        // remote does not have fail, for the menu to fall back on the titles.
+        assert!(crate::git::tag_changes(&scratch_dir, url, &tags, "v1.13.2", "v0.0.1").is_err());
+        assert!(crate::git::tag_changes(&scratch_dir, url, &tags, "v1.16.0", "v1.12.0").is_err());
+        assert!(crate::git::tag_changes(&scratch_dir, url, &["v9.9.9".to_string()], "v1.13.2", "v1.12.0").is_err());
         assert_eq!(std::fs::read_dir(&scratch_dir).unwrap().count(), 0, "the bare repository is removed");
         let _ = std::fs::remove_dir_all(&dir);
     }

@@ -179,6 +179,7 @@ it; these files say why it is built this way, for whoever changes it next.
 | [0173](0173-the-linters-are-fetched-by-hash-and-aim-at-bugs.md) | The linters are fetched by hash, and their rules aim at bugs | adding or changing a linter rule, bumping a linter, or covering a new file type |
 | [0174](0174-a-release-shows-its-virustotal-result.md) | A release shows its VirusTotal result | changing the VirusTotal table in a release's notes, the `virustotal.json` asset, or the README's badge |
 | [0175](0175-a-version-gathers-a-group-of-pull-requests.md) | A version gathers a group of pull requests | changing which pull request bumps the version, who chooses a batch's versions, or what `## Unreleased` holds between releases |
+| [0176](0176-edith-s-menu-lists-the-pull-requests-a-user-would-notice.md) | Edith's menu lists the pull requests a user would notice | changing what Edith's menu or the Updates section lists for a release, or what a look fetches from git to list it |
 
 ## Keeping these honest
 

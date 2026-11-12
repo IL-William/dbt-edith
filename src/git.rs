@@ -1039,14 +1039,11 @@ fn reason(r: &GitRun) -> String {
     }
 }
 
-/// The subject of the commit each of `tags` names on a remote, in the order
-/// given, for the list of what each newer dbt-edith brought (0079). Fetched
-/// into a bare repository made for it under `scratch`, which only has to
-/// exist, and removed afterwards: the tagged commits alone, no history, no
-/// tree and no file, so the request is a few kilobytes. git looks for no
-/// repository above it, as `ls_remote_tags` does not. A tag the remote does
-/// not hold fails the fetch, so every one asked for comes from its listing.
-pub fn tag_subjects(scratch: &Path, url: &str, tags: &[String]) -> Result<Vec<(String, String)>, String> {
+/// Runs `f` in a bare repository made for it under `scratch`, which only has
+/// to exist, and removed afterwards. git looks for no repository above it, as
+/// `ls_remote_tags` does not. `f` is given the directory and the environment
+/// that names it as the repository.
+fn in_scratch<T>(scratch: &Path, f: impl FnOnce(&Path, &[(&str, &str)]) -> Result<T, String>) -> Result<T, String> {
     static MADE: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
     let made = MADE.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let dir = scratch.join(format!("dbt-edith-titles-{}-{made}", std::process::id()));
@@ -1067,18 +1064,31 @@ pub fn tag_subjects(scratch: &Path, url: &str, tags: &[String]) -> Result<Vec<(S
         if !init.ok {
             return Err(reason(&init));
         }
-        let env = named;
+        f(&dir, &named)
+    })();
+    let _ = std::fs::remove_dir_all(&dir);
+    answer
+}
+
+/// The subject of the commit each of `tags` names on a remote, in the order
+/// given: what the menu falls back to when it cannot list every change of a
+/// release (0079, 0176). Fetched into a scratch repository (`in_scratch`): the
+/// tagged commits alone, no history, no tree and no file, so the request is a
+/// few kilobytes. A tag the remote does not hold fails the fetch, so every one
+/// asked for comes from its listing.
+pub fn tag_subjects(scratch: &Path, url: &str, tags: &[String]) -> Result<Vec<(String, String)>, String> {
+    in_scratch(scratch, |dir, env| {
         let specs: Vec<String> = tags.iter().map(|t| format!("refs/tags/{t}:refs/tags/{t}")).collect();
         let mut args = vec!["fetch", "-q", "--depth=1", "--filter=tree:0", "--no-tags", url];
         args.extend(specs.iter().map(String::as_str));
-        let fetched = exec(&dir, &args, &env, Duration::from_secs(30), true);
+        let fetched = exec(dir, &args, env, Duration::from_secs(30), true);
         if !fetched.ok {
             return Err(reason(&fetched));
         }
         // `*subject` is the commit's under an annotated tag, whose own
         // `subject` is the tag's message; a lightweight tag has only `subject`.
         let format = "--format=%(refname:strip=2)%09%(*subject)%09%(subject)";
-        let listed = exec(&dir, &["for-each-ref", format, "refs/tags"], &env, Duration::from_secs(10), true);
+        let listed = exec(dir, &["for-each-ref", format, "refs/tags"], env, Duration::from_secs(10), true);
         if !listed.ok {
             return Err(reason(&listed));
         }
@@ -1092,9 +1102,115 @@ pub fn tag_subjects(scratch: &Path, url: &str, tags: &[String]) -> Result<Vec<(S
             })
             .collect();
         Ok(tags.iter().filter_map(|t| Some((t.clone(), subjects.get(t.as_str())?.to_string()))).collect())
-    })();
-    let _ = std::fs::remove_dir_all(&dir);
-    answer
+    })
+}
+
+/// What the commits of a run of releases changed, for the menu (0176): the
+/// subject of each first-parent commit that changed `CHANGELOG.md`,
+/// which is what someone using the tool would notice, under the release that
+/// holds it. `tags` are consecutive releases, newest first; each holds the
+/// commits on the newest tag's first-parent line from its own down to the next
+/// older tag's, exclusive, and a squash-merged pull request is one such commit
+/// (0175). A release none of whose commits touched the file lists the subject
+/// of its tagged commit, so none is empty.
+///
+/// `base` is the tag older than the oldest of them, and `below` the one older
+/// than that. The fetch excludes what `below` reaches (`--shallow-exclude`,
+/// which GitHub honours beside `--filter`), so only the commits since it come,
+/// with their trees and no file. One tag lower than `base` and not `base`
+/// itself, because the first commit past an exclusion is a shallow root, with
+/// no parent to compare with, and a path-limited log counts a root as touching
+/// every path. With `below` excluded, every commit above `base` has its real
+/// parent. Fails, for the caller to fall back on `tag_subjects`, when git
+/// does, when a tag is not on that line, or when the line does not reach
+/// `base`'s commit, which would hand the oldest release a history that is not
+/// its own.
+pub fn tag_changes(scratch: &Path, url: &str, tags: &[String], base: &str, below: &str) -> Result<Vec<(String, Vec<String>)>, String> {
+    let Some(newest) = tags.first() else { return Ok(Vec::new()) };
+    in_scratch(scratch, |dir, env| {
+        let specs: Vec<String> =
+            tags.iter().chain(std::iter::once(&base.to_string())).map(|t| format!("refs/tags/{t}:refs/tags/{t}")).collect();
+        let exclude = format!("--shallow-exclude=refs/tags/{below}");
+        let mut args = vec!["fetch", "-q", "--filter=blob:none", "--no-tags", &exclude, url];
+        args.extend(specs.iter().map(String::as_str));
+        let fetched = exec(dir, &args, env, Duration::from_secs(30), true);
+        if !fetched.ok {
+            return Err(reason(&fetched));
+        }
+        // `*objectname` is the commit under an annotated tag, empty for a
+        // lightweight one, whose `objectname` is the commit itself.
+        let format = "--format=%(refname:strip=2)%09%(objectname)%09%(*objectname)";
+        let listed = exec(dir, &["for-each-ref", format, "refs/tags"], env, Duration::from_secs(10), true);
+        if !listed.ok {
+            return Err(reason(&listed));
+        }
+        let at: std::collections::HashMap<&str, &str> = listed
+            .stdout
+            .lines()
+            .filter_map(|line| {
+                let mut parts = line.splitn(3, '\t');
+                let (tag, own, peeled) = (parts.next()?, parts.next()?, parts.next().unwrap_or(""));
+                Some((tag, if peeled.is_empty() { own } else { peeled }))
+            })
+            .collect();
+        let tagged: Vec<(&str, &str)> =
+            tags.iter().map(|t| at.get(t.as_str()).map(|c| (t.as_str(), *c))).collect::<Option<_>>().ok_or("a tag was not fetched")?;
+        let floor = *at.get(base).ok_or("the base tag was not fetched")?;
+        let tip = format!("refs/tags/{newest}");
+        let line = exec(dir, &["log", "--first-parent", "--format=%H%x09%s", &tip], env, Duration::from_secs(10), true);
+        if !line.ok {
+            return Err(reason(&line));
+        }
+        let touching = exec(dir, &["log", "--first-parent", "--format=%H", &tip, "--", "CHANGELOG.md"], env, Duration::from_secs(10), true);
+        if !touching.ok {
+            return Err(reason(&touching));
+        }
+        let commits: Vec<(&str, &str)> = line.stdout.lines().filter_map(|l| l.split_once('\t')).collect();
+        let touched: std::collections::HashSet<&str> = touching.stdout.lines().collect();
+        walk(&commits, &touched, &tagged, floor)
+            .ok_or_else(|| "the releases' commits are not on one first-parent line down to the base".to_string())
+    })
+}
+
+/// Hands each commit of `commits`, newest first, that is in `touched` to the
+/// nearest tag at or above it, down to the commit `floor`, which is not
+/// handed on: a release is made by the pull request that bumped the version,
+/// the last of its group, and the ones merged before it since the release
+/// below. `tagged` is each tag with its commit, newest first. A tag none of
+/// whose commits is in `touched` gets its own commit's subject. None when a
+/// tag's commit or `floor` is not among the commits: the first would hand a
+/// release's pull requests to the tag above it, the second means the base was
+/// no ancestor and the oldest release would hold a history that is not its own.
+fn walk(
+    commits: &[(&str, &str)], touched: &std::collections::HashSet<&str>, tagged: &[(&str, &str)], floor: &str,
+) -> Option<Vec<(String, Vec<String>)>> {
+    let mut found: Vec<(String, Vec<String>)> = Vec::new();
+    let mut own: Vec<&str> = Vec::new();
+    let mut reached = false;
+    for (commit, subject) in commits {
+        if *commit == floor {
+            reached = true;
+            break;
+        }
+        if let Some((tag, _)) = tagged.iter().find(|(_, at)| at == commit) {
+            found.push((tag.to_string(), Vec::new()));
+            own.push(subject);
+        }
+        if touched.contains(commit) {
+            found.last_mut()?.1.push(subject.to_string());
+        } else if found.is_empty() {
+            return None;
+        }
+    }
+    if !reached || found.len() != tagged.len() {
+        return None;
+    }
+    for ((_, subjects), own) in found.iter_mut().zip(own) {
+        if subjects.is_empty() {
+            subjects.push(own.to_string());
+        }
+    }
+    Some(found)
 }
 
 #[cfg(test)]
@@ -1145,6 +1261,44 @@ mod tests {
         write(dir, "README.md", "one\n");
         git(dir, &["add", "README.md"]);
         git(dir, &["commit", "-q", "-m", "first"]);
+    }
+
+    /// The commits that changed the changelog go to the nearest tag at or
+    /// above them, down to the floor, which and whose parents are left out.
+    /// A tag none of whose commits changed it keeps its own subject, a tag
+    /// that is not on the line fails the walk, since the release above it
+    /// would take its pull requests, and so does a line that never reaches
+    /// the floor.
+    #[test]
+    fn a_release_holds_the_commits_that_changed_the_changelog_down_to_the_floor() {
+        let commits =
+            [("f", "Draw (#6)"), ("e", "Bump (#5)"), ("d", "Sort (#4)"), ("c", "Colour (#3)"), ("b", "Plan (#2)"), ("a", "Pan (#1)")];
+        let touched: std::collections::HashSet<&str> = ["f", "c", "a"].into_iter().collect();
+        let held = |tagged: &[(&str, &str)], floor: &str| {
+            walk(&commits, &touched, tagged, floor)
+                .map(|found| found.into_iter().map(|(tag, subjects)| (tag, subjects.join("+"))).collect::<Vec<_>>())
+        };
+        let named = |pairs: &[(&str, &str)]| Some(pairs.iter().map(|(t, s)| (t.to_string(), s.to_string())).collect::<Vec<_>>());
+        // The tags on f and c, the floor b: Draw alone is v3's (e and d did
+        // not touch the file), Colour alone v2's, and b is not handed on.
+        assert_eq!(held(&[("v3", "f"), ("v2", "c")], "b"), named(&[("v3", "Draw (#6)"), ("v2", "Colour (#3)")]));
+        // The floor lower: v2 takes the commits down to it that touched.
+        assert_eq!(held(&[("v3", "f"), ("v2", "c")], "a"), named(&[("v3", "Draw (#6)"), ("v2", "Colour (#3)")]));
+        // The tag on e, which did not touch the file, nor did d: its own
+        // subject, so that no release is empty.
+        assert_eq!(held(&[("v3", "f"), ("v2", "e")], "c"), named(&[("v3", "Draw (#6)"), ("v2", "Bump (#5)")]));
+        // The line starts at the newest tag: a commit above it has no release.
+        assert_eq!(held(&[("v3", "e")], "a"), None);
+        assert_eq!(held(&[("v3", "f"), ("v2", "x")], "a"), None, "a tag off the line");
+        assert_eq!(held(&[("v3", "f")], "x"), None, "a floor that is not an ancestor");
+        // The commit just above the floor, which a fetch cut one tag higher
+        // would show as a root touching everything, is the real thing here and
+        // is dropped unless the changelog changed in it.
+        let two = [("c", "Colour (#3)"), ("b", "Plan (#2)"), ("a", "Pan (#1)")];
+        let only_c: std::collections::HashSet<&str> = ["c"].into_iter().collect();
+        let found = walk(&two, &only_c, &[("v2", "c")], "a").unwrap();
+        assert_eq!(found, [("v2".to_string(), vec!["Colour (#3)".to_string()])], "b did not touch the changelog");
+        assert_eq!(walk(&two[..2], &only_c, &[("v2", "c")], "a"), None, "no floor, no answer");
     }
 
     /// What came with a clone, asked case aside and as spelt, from a folder

@@ -181,7 +181,8 @@ frontend fix does not exist in a release binary until it is rebuilt (see 0005).
   three words or more, capitalised, no full stop at the end, no branch name in
   it. "Feature/breadcrumb bar" is the shape to avoid, and the only one that
   ever reached `main`. The title is also what someone a release behind reads
-  in Edith's menu, one line per release (0079), so:
+  in Edith's menu, one line per pull request of each release that changed
+  CHANGELOG.md, which is what reaches users (0079, 0176), so:
   - **50 characters at most**, which that line holds;
   - **one idea**, the one someone using it would notice; the rest goes in the
     CHANGELOG entry and the body, not after a comma;

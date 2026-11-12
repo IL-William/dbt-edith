@@ -1044,9 +1044,13 @@ kbd {
 .updmenu .menunote.pathwarn { color: var(--warn); }
 .updmenu .menunote code { font: 11px var(--mono); }
 .updmenu .updfoot { display: flex; align-items: center; gap: 10px; padding: 2px 4px 4px 0; }
-/* One release per row: its version in a column of its own, its title on one
-   line, cut short, the whole of it in the row's tooltip. */
+/* One pull request per row: a release's version in a column of its own on
+   its first, nothing there on the others, the title on one line, cut short,
+   the whole of it in the row's tooltip. The rows of one release sit close, so
+   that the version marks where the next begins. */
 .updmenu a.relrow { padding-top: 3px; padding-bottom: 3px; }
+.updmenu a.relrow.relcont { padding-top: 0; }
+.relrow.relmore .lbl { color: var(--fg-mute); }
 .relrow .ver { flex: 0 0 46px; font: 10.5px var(--mono); color: var(--fg-dim); }
 .relrow .lbl { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .updfoot .menunote { flex: 1; padding-bottom: 0; }
@@ -2006,6 +2010,9 @@ kbd {
 .relline:hover { background: var(--bg-3); }
 .relline:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .sghead + .relline { border-top: 0; }
+/* The further pull requests of a release continue its row, under no rule. */
+.relline.relcont { border-top: 0; padding-top: 0; }
+.relline.relmore { color: var(--fg-mute); }
 .relline .mono { color: var(--fg-dim); }
 .codebox {
   display: flex; align-items: flex-start; gap: 12px; margin: 0 16px 14px; padding: 10px 12px; border: 1px solid var(--line);
