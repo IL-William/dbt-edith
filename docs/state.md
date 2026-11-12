@@ -2608,6 +2608,13 @@ for 1, orange for 2, red from 3, and only a run forced past a flag can publish
 a non-zero one. It shows the scan at publication, and releases published before
 this change have no file.
 
+The VirusTotal badge reads the JSON's message (0179, no version of its own),
+amending 0174. shields.io's endpoint badge refuses github.com as a host, so the
+README's badge became shields.io's dynamic JSON badge, which reads the `message`
+of the same file (`0/75 · v<version>`) in a fixed blue. The count stays in the
+text; the colour by flags no longer shows on the README. The file keeps its
+endpoint format and its colour, and the release workflow did not change.
+
 Edith's menu lists the pull requests a release holds that changed
 CHANGELOG.md (0176, amending 0079): a row for each under the version, the first
 eight and a count of the rest, forty rows of changes and then up to two rows
