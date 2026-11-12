@@ -14632,7 +14632,7 @@ function paintSetUpdates(box) {
     if (listed) {
       setGroupHead(rel, listed.head);
       for (const r of listed.rows) {
-        const a = link(r.href, 'relline', r.tip, 'rel:' + r.version);
+        const a = link(r.href, `relline${r.cont ? ' relcont' : ''}${r.more ? ' relmore' : ''}`, r.tip, r.key);
         a.append(jel('span', 'mono', r.version), jel('span', '', r.title));
         rel.append(a);
       }
@@ -22059,17 +22059,40 @@ function updateLook(u, now) {
   return said.join(' ');
 }
 
-/* The releases since the running one, as the menu lists them (0079): a head
-   counting them all, one row per release with its pull request's title, and
-   a last row for the older ones the server left out. Null without the list,
-   when the menu links the newest release's notes alone. Pure, for
-   web/tests/update.js. */
+/* The releases since the running one, as the menu lists them (0079, 0176): a
+   head counting them all, for each release a row with its version and the
+   title of its first pull request, a row under it with no version for each
+   further one (eight at most, then a row counting the rest that links the
+   release's notes), and a last row for the older releases the server left
+   out. Forty rows are the budget for the changes in all: once it is spent a
+   release shows its first title and the count of the rest, so twenty busy
+   releases stay a list and not a wall. A release whose changes could not be
+   listed is its one row. Null without the list, when the menu links the
+   newest release's notes alone. Pure, for web/tests/update.js. */
 function releaseRows(u) {
   if (!u || !u.newer || !(u.releases || []).length) return null;
+  const each = 8, budget = 40;
   const all = u.releases.length + (u.older || 0);
+  const rows = [];
+  for (const r of u.releases) {
+    const changes = (r.changes && r.changes.length) ? r.changes : [r.title];
+    const shown = Math.max(1, Math.min(each, budget - rows.length));
+    changes.slice(0, shown).forEach((change, i) => rows.push({
+      version: i ? '' : r.version, title: change, href: r.notes, cont: i > 0,
+      key: i ? `rel:${r.version}:${i}` : `rel:${r.version}`,
+      tip: i ? change : `dbt-edith ${r.version}: ${change}`,
+    }));
+    const rest = changes.length - shown;
+    if (rest > 0) {
+      rows.push({
+        version: '', title: `+${rest} more`, href: r.notes, cont: true, more: true, key: `rel:${r.version}:more`,
+        tip: `Every change of ${r.version}, in its notes on GitHub`,
+      });
+    }
+  }
   return {
     head: `${all} release${all === 1 ? '' : 's'} since yours`,
-    rows: u.releases.map((r) => ({ version: r.version, title: r.title, href: r.notes, tip: `dbt-edith ${r.version}: ${r.title}` })),
+    rows,
     older: u.older && u.older_notes
       ? { label: `and ${u.older} older`, href: u.older_notes, tip: 'Every release, on GitHub' } : null,
   };
@@ -22213,7 +22236,7 @@ function paintUpdateMenu(menu) {
     if (listed) {
       menu.append(el('div', 'menuhead', listed.head));
       for (const r of listed.rows) {
-        const a = link(r.href, 'menulink relrow', r.tip);
+        const a = link(r.href, `menulink relrow${r.cont ? ' relcont' : ''}${r.more ? ' relmore' : ''}`, r.tip);
         a.append(el('span', 'ver', r.version), el('span', 'lbl', r.title));
         menu.append(a);
       }

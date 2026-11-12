@@ -197,6 +197,38 @@ var capped = releaseRows({ current: '1.0.0', latest: '1.25.0', newer: true, olde
 check('counts the ones left out', capped.head, '6 releases since yours');
 check('and links every release for them', capped.older, { label: 'and 5 older', href: 'https://github.com/IL-William/dbt-edith/releases', tip: 'Every release, on GitHub' });
 
+// Each pull request a release holds is a row of its own (0176): the version
+// on the first, none on the others.
+var many = releaseRows({ current: '1.14.1', latest: '1.16.0', newer: true, older: 2, older_notes: 'https://example.com/all', releases: [
+  { version: '1.16.0', title: 'Open the menu on hover', changes: ['Open the menu on hover', 'Name the venv', 'Sort the jobs'], notes: tag + '1.16.0' },
+  { version: '1.15.0', title: 'Pan from a box', notes: tag + '1.15.0' },
+] });
+check('a row per change, the version on the first only', many.rows.map(function (r) { return r.version + '|' + r.title; }),
+  ['1.16.0|Open the menu on hover', '|Name the venv', '|Sort the jobs', '1.15.0|Pan from a box']);
+check('each row marked as a continuation or not', many.rows.map(function (r) { return !!r.cont; }), [false, true, true, false]);
+check('every row of a release links its notes', many.rows.map(function (r) { return r.href; }),
+  [tag + '1.16.0', tag + '1.16.0', tag + '1.16.0', tag + '1.15.0']);
+check('a key of its own for each row', many.rows.map(function (r) { return r.key; }), ['rel:1.16.0', 'rel:1.16.0:1', 'rel:1.16.0:2', 'rel:1.15.0']);
+check('the version leads the first tooltip, not the others', [many.rows[0].tip, many.rows[1].tip],
+  ['dbt-edith 1.16.0: Open the menu on hover', 'Name the venv']);
+check('the head counts releases, not changes', many.head, '4 releases since yours');
+var titles = []; for (var n = 1; n <= 11; n++) titles.push('Change ' + n);
+var long = releaseRows({ current: '1.0.0', latest: '1.1.0', newer: true, releases: [{ version: '1.1.0', title: 'Change 1', changes: titles, notes: tag + '1.1.0' }] });
+check('eight changes at most, then a row counting the rest', long.rows.length, 9);
+check('that row says how many and links the notes', [long.rows[8].title, long.rows[8].href, !!long.rows[8].more], ['+3 more', tag + '1.1.0', true]);
+var eight = releaseRows({ current: '1.0.0', latest: '1.1.0', newer: true, releases: [{ version: '1.1.0', title: 'Change 1', changes: titles.slice(0, 8), notes: tag + '1.1.0' }] });
+check('exactly eight need no such row', eight.rows.length, 8);
+
+var ten = []; for (n = 1; n <= 10; n++) ten.push('Change ' + n);
+var busy = releaseRows({ current: '1.0.0', latest: '1.9.0', newer: true, releases: ['1.9.0', '1.8.0', '1.7.0', '1.6.0', '1.5.0', '1.4.0', '1.3.0'].map(function (v) {
+  return { version: v, title: 'Change 1', changes: ten, notes: tag + v };
+}) });
+check('four busy releases take nine rows each, up to the budget of forty (36 of it)', busy.rows.slice(0, 36).filter(function (r) { return r.more; }).length, 4);
+check('the fifth is cut to what is left of the budget, then counted', busy.rows.slice(36, 41).map(function (r) { return r.title; }), ['Change 1', 'Change 2', 'Change 3', 'Change 4', '+6 more']);
+check('once spent, a release is its first title and the count of the rest',
+  busy.rows.slice(41).map(function (r) { return r.version + '|' + r.title; }), ['1.4.0|Change 1', '|+9 more', '1.3.0|Change 1', '|+9 more']);
+check('the sixth and seventh are each two rows', busy.rows.length, 45);
+
 print('\n--- the cards of the update flow (0111) ---');
 var typed = updateNotice('typed');
 ok('a download takes seconds, not a minute or two', updateNotice('typed', 'download').body.indexOf('a few seconds') >= 0 && typed.body.indexOf('a minute or two') >= 0);

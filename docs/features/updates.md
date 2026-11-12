@@ -10,8 +10,9 @@ arrow onto a line, marks Edith at the top left. Resting the pointer on Edith
 opens a menu, as a click does, and the pill opens the same in the Updates
 section of the settings, drawn as cards: the version and build you run beside
 the newest release, in the accent when it is newer, every release since yours
-by the title of the pull request that released it, each linked to its notes,
-and, for a binary installed or built from a clone on that machine, the
+with the title of each pull request it holds that changed CHANGELOG.md,
+a row each under its version, the first eight and a count of the rest, every
+row linked to the release's notes, and, for a binary installed or built from a clone on that machine, the
 clone brought up to the release and the install typed into the terminal for you to run, or for a release's own Windows `.exe`
 the download of the next one (below); restart dbt-edith once it finishes.
 Otherwise it says why it has no command. The menu says when GitHub last
@@ -22,7 +23,16 @@ when the check is off. Nothing about your project is sent, a
 failed look is tried again within the hour and stays out of the status bar, and
 `--no-update-check` turns it off (0068, 0079).
 
-![The Updates section of the settings: the build you run, the two releases since it, and a button to check again](../shots/updates.png)
+A release is a group of pull requests, the last of which carries the new version,
+so the list is the pull requests merged since the release before it changed
+CHANGELOG.md, which is what someone using the tool would notice. They
+are read through git too, the commits and their trees and no file, and kept with
+the answer so that no release is fetched twice. A release none of whose pull
+requests changed it, or one git cannot give them for, shows the title of its
+tagged commit alone, one row. Forty rows in all are given to the changes: past
+them a release shows its first title and a count of the rest (0176).
+
+![The Updates section of the settings: the build you run, the two releases since it each with its pull requests, and a button to check again](../shots/updates.png)
 
 The update is the menu's button, `Update to` the newest release, and right under
 it is how it goes (the section lists it under *How to install it*, each command

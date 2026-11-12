@@ -1,6 +1,6 @@
 # 0079. An update is looked for hourly through the Paris night, and on demand
 
-Date: 2026-10-14 · Status: accepted, amended by 0086, 0095, 0100 and 0148 · Amends 0068
+Date: 2026-10-14 · Status: accepted, amended by 0086, 0095, 0100, 0148 and 0176 · Amends 0068
 
 **Trigger:** read before changing when dbt-edith looks for a newer release,
 what Edith's menu shows, or what a look that got no answer says.
@@ -54,7 +54,9 @@ as up to date, as never asked, and as GitHub out of reach.
   version, and a dot on the name says a newer release is out.
 - **The menu lists every release since the running one**, newest first, one
   row each: its version, and the title of the pull request that released it,
-  on one line, linking to that release's notes. Twenty at most; the older
+  on one line, linking to that release's notes (*amended by
+  [0176](0176-edith-s-menu-lists-the-pull-requests-a-user-would-notice.md): one row for
+  each pull request a release holds that changed CHANGELOG.md*). Twenty at most; the older
   ones are counted, and a last row links every release. On a window shorter
   than the menu, it scrolls, its button within reach. A pull request is a
   release (0045): it is squashed into one commit whose subject is its title,
@@ -115,3 +117,8 @@ git-remote-https, which it started, holds its output until curl gives up on
 connecting, and is waited for. Not waiting for it would leave one behind per
 look, fetch and push for as long as the proxy stalls, and git has no setting
 for that wait: `http.lowSpeedTime` was tried, and does not cover it.
+
+Amended by [0176](0176-edith-s-menu-lists-the-pull-requests-a-user-would-notice.md): a
+release is no longer one pull request, so the menu lists the pull requests a
+release holds that changed CHANGELOG.md, and the title of the tagged commit
+is only its fallback.

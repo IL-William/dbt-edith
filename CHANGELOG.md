@@ -20,8 +20,14 @@ and bumps nothing.
 
 ## Unreleased
 
+## 2.23.0 - 2026-11-12
+
 - Show each release's VirusTotal result in its notes, and the latest one on a
   badge in the README (0174).
+- List the pull requests a release holds that changed this file in
+  Edith's menu and in the Updates section, one row each under its version, the
+  first eight and a count of the rest, where it listed one row per release
+  (0176).
 
 ## 2.22.2 - 2026-11-12
 

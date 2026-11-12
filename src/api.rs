@@ -3396,9 +3396,9 @@ struct UpdateBody {
     /// is installed, and a restart runs it (0095).
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     replaced: bool,
-    /// The releases since this one, newest first, each with its pull
-    /// request's title and its notes, while it is newer and every title is
-    /// known (0079).
+    /// The releases since this one, newest first, each with the titles of the
+    /// pull requests it holds and its notes, while it is newer and every
+    /// release has a title (0079, 0176).
     #[serde(skip_serializing_if = "Vec::is_empty")]
     releases: Vec<ReleaseBody>,
     /// How many older releases since this one the list leaves out, and the
@@ -3412,7 +3412,13 @@ struct UpdateBody {
 #[derive(serde::Serialize)]
 struct ReleaseBody {
     version: String,
+    /// The first change's title, or the one title known of a release whose
+    /// changes could not be listed.
     title: String,
+    /// The title of each pull request the release holds, newest first. Absent
+    /// when only the one title is known.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    changes: Vec<String>,
     notes: String,
 }
 
@@ -3443,7 +3449,7 @@ async fn update_status(State(st): State<Arc<AppState>>) -> Response {
         off: st.update.off,
         releases: releases
             .into_iter()
-            .map(|(version, title)| ReleaseBody { notes: crate::update::notes_url(&version), version, title })
+            .map(|r| ReleaseBody { notes: crate::update::notes_url(&r.version), version: r.version, title: r.title, changes: r.changes })
             .collect(),
         older,
         older_notes: if older > 0 { crate::update::releases_url() } else { String::new() },
@@ -5591,12 +5597,14 @@ mod tests {
             )
         );
 
-        // With the releases since this one titled in the file, each is listed.
+        // With the releases since this one in the file, each is listed: the newest
+        // with the changes it holds, the other with the one title kept.
         std::fs::write(
             root.join("update.json"),
             format!(
                 r#"{{"checked":{now},"latest":"99.0.0","releases":["99.0.0","98.0.0","{current}"],
-                    "titles":{{"99.0.0":"Show the strategy","98.0.0":"Pan from a box"}}}}"#
+                    "titles":{{"98.0.0":"Pan from a box"}},
+                    "changes":{{"99.0.0":["Show the strategy","Name the venv"]}}}}"#
             ),
         )
         .unwrap();
@@ -5605,7 +5613,7 @@ mod tests {
         let notes = "https://github.com/IL-William/dbt-edith/releases/tag/v";
         assert!(
             past_head(&listed).ends_with(&format!(
-                r#""why":"elsewhere","releases":[{{"version":"99.0.0","title":"Show the strategy","notes":"{notes}99.0.0"}},{{"version":"98.0.0","title":"Pan from a box","notes":"{notes}98.0.0"}}]}}"#
+                r#""why":"elsewhere","releases":[{{"version":"99.0.0","title":"Show the strategy","changes":["Show the strategy","Name the venv"],"notes":"{notes}99.0.0"}},{{"version":"98.0.0","title":"Pan from a box","notes":"{notes}98.0.0"}}]}}"#
             )),
             "{listed}"
         );

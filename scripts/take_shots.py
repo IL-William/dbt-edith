@@ -154,10 +154,14 @@ def git(cwd, *args):
 def next_releases():
     """The two releases after the one this checkout is, as the update pill is
     to show them: Cargo.toml's minor plus one and plus two, newest first, each
-    with the invented title its pull request would have."""
+    with the invented titles of the pull requests it would hold, newest
+    first (0176)."""
     major, minor, _ = re.search(r'^version = "(\d+)\.(\d+)\.(\d+)"', (wt.ROOT / "Cargo.toml").read_text(), re.M).groups()
-    titles = ["Keep the rule that built a column on its card", "Name the folders a job step leaves out"]
-    return [(f"{major}.{int(minor) + 2}.0", titles[1]), (f"{major}.{int(minor) + 1}.0", titles[0])]
+    changes = [
+        ["Keep the rule that built a column on its card", "Draw the stop of a column in the legend"],
+        ["Name the folders a job step leaves out", "Say which job reads a seed", "Fit the tour to a narrow window"],
+    ]
+    return [(f"{major}.{int(minor) + 2}.0", changes[1]), (f"{major}.{int(minor) + 1}.0", changes[0])]
 
 
 def prepare(work):
@@ -222,10 +226,13 @@ def prepare(work):
     src = work / "fake-edith"
     src.mkdir()
     git(src, "init", "-q", "-b", "main")
-    for version, title in reversed(next_releases()):
-        (src / "VERSION").write_text(version + "\n")
-        git(src, "add", "-A")
-        git(src, "commit", "-q", "-m", title)
+    for version, changes in reversed(next_releases()):
+        # One commit per change, the tag on the last, as a release made of
+        # several pull requests is (0176).
+        for change in reversed(changes):
+            (src / "VERSION").write_text(f"{version} {change}\n")
+            git(src, "add", "-A")
+            git(src, "commit", "-q", "-m", change)
         git(src, "tag", f"v{version}")
     git(work, "clone", "-q", "--bare", str(src), str(fake))
     (home / ".gitconfig").write_text(
@@ -284,7 +291,7 @@ def stage_update(config):
     config.mkdir(exist_ok=True)
     releases = next_releases()
     seen = {"checked": int(time.time()), "latest": releases[0][0],
-            "releases": [v for v, _ in releases], "titles": {v: t for v, t in releases}}
+            "releases": [v for v, _ in releases], "changes": {v: c for v, c in releases}}
     (config / "update.json").write_text(json.dumps(seen, indent=2))
 
 
@@ -921,7 +928,7 @@ class Shots:
         self.until("!document.querySelector('#status-update').classList.contains('hidden')", "the update pill", 30)
         self.click("#status-update")
         self.until("document.querySelector('#settings').classList.contains('open')"
-                   " && document.querySelector('#settings-view')?.textContent.includes('" + next_releases()[0][1] + "')", "the releases listed")
+                   " && document.querySelector('#settings-view')?.textContent.includes('" + next_releases()[0][1][0] + "')", "the releases listed")
         self.rest()
         self.take("updates")
         self.code()
