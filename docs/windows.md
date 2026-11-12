@@ -13,6 +13,9 @@ carries two files, built by CI on Windows, each with its SHA-256 beside it:
   ARM, under emulation.
 - `dbt-edith-arm64.exe`, native to Windows on ARM.
 
+Each release's notes link the VirusTotal report of both files, and the badge in
+the README shows the latest result.
+
 To tell which machine this is, open Settings, System, About, and read System
 type: "x64-based processor" or "ARM-based processor". Or, in PowerShell:
 

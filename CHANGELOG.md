@@ -20,6 +20,9 @@ and bumps nothing.
 
 ## Unreleased
 
+- Show each release's VirusTotal result in its notes, and the latest one on a
+  badge in the README (0174).
+
 ## 2.22.2 - 2026-11-12
 
 - Keep a model's file readable in its hover card when one of its tags is

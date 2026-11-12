@@ -11,7 +11,10 @@ name: release
 # out, so the check has to be on the files the release job uploads and before it
 # runs. A run by hand with the box ticked publishes anyway. After an outage or
 # an analysis that was slow, "Re-run failed jobs" scans the same artifacts again
-# and uploads nothing VirusTotal already has.
+# and uploads nothing VirusTotal already has. The result is then shown: a table
+# with the report links ends the release's notes, and virustotal.json, the
+# worst of the two files as a shields.io endpoint, is attached for the README's
+# badge to read (0174).
 #
 # The tag is made here rather than pushed by hand: one pushed by hand is the
 # step that gets left for later, and a version bumped on main and never tagged
@@ -166,7 +169,10 @@ jobs:
   # job and so blocks the release, unless the run was started by hand with the
   # override ticked. A file VirusTotal already has is not sent again, so
   # "Re-run failed jobs" after an outage or an analysis that was slow looks at the
-  # same artifacts and reads the same report.
+  # same artifacts and reads the same report. What it read, the notes' table and
+  # the badge's JSON (0174), is written before a flag stops the step, and
+  # uploaded as the artifact `virustotal` only when the step passes or was
+  # forced past the flag.
   virustotal:
     needs: [version, windows]
     if: needs.version.outputs.due == 'true'
@@ -191,6 +197,7 @@ jobs:
           VT_KEY: ${{ secrets.VIRUSTOTAL_API_KEY }}
           # Empty on a push, which counts as false.
           FORCE: ${{ inputs.publish_even_if_flagged }}
+          VERSION: ${{ needs.version.outputs.version }}
         run: |
           set -euo pipefail
           if [ -z "$VT_KEY" ]; then
@@ -199,7 +206,8 @@ jobs:
           fi
           api=https://www.virustotal.com/api/v3
           work=$RUNNER_TEMP/vt
-          mkdir -p "$work"
+          out=$RUNNER_TEMP/vt-out
+          mkdir -p "$work" "$out"
           body=$work/body.json
           (umask 077; printf 'x-apikey: %s\n' "$VT_KEY" > "$work/header")
 
@@ -307,14 +315,31 @@ jobs:
             echo "| File | SHA-256 | Flagged / engines | Report |"
             echo "| --- | --- | --- | --- |"
           } >> "$GITHUB_STEP_SUMMARY"
+          # The release's notes carry the same table, under a sentence of its own.
+          {
+            echo "### VirusTotal"
+            echo
+            echo "Both Windows files were checked on VirusTotal before this release was published."
+            echo
+            echo "| File | SHA-256 | Flagged / engines | Report |"
+            echo "| --- | --- | --- | --- |"
+          } > "$out/virustotal.md"
           : > "$work/details.md"
+          # The badge shows the file with the most flags.
+          worst_flagged=-1
+          worst_engines=0
           for i in "${!files[@]}"; do
             file=${files[$i]}
             sha=${shas[$i]}
             report=$work/$i.json
             flagged=$(jq '(.data.attributes.last_analysis_stats.malicious // 0) + (.data.attributes.last_analysis_stats.suspicious // 0)' "$report")
             engines=$(jq '.data.attributes.last_analysis_results | length' "$report")
-            echo "| \`$file\` | \`$sha\` | $flagged / $engines | [report](https://www.virustotal.com/gui/file/$sha) |" >> "$GITHUB_STEP_SUMMARY"
+            echo "| \`$file\` | \`$sha\` | $flagged / $engines | [report](https://www.virustotal.com/gui/file/$sha) |" \
+              | tee -a "$GITHUB_STEP_SUMMARY" >> "$out/virustotal.md"
+            if [ "$flagged" -gt "$worst_flagged" ]; then
+              worst_flagged=$flagged
+              worst_engines=$engines
+            fi
             echo "$file: $flagged of $engines engines flag it"
             if [ "$flagged" -gt 0 ]; then
               flagged_any=true
@@ -329,8 +354,17 @@ jobs:
             fi
           done
           if [ -s "$work/details.md" ]; then
-            { echo; cat "$work/details.md"; } >> "$GITHUB_STEP_SUMMARY"
+            { echo; cat "$work/details.md"; } | tee -a "$GITHUB_STEP_SUMMARY" >> "$out/virustotal.md"
           fi
+          case "$worst_flagged" in
+            0) color=brightgreen ;;
+            1) color=yellow ;;
+            2) color=orange ;;
+            *) color=red ;;
+          esac
+          jq -n --arg message "$worst_flagged/$worst_engines · v$VERSION" --arg color "$color" \
+            '{schemaVersion: 1, label: "VirusTotal", message: $message, color: $color}' \
+            > "$out/virustotal.json"
 
           if [ "$flagged_any" = true ]; then
             if [ "$FORCE" = true ]; then
@@ -340,6 +374,13 @@ jobs:
             echo "::error::The release was not published: VirusTotal flagged $blocked. To publish anyway, run the release workflow by hand on main with \"Publish even if a VirusTotal engine flags a file\" ticked; it builds again and checks the new files."
             exit 1
           fi
+      # Only reached when the scan passed or was forced past a flag: a blocked
+      # run publishes nothing, so it has nothing to hand on.
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: virustotal
+          path: ${{ runner.temp }}/vt-out/
+          if-no-files-found: error
 
   # Only this job can write, and only on main with a version still untagged.
   release:
@@ -364,6 +405,12 @@ jobs:
       - name: The files are as they were built
         working-directory: dist
         run: sha256sum -c dbt-edith.exe.sha256 dbt-edith-arm64.exe.sha256
+      # What the scan read, as notes and as the badge's JSON. Neither is
+      # attested: it is not a binary anyone runs.
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: virustotal
+          path: vt
       # Which workflow and commit built each file, kept on GitHub rather than
       # beside the file as the .sha256 is. The files are the ones just checked,
       # and Publish uploads these same paths. The .sha256 files are not
@@ -385,6 +432,8 @@ jobs:
             echo "Elsewhere dbt-edith is built, as"
             echo "[the README](https://github.com/$GITHUB_REPOSITORY/blob/v$VERSION/README.md#install-it)"
             echo "describes."
+            echo
+            cat vt/virustotal.md
           } > "$RUNNER_TEMP/notes.md"
           # The tag is created with the release, at the commit this run checked
           # out. With files to attach, gh makes a draft, uploads them and then
@@ -393,7 +442,8 @@ jobs:
             --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
             --title "Edith $VERSION" --notes-file "$RUNNER_TEMP/notes.md" \
             dist/dbt-edith.exe dist/dbt-edith.exe.sha256 \
-            dist/dbt-edith-arm64.exe dist/dbt-edith-arm64.exe.sha256
+            dist/dbt-edith-arm64.exe dist/dbt-edith-arm64.exe.sha256 \
+            vt/virustotal.json
       # The URL the update downloads from, as it serves them now: a wrong name or
       # a redirect off HTTPS shows here and not at the next release. "latest"
       # may lag the release by a moment, so it is asked again.

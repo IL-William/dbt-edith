@@ -177,6 +177,7 @@ it; these files say why it is built this way, for whoever changes it next.
 | [0171](0171-clippy-runs-on-stable-with-every-lint-an-error.md) | Clippy runs on stable with every lint an error | silencing a Clippy lint or adding an `#[allow]`, changing the Clippy step of `check.sh` or CI, or pinning a toolchain |
 | [0172](0172-only-the-rust-code-is-formatted-by-rustfmt-with-a-packed-config.md) | Only the Rust code is formatted, by rustfmt with a packed config | changing `rustfmt.toml`, formatting another language, or resolving a conflict in formatted code |
 | [0173](0173-the-linters-are-fetched-by-hash-and-aim-at-bugs.md) | The linters are fetched by hash, and their rules aim at bugs | adding or changing a linter rule, bumping a linter, or covering a new file type |
+| [0174](0174-a-release-shows-its-virustotal-result.md) | A release shows its VirusTotal result | changing the VirusTotal table in a release's notes, the `virustotal.json` asset, or the README's badge |
 | [0175](0175-a-version-gathers-a-group-of-pull-requests.md) | A version gathers a group of pull requests | changing which pull request bumps the version, who chooses a batch's versions, or what `## Unreleased` holds between releases |
 
 ## Keeping these honest
