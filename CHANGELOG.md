@@ -13,6 +13,13 @@ points at the decision behind it. A version's date is the day its bump merged,
 which tags and releases it with its section here as the notes (0045): the
 newest dated heading has to be the version `Cargo.toml` names.
 
+A line waits under `## Unreleased` until the bump, carried by the last pull
+request of its group that adds a line here, turns that heading into a version's
+and leaves a new, empty one above it (0175); a pull request adds its line there
+and bumps nothing.
+
+## Unreleased
+
 ## 2.22.1 - 2026-11-11
 
 - Read the manifest again when it was read while dbt was still writing it,
