@@ -2596,6 +2596,18 @@ took four fifths of VirusTotal's daily quota and made every open pull request
 conflict on `Cargo.toml` and `Cargo.lock`; the release workflow did not have
 to change.
 
+A release shows its VirusTotal result (0174, no version of its own), amending
+0152. The `virustotal` job writes, before any flag can stop it, a table of the
+two files (SHA-256, flagged over engines, a link to the report) and a
+`virustotal.json` in shields.io's endpoint format for the file with the most
+flags, and hands both to `release` as an artifact. The table ends the release's
+notes, and the JSON is attached to the release, unattested. The README's badge
+reads `releases/latest/download/virustotal.json`, so it follows the newest
+release with no commit and no version bump per scan: green for 0 flags, yellow
+for 1, orange for 2, red from 3, and only a run forced past a flag can publish
+a non-zero one. It shows the scan at publication, and releases published before
+this change have no file.
+
 ## Deferred, in the order they were chosen
 
 Item numbers move as items are struck. Decisions 0022, 0065, 0100, 0101, 0103,
