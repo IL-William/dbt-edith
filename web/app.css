@@ -961,17 +961,21 @@ kbd {
    The box's line sits at the head's right, the file in mono under the name with the
    tags at its right, the description in italics (only here: the other cards' share
    the class), the counts as numbers in the text colour, the columns in two columns
-   with their types quiet. */
+   with their types quiet. The file keeps half its row, or its own width when shorter,
+   so a long tag can never squeeze it: the tags drop under it when they do not fit
+   beside it. Where calc-size() is unknown the file keeps the half. A tag wider than
+   the card wraps in its chip rather than being cut, since tags sharing a prefix
+   differ by their end. */
 .hc-node { width: 330px; display: flex; flex-direction: column; gap: 7px; }
 .hc-node > * { margin-top: 0; }
 .hc-node .hc-head { gap: 8px; }
 .hc-node .hc-head .offchip { margin-left: 0; }
 .hc-mt { margin-left: auto; font: 11px var(--mono); color: var(--fg-dim); font-weight: 400; white-space: nowrap; }
 .hc-mt s { opacity: .6; }
-.hc-node > .hc-path { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: -3px; font: 11px var(--mono); color: var(--fg-mute); }
-.hc-file { min-width: 0; word-break: break-all; }
-.hc-node .hc-tags { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px; }
-.hc-node .tagchip { font: 11px/18px var(--mono); padding: 0 7px; border-radius: 9px; background: var(--bg-2); border: 1px solid var(--line); color: var(--fg-dim); }
+.hc-node > .hc-path { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 8px; margin-top: -3px; font: 11px var(--mono); color: var(--fg-mute); }
+.hc-file { flex: 1 1 0; min-width: 50%; min-width: calc-size(max-content, min(size, 50%)); word-break: break-all; }
+.hc-node .hc-tags { display: flex; flex: 0 1 auto; min-width: 0; max-width: 100%; margin-left: auto; flex-wrap: wrap; justify-content: flex-end; gap: 4px; }
+.hc-node .tagchip { font: 11px/18px var(--mono); padding: 0 7px; border-radius: 9px; background: var(--bg-2); border: 1px solid var(--line); color: var(--fg-dim); min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
 .hc-node .hc-desc { color: var(--fg-dim); font-style: italic; line-height: 1.45; }
 .hc-stats { display: flex; gap: 12px; font: 11px var(--mono); color: var(--fg-dim); }
 .hc-stats b { color: var(--fg); font-weight: 500; }

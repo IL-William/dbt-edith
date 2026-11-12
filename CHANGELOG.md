@@ -20,6 +20,11 @@ and bumps nothing.
 
 ## Unreleased
 
+## 2.22.2 - 2026-11-12
+
+- Keep a model's file readable in its hover card when one of its tags is
+  long, putting the tags under the file when they do not fit beside it.
+
 ## 2.22.1 - 2026-11-11
 
 - Read the manifest again when it was read while dbt was still writing it,

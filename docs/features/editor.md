@@ -103,11 +103,12 @@ turn the rest of the file into a string.
 
 Pausing on a lineage box, or on a `ref()` / `source()` in the editor, opens a
 small card: the model's name with its materialization and schema at the right,
-its file with its tags beside it, its description in italics, its column,
-upstream, downstream and test counts in one line, then its first columns, each
-with its type in capitals. It is the Catalog Preview in
-passing, without leaving the file or the graph. Panning, zooming, scrolling,
-clicking or typing dismisses it, and a click on a `ref()` still navigates.
+its file with its tags beside it, or under it when they do not fit, its
+description in italics, its column, upstream, downstream and test counts in one
+line, then its first columns, each with its type in capitals. It is the Catalog
+Preview in passing, without leaving the file or the graph. Panning, zooming,
+scrolling, clicking or typing dismisses it, and a click on a `ref()` still
+navigates.
 A card opened from the editor stays inside the editor: from a line low in the
 file it opens above it rather than over the dock, and one taller than the
 editor takes the window instead. The lineage's cards use the window.
