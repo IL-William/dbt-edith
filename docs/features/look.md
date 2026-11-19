@@ -40,7 +40,7 @@ focused again.
 
 - **Night**: deep blue, the default.
 - **Graphite**: neutral grey with no tint, and colour only where it means
-  something.
+  something: a newer release keeps its blue (0181).
 - **Light**: for daylight and screenshots. Each colour that means something is
   darker than in Night, at least 3:1 on the page and on the sidebar's grey, the
   kind and file marks also on a selected row's wash (in the tree and Open

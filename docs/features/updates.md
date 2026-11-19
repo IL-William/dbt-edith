@@ -5,12 +5,15 @@ How dbt-edith learns a newer release is out, and what it offers to do about it.
 It asks GitHub, through git, which releases there are, every hour from midnight
 to 09:00 Paris time and then not until the next midnight, so the first start of
 your day knows what came out overnight, wherever you are. When one is newer, a
-pill after the version in the status bar says so and the Updates arrow, a down
-arrow onto a line, marks Edith at the top left. Resting the pointer on Edith
-opens a menu, as a click does, and the pill opens the same in the Updates
-section of the settings, drawn as cards: the version and build you run beside
-the newest release, in the accent when it is newer, every release since yours
-with the title of each pull request it holds that changed CHANGELOG.md,
+pill after the version in the status bar says so and a badge, an up arrow on
+a disc in the update colour ringed by a halo, marks Edith at the top left. The
+update keeps its colour in every theme, blue in Graphite too, where the accent
+is grey; the pill, the menu's install button, the settings' recommended one
+and the version beside Updates in the settings' list are drawn in it too
+(0181). Resting the pointer on Edith opens a menu, as a click does, and the
+pill opens the same in the Updates section of the settings, drawn as cards: the
+version and build you run beside the newest release, in the update colour when
+it is newer, every release since yours with the title of each pull request it holds that changed CHANGELOG.md,
 a row each under its version, the first eight and a count of the rest, every
 row linked to the release's notes, and, for a binary installed or built from a clone on that machine, the
 clone brought up to the release and the install typed into the terminal for you to run, or for a release's own Windows `.exe`

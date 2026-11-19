@@ -14676,7 +14676,7 @@ function paintSetUpdates(box) {
     // One command per button, the recommended first and drawn as the primary
     // one; each types its line into the terminal and leaves Enter to you (0123).
     o.options.forEach((option, i) => {
-      const run = jel('button', i ? 'btn' : 'btn primary', option.button);
+      const run = jel('button', i ? 'btn' : 'btn primary updgo', option.button);
       run.type = 'button';
       run.dataset.key = 'upd:' + option.kind;
       run.title = option.command;

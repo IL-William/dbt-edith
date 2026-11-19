@@ -51,8 +51,8 @@ check('app.css opens with Night, the rule the other three share, then Graphite, 
 check('the rules begin with the box model reset', css.slice(blocks[4].end).replace(/^(?:\s|\/\*[\s\S]*?\*\/)*/, '').indexOf('* { box-sizing'), 0);
 ok('every name any block declares is declared in Night, so a theme has something to part from',
   [derived, graphite, light, halloween].every(function (b) { return b.names.every(function (n) { return n in night.decl; }); }));
-check('Graphite and Halloween declare the same set',
-  graphite.names.slice().sort(), halloween.names.slice().sort());
+check('Graphite and Halloween declare the same set, Halloween adding its own update colour (0181)',
+  graphite.names.concat(['--update', '--update-dim']).sort(), halloween.names.slice().sort());
 ok('Light declares that set and its own twins', graphite.names.every(function (n) { return n in light.decl; }) && light.names.length > graphite.names.length);
 check('each says whether it is dark or light', [night.decl['color-scheme'], graphite.decl['color-scheme'], light.decl['color-scheme'], halloween.decl['color-scheme']],
   ['dark', 'dark', 'light', 'dark']);
@@ -232,6 +232,24 @@ check('every theme declares all sixteen ANSI colours itself',
     ANSI.filter(function (n) { return n !== '--ansi-k' && ratio(b.decl[n], own('--bg')) < 3; })
       .map(function (n) { return n + ' ' + b.decl[n] + ' ' + ratio(b.decl[n], own('--bg')).toFixed(2); }), []);
 });
+
+// A newer release keeps its colour in every theme (0181): Night names it, Light and Halloween restate it as their accent pair, Graphite
+// does not, so its grey accent never reaches the badge, the pill or the button.
+(function () {
+  var names = ['--update', '--update-dim', '--on-update'];
+  check('Night names the update colour, its dim and the arrow on it; Graphite names none of them',
+    [names.filter(function (n) { return !(n in night.decl); }), names.filter(function (n) { return n in graphite.decl; })], [[], []]);
+  check('Light and Halloween restate the pair as their accent pair, and not the arrow',
+    [light, halloween].map(function (b) { return [b.decl['--update'] === b.decl['--accent'], b.decl['--update-dim'] === b.decl['--accent-dim'], '--on-update' in b.decl]; }),
+    [[true, true, false], [true, true, false]]);
+  check('Night\'s pair is its accent pair', [night.decl['--update'] === night.decl['--accent'], night.decl['--update-dim'] === night.decl['--accent-dim']], [true, true]);
+  check('Graphite takes Night\'s, which has a tint where its accent has none', (function () {
+    var c = channels2(night.decl['--update']);
+    return [c[0] !== c[2], night.decl['--update'] !== graphite.decl['--accent']];
+  }()), [true, true]);
+  check('Light\'s update colour is at least 3:1 on its page and its sidebar, the badge\'s ring and the pill\'s border being graphics',
+    [ratio(light.decl['--update'], light.decl['--bg']) >= 3, ratio(light.decl['--update'], light.decl['--bg-2']) >= 3], [true, true]);
+}());
 
 print('\n--- Graphite ---');
 function channels(v) {

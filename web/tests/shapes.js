@@ -58,6 +58,7 @@ print('--- nothing is a round marker ---');
 var ROUND = {
   '.envmenu button.switch .knob, .sgroup button.switch .knob': 'where it sits on its track is the state',
   '.rb': 'a radio\'s ring is the control, picked or not',
+  '.brand.newer::before': 'the badge\'s ground: the arrow on it, masked in ::after, is the shape that says a release is out',
 };
 var round = rules.filter(function (r) { return /border-radius:\s*(50%|100%|\d{3,}px)/.test(r.body); });
 check('every round rule of app.css is a control on the allowlist, each with its reason',
@@ -84,6 +85,9 @@ print('\n--- every marker is drawn with a shape ---');
 ].forEach(function (sel) {
   check(sel + ' masks a --m-* shape', masks(sel), true);
 });
+check('Edith\'s badge draws the Updates arrow, masked as newer, in the colour for what is drawn on the update colour',
+  [maskedAs('.brand.newer::after', 'newer'), declares('.brand.newer::after', /background:\s*var\(--on-update\)/),
+    declares('.brand.newer::before', /background:\s*var\(--update\)/)], [true, true, true]);
 check('a kind\'s dot is a bar: 3px wide, corners of 2px',
   [declares('.dot', /width:\s*3px/), declares('.dot', /border-radius:\s*2px/)], [true, true]);
 check('and so are its places in the card head and the Catalog title',

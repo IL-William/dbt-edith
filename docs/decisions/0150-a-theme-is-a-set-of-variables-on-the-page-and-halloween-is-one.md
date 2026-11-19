@@ -1,6 +1,6 @@
 # 0150. A theme is a set of variables on the page, and Halloween is one
 
-Date: 2026-11-05 · Status: accepted, amended by 0151, 0161 and 0170 · Amends 0106 and 0107
+Date: 2026-11-05 · Status: accepted, amended by 0151, 0161, 0170 and 0181 · Amends 0106 and 0107
 
 **Trigger:** read before adding or changing a theme, the theme button or its
 menu, what `look.json` holds, which theme an export is drawn in, or the
