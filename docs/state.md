@@ -3478,12 +3478,26 @@ of its own, and each panel updates the tour, its page under
     - No test pins the second sentence of the header `jobs.yml` is written with.
 58. **The static site's limits (0177, 0178, `--site`).** What the first
     version leaves out, each with the trap that keeps it out:
-    - **Column lineage (next).** collin's cache is a file under `target/`; the
-      site would carry it as another bucketed script, and `/api/collineage`
-      computes a walk the page would write again. The cache is large (the
-      comparison with the server must be by walk, not by size), and a lineage
-      drawn from a cache older than the manifest is a wrong picture published
-      with a commit's name on it.
+    - ~~**Column lineage (next).**~~ Shipped (0182). What it left out:
+    - **Other caches than collin's.** Fusion's and Snowflake's are not read
+      (the site has no menu to pick, and a Snowflake cache is the warehouse's
+      answer for one session's columns). A Fusion cache has none of the roots,
+      rules and expressions the page's cards say; the site could carry it
+      under the tool it names, once someone asks.
+    - **The source menu, Regenerate and the report page.** A site carries one
+      cache and its notes on the cards; collin's report page (the models
+      collin could not read, by reason) is the server's route and is not in it.
+    - **`cll.js` is loaded whole.** On a project with a large cache it is a
+      large file, parsed at the first column asked about. If that is too slow
+      on a phone, cut it by node, with the cost of a request per step of a
+      walk, or write only the columns an edge names.
+    - **Staleness is the files' times.** A checkout resets them, so a site
+      written in CI says the cache may be older than the manifest, or never
+      does; comparing the `generated_at` of the manifest and of the cache
+      says it truly, and neither is a promise that they match.
+    - **A note can still name a path outside the project.** It is dropped
+      from `sql_file` and cut from every text, but a path collin wrote in a
+      sentence of its own, with no root to cut, is carried as written.
     - **Jobs.** They come from `.dbt-edith/jobs.yml` and the job repository the
       pipeline clones beside the dbt repository, a path that already allows
       `../`. The Jobs tab's reads are the server's (a YAML parse, a cron in a

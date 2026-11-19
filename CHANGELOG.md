@@ -20,6 +20,13 @@ and bumps nothing.
 
 ## Unreleased
 
+## 2.27.0 - 2026-11-19
+
+- Carry collin's column lineage in the static site, with the Columns tab, the
+  column canvas, its depth menus, the indirect button and the stop at menu
+  answered in the browser, a warning when the cache is older than the manifest,
+  and `--site --run-collin` to run collin first (0182).
+
 ## 2.26.0 - 2026-11-19
 
 - Show each node's SQL in the static site, its source and its compiled text

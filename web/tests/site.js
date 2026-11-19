@@ -1,8 +1,9 @@
 // The static site's answers: web/site.js held to what Rust answers, on an invented graph.
 // tests/fixtures/site_case.js is written by `DBT_EDITH_BLESS=1 cargo test site_case` and holds
 // /api/lineage (every node one level each way, a few at every depth, with the caps of the page and a
-// small one), /api/search, /api/node and /api/site/code as the server gives them; this makes the same requests of
-// EdithSite and compares what comes back, key for key.
+// small one), /api/search, /api/node and /api/site/code as the server gives them, and /api/collineage (every
+// column of two caches, an invented one and one from a seed, and the deep, capped and cut walks of the first) and
+// /api/colreach for every node; this makes the same requests of EdithSite and compares what comes back, key for key.
 // Run from the repository root: jsc web/tests/site.js
 eval(read('tests/fixtures/site_case.js'));
 var EdithSite = new Function(read('web/site.js') + '\nreturn EdithSite;')();
@@ -21,11 +22,14 @@ function canon(v) {
 
 var loads = [];
 var sqlLoads = [];
+var cllLoads = [];
 var site;
 function EDITH_SITE_CARDS(start, list) { site.received(start, list); }
 function EDITH_SITE_SQL(start, list) { site.receivedSql(start, list); }
-/* A bucket's script, by the url the page would load it from: the cards' or the SQL's. */
+function EDITH_SITE_CLL(raw) { site.receivedCll(raw); }
+/* A bucket's script, by the url the page would load it from: the cards', the SQL's or the column lineage's. */
 function loadFrom(url, k, cards) {
+  if (url === 'data/cll.js') { cllLoads.push(url); eval(SITE_CASE.cll); return; }
   if (url.indexOf('data/sql/') === 0) { sqlLoads.push(url); eval(SITE_CASE.sql[k]); return; }
   cards.push(url);
   eval(SITE_CASE.buckets[k]);
@@ -225,6 +229,116 @@ group('lineage, as /api/lineage answers it', SITE_CASE.lineage, function (c) { r
     check('a base that is not https is no link', url({ root: 'shop', file_base: 'javascript:alert(1)//' }, 'shop', 'a.sql') === '' && url({ root: 'shop', file_base: 'http://h/x/' }, 'shop', 'a.sql') === '');
     check('no root name, no link: no node is known to be the root\'s', url({ file_base: 'https://h/x/' }, '', 'a.sql') === '' && url({ root: '', file_base: 'https://h/x/' }, '', 'a.sql') === '');
     check('a path that goes up or is empty is no link', url(meta, 'shop', '../a.sql') === '' && url(meta, 'shop', 'a//b.sql') === '' && url(meta, 'shop', './a.sql') === '' && url(meta, 'shop', '') === '');
+  })
+  .then(function () {
+    // Column lineage, as /api/collineage and /api/colreach answer it. The file is not loaded until a column is asked about.
+    check('the column lineage is not loaded before a column is asked about', cllLoads.length === 0 && !site.cllHeld());
+    return group('column lineage, as /api/collineage answers it', SITE_CASE.collineage, function (c) { return site.get(c.path); });
+  })
+  .then(function () { return group('the whole chain of each column, as /api/colreach answers it', SITE_CASE.colreach, function (c) { return site.get(c.path); }); })
+  .then(function () {
+    check('the file is loaded once, however many columns asked', cllLoads.length === 1 && site.cllHeld(), cllLoads.join());
+    var randomSite = EdithSite.make(SITE_CASE.site, function () {
+      site = randomSite;
+      eval(SITE_CASE.random.cll);
+      site = main;
+      return Promise.resolve();
+    });
+    return group('column lineage of a cache from a seed, a tangle of cycles and roles', SITE_CASE.random.collineage, function (c) { return randomSite.get(c.path); })
+      .then(function () { return group('and its chains', SITE_CASE.random.colreach, function (c) { return randomSite.get(c.path); }); })
+      .then(function () {
+        // A cache of edges alone: no root, no rule, no indirect role, and a column from a table no node owns.
+        var plainSite = EdithSite.make(SITE_CASE.site, function () {
+          site = plainSite;
+          eval(SITE_CASE.plain.cll);
+          site = main;
+          return Promise.resolve();
+        });
+        return group('column lineage of a cache of edges alone', SITE_CASE.plain.collineage, function (c) { return plainSite.get(c.path); })
+          .then(function () { return group('and its chains', SITE_CASE.plain.colreach, function (c) { return plainSite.get(c.path); }); });
+      });
+  })
+  .then(function () {
+    // A file that fails to load is forgotten, and a script that gave nothing is not ours.
+    var tries = 0;
+    var flaky = EdithSite.make(SITE_CASE.site, function () {
+      tries++;
+      if (tries === 1) return Promise.reject(new Error('cannot load the column lineage'));
+      site = flaky;
+      eval(SITE_CASE.cll);
+      site = main;
+      return Promise.resolve();
+    });
+    var path = SITE_CASE.collineage[0].path;
+    return flaky.get(path).then(function () { check('a column lineage that fails to load rejects the answer', false); }, function (e) {
+      check('a column lineage that fails to load rejects the answer', e.message === 'cannot load the column lineage', e.message);
+      return flaky.get(path).then(function (a) { check('and is asked for again', tries === 2 && canon(a) === canon(SITE_CASE.collineage[0].want) && flaky.cllHeld()); });
+    });
+  })
+  .then(function () {
+    var empty = EdithSite.make(SITE_CASE.site, function () { return Promise.resolve(); });
+    return empty.get(SITE_CASE.collineage[0].path).then(function () { check('an empty column lineage file is refused', false); },
+      function (e) { check('an empty column lineage file is refused', /did not arrive/.test(e.message), e.message); });
+  })
+  .then(function () {
+    // Two asks while the file is on its way are one load.
+    var asked = 0;
+    var slow = EdithSite.make(SITE_CASE.site, function () {
+      asked++;
+      return new Promise(function (resolve) { setTimeout(function () { site = slow; eval(SITE_CASE.cll); site = main; resolve(); }, 1); });
+    });
+    var a = SITE_CASE.collineage[0];
+    var b = SITE_CASE.colreach[0];
+    return Promise.all([slow.get(a.path), slow.get(b.path)]).then(function (r) {
+      check('an ask while the file is on its way waits for the same load', asked === 1 && canon(r[0]) === canon(a.want) && canon(r[1]) === canon(b.want));
+    });
+  })
+  .then(function () {
+    var path = SITE_CASE.collineage[0].path;
+    var id = ids[0];
+    var parts = function (more) { return '/api/collineage?id=' + encodeURIComponent('model.shop.dia_a') + '&column=id' + more; };
+    // The errors, in the server's order: the query first, then "no column lineage", the node, the column.
+    return rejected('/api/collineage?column=id', 'missing id')
+      .then(function () { return rejected('/api/collineage?id=' + encodeURIComponent('model.shop.dia_a'), 'missing column'); })
+      .then(function () { return rejected(parts('&up=abc'), 'invalid up'); })
+      .then(function () { return rejected(parts('&down=-1'), 'invalid down'); })
+      .then(function () { return rejected(parts('&max=many'), 'invalid max'); })
+      .then(function () { return rejected(parts('&indirect=300'), 'invalid indirect'); })
+      .then(function () { return rejected('/api/collineage?id=model.shop.nothing&column=id', 'unknown node'); })
+      .then(function () { return rejected('/api/collineage?id=&column=id', 'unknown node'); })
+      .then(function () { return rejected(parts('').replace('column=id', 'column=nothing'), 'unknown column'); })
+      .then(function () { return rejected('/api/colreach?id=model.shop.nothing', 'unknown node'); })
+      .then(function () { return rejected('/api/colreach', 'missing id'); })
+      .then(function () {
+        // Without a column lineage: said before anything is loaded, and nothing is asked for.
+        var meta = Object.assign({}, SITE_CASE.site.meta, { cll: false });
+        var loaded = 0;
+        var none = EdithSite.make(Object.assign({}, SITE_CASE.site, { meta: meta }), function () { loaded++; return Promise.resolve(); });
+        return none.get(path).then(function () { check('a site with no column lineage refuses a column', false); }, function (e) {
+          check('a site with no column lineage refuses a column, and loads nothing', e.message === 'no column lineage' && loaded === 0, e.message);
+          return none.get('/api/collineage?id=model.shop.nothing&column=id').then(function () { check('and says so before the node', false); }, function (e2) {
+            check('and says so before the node', e2.message === 'no column lineage', e2.message);
+            return none.get('/api/colreach?id=' + encodeURIComponent(id)).then(function (rows) {
+              check('and its chains are none, as the server answers', canon(rows) === '[]' && loaded === 0);
+            });
+          });
+        });
+      });
+  })
+  .then(function () {
+    var cll = SITE_CASE.site.limits;
+    check('the column canvas\'s limits are Rust\'s own', cll.col_depth === 2 && cll.col_depth_max === 20 && cll.col_drawn === 1000 && cll.col_most === 3000 && cll.rows_by === 8);
+    var meta = SITE_CASE.site.meta;
+    check('the site names the cache bare, never by a path, and says whether it is stale', meta.cll === true && meta.cll_tool === 'collin' && meta.cll_file === 'column_lineage.collin.json' && meta.cll_stale === false &&
+      !/[\\/]/.test(meta.cll_file) && meta.cll_edges > 0 && !('cll_mtime' in meta) && !('cll_producer' in meta), JSON.stringify(meta));
+    // The cases cover what the walk and the card can say: boxes, stops, caps, cuts and a tangle.
+    var all = SITE_CASE.collineage.concat(SITE_CASE.random.collineage).map(function (c) { return c.want; });
+    var any = function (f) { return all.some(f); };
+    check('the cases hold a truncated walk, a stop, a box, a role cut, a partial column and a root', any(function (a) { return a.truncated; }) && any(function (a) { return a.stopped_at; }) &&
+      any(function (a) { return a.nodes.some(function (n) { return n.id.indexOf('::') < 0; }); }) && any(function (a) { return a.levels.down.some(function (l) { return l.cut; }); }) &&
+      any(function (a) { return a.nodes.some(function (n) { return n.partial; }); }) && any(function (a) { return a.nodes.some(function (n) { return n.generated; }); }) &&
+      any(function (a) { return a.nodes.some(function (n) { return n.rows_by_more; }); }) && any(function (a) { return a.nodes.some(function (n) { return n.rows_of_more; }); }) &&
+      any(function (a) { return a.nodes.some(function (n) { return n.rules_more; }); }) && any(function (a) { return a.nodes.some(function (n) { return n.outside; }); }));
   })
   .then(function () {
     // The pieces the walks lean on.

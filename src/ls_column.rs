@@ -351,7 +351,7 @@ fn cache_for(target_dir: &Path, graph: &Graph, ask: &Ask, found: &[Available]) -
 /// collin's own lines reach stderr only when it fails, stdout being the
 /// answer's alone. The cache written, or None once stderr says why there is
 /// none; an `Err` is only ever a failed write.
-fn produce(
+pub(crate) fn produce(
     root: &Path, manifest: &Path, folder: &Path, p: &Produce, collin: collin_run::Located, stop: &AtomicBool, err: &mut impl Write,
 ) -> io::Result<Option<PathBuf>> {
     // Named and not there, the folder would read no file, and every model it

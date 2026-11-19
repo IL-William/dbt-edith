@@ -16,14 +16,20 @@
 //! and the cards and the SQL in buckets loaded when a node is first opened. The
 //! SQL is the manifest's own `raw_code` and `compiled_code`, read in a second
 //! pass over the same file, and never a file of `target/` (0180).
+//!
+//! The one other file it reads is collin's column lineage cache beside the manifest, and its report
+//! for the cards' notes, never started by `--site` alone: only `--run-collin` runs collin, first
+//! (0182). The cache is laid out whole in `data/cll.js`, loaded when a column is first asked about.
 
 use crate::api::{self, Assets};
-use crate::graph::{Graph, Kind, MAX_LEVELS};
-use crate::{git, ls};
+use crate::collin_run::{self, ModelNote};
+use crate::graph::{ColRef, Graph, Kind, MAX_LEVELS};
+use crate::{collin, files, git, ls, ls_column};
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::io::Write;
 use std::path::{Component, Path, PathBuf};
+use std::sync::atomic::AtomicBool;
 
 /// What `--site` was given besides the project, the manifest and the catalog.
 pub struct Ask {
@@ -32,6 +38,8 @@ pub struct Ask {
     pub environment: Option<String>,
     pub commit: Option<String>,
     pub repo_url: Option<String>,
+    /// `--run-collin`: collin writes the column lineage first, over the manifest as it stands (0182).
+    pub produce: Option<ls_column::Produce>,
 }
 
 /// Written first into a folder, and what a later run recognises it by.
@@ -64,6 +72,14 @@ pub fn run(project: &Path, manifest: Option<&Path>, catalog: Option<&Path>, ask:
 pub(crate) fn generate(
     project: &Path, manifest: Option<&Path>, catalog: Option<&Path>, ask: &Ask, out: &mut impl Write, err: &mut impl Write,
 ) -> i32 {
+    generate_with(project, manifest, catalog, ask, collin_run::locate, out, err)
+}
+
+/// `generate` with the collin `--run-collin` would run named by `locate`, asked only when a run is.
+pub(crate) fn generate_with(
+    project: &Path, manifest: Option<&Path>, catalog: Option<&Path>, ask: &Ask, locate: impl FnOnce() -> collin_run::Located,
+    out: &mut impl Write, err: &mut impl Write,
+) -> i32 {
     // What can be refused without reading anything is refused first.
     let flags = (|| -> Result<_, String> {
         let commit = ask.commit.as_deref().map(valid_commit).transpose()?;
@@ -78,7 +94,7 @@ pub(crate) fn generate(
             return ls::CANNOT_RUN;
         }
     };
-    let (root, manifest_path, graph) = match ls::open_with_catalog(project, manifest, catalog) {
+    let (root, manifest_path, mut graph) = match ls::open_with_catalog(project, manifest, catalog) {
         Ok(opened) => opened,
         Err(why) => {
             let _ = writeln!(err, "{why}");
@@ -92,6 +108,20 @@ pub(crate) fn generate(
             return ls::CANNOT_RUN;
         }
     };
+
+    // collin runs only once the folder is known to be ours to write, and writes beside the manifest as
+    // its own run does: a run that makes no cache leaves the site unwritten, the way `--column` ends.
+    let target_dir = files::folder_of(&manifest_path).unwrap_or_else(|| root.join("target"));
+    if let Some(p) = &ask.produce {
+        match ls_column::produce(&root, &manifest_path, &target_dir, p, locate(), &AtomicBool::new(false), err) {
+            Ok(Some(_)) => {}
+            _ => return ls::CANNOT_RUN,
+        }
+    }
+    let Ok(cll_stale) = merge_collin(&mut graph, &target_dir, &manifest_path, ask.produce.is_some(), err) else {
+        return ls::CANNOT_RUN;
+    };
+    let notes = notes_of(&graph, &target_dir, &root);
 
     // Whether it was merged, not whether a file is there: one that did not read is left out of the cards.
     let has_catalog = graph.meta.catalog_mtime > 0 || graph.meta.catalog_columns > 0;
@@ -162,8 +192,10 @@ pub(crate) fn generate(
         "catalog": has_catalog,
         "edith": env!("CARGO_PKG_VERSION"),
     });
+    let mut meta = meta;
+    cll_meta(&graph, cll_stale, &mut meta);
     let title = title_of(&graph.meta.project, environment.as_deref().unwrap_or(""));
-    let built = match build(&graph, meta, &title, code) {
+    let built = match build(&graph, meta, &title, code, notes.as_ref()) {
         Ok(b) => b,
         Err(why) => {
             let _ = writeln!(err, "error: {why}");
@@ -190,7 +222,258 @@ pub(crate) fn generate(
         c.get("test").unwrap_or(&0),
         built.buckets.len()
     );
+    if cll_stale.is_some() {
+        let _ = writeln!(out, "  column lineage: {} edges from {}", graph.meta.cll_edges, cll_tool(&graph));
+    }
     ls::ANSWERED
+}
+
+// ----------------------------------------------------------- column lineage ----
+
+/// Merges collin's cache beside the manifest, `column_lineage.collin.json`, and says on `err` what it
+/// found. Only that file, and only when the same listing the page's menu is made from lists it: the
+/// report, a file of a newer version and one cut short are not a cache. Ok(Some(stale)) when it was
+/// merged, `stale` being whether the manifest is newer than it (by mtime, which a checkout resets: the
+/// warning is a guess that errs towards saying so); Ok(None) when there is none to merge; Err when
+/// the file the run itself just wrote cannot be read, which ends the run.
+fn merge_collin(graph: &mut Graph, target: &Path, manifest: &Path, produced: bool, err: &mut impl Write) -> Result<Option<bool>, ()> {
+    let path = collin::path_for(target, "collin");
+    let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    if !path.is_file() {
+        let _ = writeln!(err, "no column lineage: collin has written no cache beside the manifest, and --run-collin writes one");
+        return Ok(None);
+    }
+    let listed = collin::discover(target).iter().any(|a| a.file == name);
+    let why = match listed.then(|| api::try_merge_cache(graph, &path)).flatten() {
+        Some(Ok(_)) => None,
+        Some(Err(e)) => Some(e),
+        None => Some(format!("{name} is not a column lineage cache this build can read")),
+    };
+    if let Some(why) = why {
+        if produced {
+            let _ = writeln!(err, "error: collin wrote a cache that cannot be read: {why}");
+            return Err(());
+        }
+        let _ = writeln!(err, "warning: no column lineage, the cache was ignored: {why}");
+        return Ok(None);
+    }
+    let stale = collin_run::stale(&path, manifest);
+    if stale {
+        let _ = writeln!(
+            err,
+            "warning: collin's column lineage is older than the manifest: it may not match this commit; --run-collin writes it again"
+        );
+    }
+    Ok(Some(stale))
+}
+
+/// What the header and the page's Columns tab say of the column lineage, written into the index's
+/// meta. The file is named bare, never by the path it was read from, and nothing here is the time the
+/// cache was read or what wrote it, which the page has no use for: `cll_generated_at` is the cache's
+/// own, from the file's contents.
+fn cll_meta(graph: &Graph, stale: Option<bool>, meta: &mut Value) {
+    let Some(stale) = stale.filter(|_| graph.cll.is_some()) else {
+        meta["cll"] = json!(false);
+        return;
+    };
+    let m = &graph.meta;
+    meta["cll"] = json!(true);
+    meta["cll_tool"] = json!(cll_tool(graph));
+    meta["cll_file"] = json!(CLL_FILE);
+    meta["cll_source"] = json!(m.cll_source);
+    meta["cll_target"] = json!(m.cll_target);
+    meta["cll_generated_at"] = json!(m.cll_generated_at);
+    meta["cll_edges"] = json!(m.cll_edges);
+    meta["cll_dropped"] = json!(m.cll_dropped);
+    meta["cll_kinds"] = json!(m.cll_kinds);
+    meta["cll_stale"] = json!(stale);
+}
+
+/// The tool a cache's own `source` names, as the server's menu does, and collin's when it names none: the
+/// file is the one collin writes.
+fn cll_tool(graph: &Graph) -> &'static str {
+    match collin::tool_of(&graph.meta.cll_source) {
+        "" => "collin",
+        tool => tool,
+    }
+}
+
+/// The file `cll_meta` names, which is also where the cache is read from.
+const CLL_FILE: &str = "column_lineage.collin.json";
+
+/// collin's notes on its models, for the cards, when collin is the tool whose cache was merged: the
+/// server's own rule, from the report beside it. A note may name where collin found a model's SQL, and
+/// a site is published, so the project's root is cut from every text in it, and a file that is not
+/// below the project is dropped.
+fn notes_of(graph: &Graph, target: &Path, root: &Path) -> Option<HashMap<String, ModelNote>> {
+    if graph.cll.is_none() || collin::tool_of(&graph.meta.cll_source) != "collin" {
+        return None;
+    }
+    let report = collin_run::read_report(&target.join(collin_run::REPORT))?;
+    Some(report.notes.into_iter().map(|(id, note)| (id, scrubbed(note, root))).collect())
+}
+
+/// Whether a word is a path from the root of a machine: `/x`, `\\x` (a Windows root, `\\?\C:\x` and a share
+/// included) or `C:\x` and `C:/x`. A lone separator is a symbol of the text, not a path.
+fn looks_absolute(word: &str) -> bool {
+    let b = word.as_bytes();
+    let drive = b.len() > 2 && b[0].is_ascii_alphabetic() && b[1] == b':' && (b[2] == b'/' || b[2] == b'\\');
+    (b.len() > 1 && (b[0] == b'/' || b[0] == b'\\')) || drive
+}
+
+/// Whether `text` still holds an absolute path after the root was cut. Words end at white space, a quote, a
+/// bracket, a comma or a semicolon; a path with a space in it shows by its first word, which is why the text
+/// is judged whole and never rewritten word by word, which would keep the tail.
+fn holds_path(text: &str) -> bool {
+    text.split(|c: char| c.is_whitespace() || "'\"`()[]<>,;".contains(c)).any(looks_absolute)
+}
+
+/// `note` with the project's root cut from each text, and any text that still holds an absolute path, a file that
+/// is not below the project included, dropped whole (a name is removed from its list): a path outside the project
+/// names where the machine keeps it, and a published card has no use for that. `sql_file` is made relative to the
+/// project, or dropped when it is not below it.
+fn scrubbed(mut note: ModelNote, root: &Path) -> ModelNote {
+    let base = root.display().to_string();
+    let below = |text: &str| -> String {
+        let mut out = text.to_string();
+        for sep in ["/", "\\"] {
+            out = out.replace(&format!("{base}{sep}"), "");
+        }
+        out
+    };
+    let cut = |text: &str| {
+        let out = below(text).replace(&base, "");
+        if holds_path(&out) {
+            String::new()
+        } else {
+            out
+        }
+    };
+    note.sql_file = below(&note.sql_file);
+    if looks_absolute(&note.sql_file) || note.sql_file.split(['/', '\\']).any(|part| part == "..") {
+        note.sql_file.clear();
+    }
+    note.parse_error = cut(&note.parse_error);
+    note.provenance = cut(&note.provenance);
+    for c in &mut note.columns {
+        c.detail = cut(&c.detail);
+        c.names = c.names.iter().map(|n| cut(n)).filter(|n| !n.is_empty()).collect();
+    }
+    note
+}
+
+/// The column lineage as the script `data/cll.js` calls, or None without any: the cache as it was
+/// merged, laid out for the walks of `web/site.js` (0182). A column is a number, where its node starts
+/// plus its slot, so the order of a `ColRef` is the number's and a walk compares integers. What a
+/// walk decides is not here, only what it reads: the edges in the order the walks read them, and what
+/// the cards of columns say, by column. A name and a type are interned: the same dozen types and
+/// the same few hundred names are every model's.
+pub(crate) fn cll_of(graph: &Graph) -> Option<Value> {
+    let cll = graph.cll.as_ref()?;
+    let mut at: Vec<usize> = Vec::with_capacity(graph.nodes.len() + 1);
+    let mut total = 0;
+    for n in &graph.nodes {
+        at.push(total);
+        total += n.columns.len();
+    }
+    at.push(total);
+    let num = |c: ColRef| at[c.node as usize] + c.col as usize;
+
+    let mut names: Vec<&str> = Vec::new();
+    let mut types: Vec<&str> = Vec::new();
+    let (mut name_at, mut type_at): (HashMap<&str, usize>, HashMap<&str, usize>) = (HashMap::new(), HashMap::new());
+    let (mut nm, mut ty, mut tests): (Vec<usize>, Vec<usize>, Vec<usize>) =
+        (Vec::with_capacity(total), Vec::with_capacity(total), Vec::new());
+    for n in &graph.nodes {
+        for c in &n.columns {
+            let name = *name_at.entry(c.name.as_str()).or_insert_with(|| {
+                names.push(c.name.as_str());
+                names.len() - 1
+            });
+            let ty_id = *type_at.entry(c.data_type.as_str()).or_insert_with(|| {
+                types.push(c.data_type.as_str());
+                types.len() - 1
+            });
+            if !c.tests.is_empty() {
+                tests.extend([nm.len(), c.tests.len()]);
+            }
+            nm.push(name);
+            ty.push(ty_id);
+        }
+    }
+
+    // Sorted by (from, to), as `edges` is held; `from` as the step from the one before.
+    let (mut from, mut to, mut kind) = (Vec::new(), Vec::new(), Vec::new());
+    let mut last = 0;
+    for e in cll.edge_list() {
+        let f = num(e.from);
+        from.push(f - last);
+        last = f;
+        to.push(num(e.to));
+        kind.push(e.kind);
+    }
+
+    let roots: Vec<Value> = cll.root_list().iter().map(|(c, values)| json!([num(*c), values])).collect();
+    let expressions: Vec<Value> =
+        cll.expression_list().iter().map(|(c, x)| json!([num(*c), x.kind, x.text, x.steps, u8::from(x.cut)])).collect();
+    let lost: Vec<Value> = cll.lost_columns().into_iter().map(|c| json!([num(c), cll.lost(c)])).collect();
+    let outside: Vec<usize> = cll.outside_list().iter().map(|c| num(*c)).collect();
+
+    // A model's rules as the card says them, each with the columns it reads by number: any column of
+    // the node it names whose name is that one in ASCII case, as the card matches them. A rule that
+    // reads none is never said.
+    let mut rules: Vec<Value> = Vec::new();
+    let mut held: Option<(u32, Vec<Value>)> = None;
+    for (node, r) in cll.rule_list() {
+        let mut cols: Vec<usize> = Vec::new();
+        for x in &r.columns {
+            let Some(&m) = graph.index.get(&x.node) else { continue };
+            for (slot, c) in graph.nodes[m as usize].columns.iter().enumerate() {
+                if x.column.eq_ignore_ascii_case(&c.name) {
+                    cols.push(at[m as usize] + slot);
+                }
+            }
+        }
+        cols.sort_unstable();
+        cols.dedup();
+        if cols.is_empty() {
+            continue;
+        }
+        let text = format!("{} {}", r.clause, crate::graph::said_cut(&ls::field(&r.text), r.cut));
+        match held.as_mut().filter(|(h, _)| h == node) {
+            Some((_, list)) => list.push(json!([text, cols])),
+            None => {
+                if let Some((h, list)) = held.take() {
+                    rules.push(json!([h, list]));
+                }
+                held = Some((*node, vec![json!([text, cols])]));
+            }
+        }
+    }
+    if let Some((h, list)) = held {
+        rules.push(json!([h, list]));
+    }
+
+    Some(json!({
+        "v": 1,
+        "kinds": cll.kinds,
+        "rank": cll.kinds.iter().map(|k| crate::graph::row_rank(k)).collect::<Vec<_>>(),
+        "row": cll.row_kind_list(),
+        "at": at,
+        "names": names,
+        "nm": nm,
+        "types": types,
+        "ty": ty,
+        "tests": tests,
+        "from": from,
+        "to": to,
+        "ek": kind,
+        "roots": roots,
+        "expr": expressions,
+        "lost": lost,
+        "outside": outside,
+        "rules": rules,
+    }))
 }
 
 // ------------------------------------------------------------------ flags ----
@@ -658,6 +941,13 @@ pub(crate) fn index_of(graph: &Graph, meta: Value) -> Value {
             "max_max": api::LINEAGE_NODES_MAX,
             "search": api::SEARCH_DEFAULT,
             "search_max": api::SEARCH_MAX,
+            // The column canvas's: two levels each way unless asked, twenty at most, a cap of boxes drawn
+            // unless a click lifts it, and the most it may be lifted to; and how many names a card lists.
+            "col_depth": api::LINEAGE_DEPTH,
+            "col_depth_max": api::COL_DEPTH_MAX,
+            "col_drawn": api::COL_DRAWN,
+            "col_most": api::COL_MOST,
+            "rows_by": crate::graph::ROWS_BY,
         },
         "base": (0..n).map(|i| graph.box_base(i)).collect::<Vec<_>>(),
         "parents": nodes.iter().map(|n| &n.parents).collect::<Vec<_>>(),
@@ -681,6 +971,8 @@ pub(crate) struct Built {
     pub buckets: Vec<String>,
     /// One file per bucket of SQL, cut by its own rule.
     pub sql: Vec<String>,
+    /// The column lineage, one file, when a cache was merged (0182).
+    pub cll: Option<String>,
     /// The assets the page loads, by their path in the folder.
     pub assets: Vec<(String, Vec<u8>)>,
 }
@@ -817,10 +1109,14 @@ fn runs_of(
     Ok((cuts, buckets))
 }
 
-/// Every node's card in runs (`runs_of`).
-fn cards_in(graph: &Graph, max_nodes: usize, max_bytes: usize) -> Result<(Vec<usize>, Vec<String>), String> {
-    let cards = (0..graph.nodes.len())
-        .map(|i| serde_json::to_value(api::node_detail(graph, i as u32, None, None)).map(|v| js_json(&v)).map_err(|e| e.to_string()));
+/// Every node's card in runs (`runs_of`), with collin's note on the model when its report had one.
+fn cards_in(
+    graph: &Graph, notes: Option<&HashMap<String, ModelNote>>, max_nodes: usize, max_bytes: usize,
+) -> Result<(Vec<usize>, Vec<String>), String> {
+    let cards = (0..graph.nodes.len()).map(|i| {
+        let note = notes.and_then(|m| m.get(&graph.nodes[i].id)).cloned();
+        serde_json::to_value(api::node_detail(graph, i as u32, note, None)).map(|v| js_json(&v)).map_err(|e| e.to_string())
+    });
     runs_of(cards, "EDITH_SITE_CARDS", max_nodes, max_bytes)
 }
 
@@ -832,9 +1128,11 @@ fn sql_in(code: Vec<Option<Sql>>, max_nodes: usize, max_bytes: usize) -> Result<
 
 /// Lays out the index, the cards and the SQL, and rewrites the page: everything the
 /// folder holds, as text, before any of it is written.
-pub(crate) fn build(graph: &Graph, meta: Value, title: &str, code: Vec<Option<Sql>>) -> Result<Built, String> {
+pub(crate) fn build(
+    graph: &Graph, meta: Value, title: &str, code: Vec<Option<Sql>>, notes: Option<&HashMap<String, ModelNote>>,
+) -> Result<Built, String> {
     let mut index = index_of(graph, meta);
-    let (cuts, buckets) = cards_in(graph, BUCKET_NODES, BUCKET_BYTES)?;
+    let (cuts, buckets) = cards_in(graph, notes, BUCKET_NODES, BUCKET_BYTES)?;
     index["cuts"] = json!(cuts);
     let (sql_cuts, sql) = sql_in(code, BUCKET_NODES, BUCKET_BYTES)?;
     index["sql_cuts"] = json!(sql_cuts);
@@ -851,7 +1149,8 @@ pub(crate) fn build(graph: &Graph, meta: Value, title: &str, code: Vec<Option<Sq
     }
     assets.push(("LICENSE.txt".to_string(), include_bytes!("../LICENSE").to_vec()));
     assets.push(("THIRD_PARTY_NOTICES.md".to_string(), include_bytes!("../THIRD_PARTY_NOTICES.md").to_vec()));
-    Ok(Built { html, index: format!("window.EDITH_SITE={};\n", js_json(&index)), buckets, sql, assets })
+    let cll = cll_of(graph).map(|v| format!("EDITH_SITE_CLL({});\n", js_json(&v)));
+    Ok(Built { html, index: format!("window.EDITH_SITE={};\n", js_json(&index)), buckets, sql, cll, assets })
 }
 
 /// Empties the folder and writes every file, the marker first.
@@ -874,6 +1173,9 @@ fn write_site(dir: &Path, built: &Built) -> std::io::Result<()> {
     }
     for (i, bucket) in built.sql.iter().enumerate() {
         put(&format!("data/sql/{i:04}.js"), bucket.as_bytes())?;
+    }
+    if let Some(cll) = &built.cll {
+        put("data/cll.js", cll.as_bytes())?;
     }
     Ok(())
 }
@@ -1125,7 +1427,7 @@ mod tests {
         let project = scratch("assets");
         write_project(&project);
         let into = project.join("out");
-        let ask = Ask { dir: Some(into.clone()), environment: None, commit: None, repo_url: None };
+        let ask = Ask { dir: Some(into.clone()), environment: None, commit: None, repo_url: None, produce: None };
         let (mut out, mut err) = (Vec::new(), Vec::new());
         assert_eq!(generate(&project, None, None, &ask, &mut out, &mut err), ls::ANSWERED, "{}", String::from_utf8_lossy(&err));
 
@@ -1222,6 +1524,7 @@ mod tests {
             environment: Some("prod".to_string()),
             commit: Some("0123456789abcdef0123456789abcdef01234567".to_string()),
             repo_url: Some("https://github.com/acme/shop".to_string()),
+            produce: None,
         };
         let run = |ask: &Ask| {
             let (mut out, mut err) = (Vec::new(), Vec::new());
@@ -1297,6 +1600,7 @@ mod tests {
             environment: None,
             commit: commit.map(String::from),
             repo_url: repo.map(String::from),
+            produce: None,
         };
         let go = |ask: &Ask| {
             let (mut out, mut err) = (Vec::new(), Vec::new());
@@ -1369,6 +1673,7 @@ mod tests {
             environment: None,
             commit: Some("0123456789abcdef0123456789abcdef01234567".to_string()),
             repo_url: Some(repo.to_string()),
+            produce: None,
         }
     }
 
@@ -1590,6 +1895,751 @@ mod tests {
         let sql = std::fs::read_to_string(project.join("target/edith-site/data/sql/0000.js")).unwrap();
         assert!(sql.contains("\"compiled\":\"select 1 as id from analytics.marts.stg_orders\""), "{sql}");
         let _ = std::fs::remove_dir_all(&project);
+    }
+
+    // ------------------------------------------------------ column lineage ----
+
+    /// The invented cache the fixture is held to: every shape `ColLineage` reads, over the case graph.
+    /// Roles with an empty name, in capitals and outside ASCII; filters, join keys and dedup keys into
+    /// every column of a model and out of one column into many; a stop reached two ways; a chain
+    /// longer than the depth menu lists; a cycle and a self-edge; columns spelled in two cases and one
+    /// the YAML does not declare; edges that name a node the manifest lacks; roots, `[]` among them;
+    /// expressions at 32 steps and cut; gaps in every reason; and more rules than a card names.
+    fn case_cache() -> crate::collin::RawColLineage {
+        let m = |n: &str| format!("model.shop.{n}");
+        let edge = |from: &str, fc: &str, to: &str, tc: &str, kind: &str| json!({ "from": from, "from_col": fc, "to": to, "to_col": tc, "kind": kind });
+        let mut edges: Vec<Value> = Vec::new();
+        // A chain of one column, 22 levels.
+        for i in 2..=22 {
+            edges.push(edge(&m(&format!("chain_{:02}", i - 1)), "k", &m(&format!("chain_{i:02}")), "k", "passthrough"));
+        }
+        // A table no node owns, then the source, the seed and a diamond of columns, a stop reached two ways.
+        edges.push(edge("rel:analytics.raw.stage", "id", "source.shop.raw.orders", "id", "passthrough"));
+        edges.push(edge("rel:analytics.raw.stage", "id", &m("dia_c"), "id", "filter"));
+        edges.push(edge("source.shop.raw.orders", "id", &m("chain_01"), "k", "rename"));
+        edges.push(edge("source.shop.raw.orders", "id", &m("dia_a"), "id", "rename"));
+        edges.push(edge("seed.shop.countries", "id", &m("dia_a"), "id", "passthrough"));
+        edges.push(edge(&m("dia_a"), "id", &m("dia_b"), "id", "window"));
+        edges.push(edge(&m("dia_a"), "id", &m("dia_c"), "id", "passthrough"));
+        edges.push(edge(&m("dia_c"), "id", &m("dia_b"), "id", "passthrough"));
+        edges.push(edge(&m("dia_b"), "id", &m("dia_d"), "id", "aggregate"));
+        edges.push(edge(&m("dia_c"), "id", &m("dia_d"), "id", "transform"));
+        edges.push(edge(&m("dia_c"), "id", &m("dia_d"), "Amount", ""));
+        edges.push(edge(&m("dia_d"), "id", &m("hub"), "id", "passthrough"));
+        // A column the YAML does not declare, in two spellings, and one that is not ASCII.
+        edges.push(edge(&m("dia_a"), "Amount", &m("dia_b"), "amount", "cast"));
+        edges.push(edge(&m("dia_b"), "AMOUNT", &m("dia_d"), "Total_\u{c4}", "aggregate"));
+        edges.push(edge(&m("dia_d"), "total_\u{e4}", &m("hub"), "metric", "r\u{e9}\u{e9}crit"));
+        // A model reading itself, and a column reading itself.
+        edges.push(edge(&m("dia_b"), "id", &m("dia_b"), "amount", "filter"));
+        edges.push(edge(&m("fork"), "s", &m("fork"), "s", "passthrough"));
+        // A cycle between two models.
+        edges.push(edge(&m("fork_a"), "c1", &m("fork_b"), "c1", "passthrough"));
+        edges.push(edge(&m("fork_b"), "c1", &m("fork_a"), "c1", "transform"));
+        edges.push(edge(&m("dia_d"), "id", &m("fork_a"), "c1", "rename"));
+        // Indirect edges from the seed's key to many models, a role by capital letters, one by its strongest
+        // of several, and ten columns that keep the rows of one.
+        let roles = ["filter", "join_key", "dedup_key", "FILTER"];
+        for i in 1..=10 {
+            edges.push(edge("seed.shop.countries", "id", &m(&format!("chain_{i:02}")), "j", roles[i % 4]));
+            edges.push(edge(&m(&format!("chain_{i:02}")), "k", &m("hub"), "metric", roles[(i + 1) % 4]));
+        }
+        edges.push(edge("seed.shop.countries", "id", &m("chain_02"), "k", "dedup_key"));
+        edges.push(edge("seed.shop.countries", "id", &m("dia_b"), "id", "join_key"));
+        edges.push(edge("seed.shop.countries", "id", &m("dia_b"), "amount", "join_key"));
+        edges.push(edge(&m("dia_a"), "id", &m("dia_d"), "id", "filter"));
+        // A stop that comes later in a column's edges than a column the cap turns away: taken back whatever the cap.
+        edges.push(edge(&m("chain_12"), "m", &m("chain_13"), "m", "passthrough"));
+        edges.push(edge(&m("chain_12"), "m", &m("chain_20"), "m", "window"));
+        edges.push(edge(&m("chain_13"), "m", &m("chain_14"), "m", "passthrough"));
+        edges.push(edge(&m("chain_13"), "m", &m("chain_20"), "m", "passthrough"));
+        // A stop that a column the walk only draws also reads, by another role: its status line names only what stopped it.
+        edges.push(edge(&m("chain_15"), "q", &m("chain_16"), "q", "passthrough"));
+        edges.push(edge(&m("chain_15"), "q", &m("chain_21"), "q", "window"));
+        edges.push(edge(&m("chain_16"), "q", &m("chain_17"), "q", "passthrough"));
+        edges.push(edge(&m("chain_17"), "q", &m("chain_21"), "q", "aggregate"));
+        // Two roles of the same strength into one model: the first by column is the one its box says.
+        edges.push(edge("seed.shop.countries", "id", &m("chain_11"), "j", "filter"));
+        edges.push(edge("seed.shop.countries", "id", &m("chain_11"), "k", "FILTER"));
+        // Two models of one name keeping the rows of another's column by one role: named once, as the card says them; and a model
+        // that is first by its id and not by its name, whose rule is read after another's.
+        edges.push(edge("model.shop.customers", "id", &m("hub"), "metric", "filter"));
+        edges.push(edge("model.crm.customers", "id", &m("hub"), "metric", "filter"));
+        edges.push(edge("seed.shop.countries", "id", "model.crm.customers", "id", "filter"));
+        // A model kept the rows of from columns at two levels: its box is drawn past the deepest of them.
+        edges.push(edge(&m("chain_18"), "p", &m("chain_19"), "p", "passthrough"));
+        edges.push(edge(&m("chain_19"), "p", &m("chain_20"), "p", "passthrough"));
+        edges.push(edge(&m("chain_18"), "p", &m("leaf_01"), "r", "filter"));
+        edges.push(edge(&m("chain_20"), "p", &m("leaf_01"), "r", "join_key"));
+        // Edges that name a node the manifest lacks.
+        edges.push(edge(&m("ghost"), "id", &m("dia_a"), "id", "passthrough"));
+        edges.push(edge(&m("dia_a"), "id", &m("ghost"), "id", "passthrough"));
+
+        let rule = |node: &str, clause: &str, text: &str, cut: bool, reads: &[(&str, &str)]| {
+            json!({ "node": node, "clause": clause, "text": text, "cut": cut,
+                    "columns": reads.iter().map(|(n, c)| json!({ "node": n, "column": c })).collect::<Vec<_>>() })
+        };
+        let mut rules: Vec<Value> = Vec::new();
+        for i in 0..10 {
+            let clause = ["WHERE", "JOIN", "QUALIFY", "HAVING"][i % 4];
+            // A control character in a text is a space on a card; one rule's text was cut by collin.
+            let text = if i == 3 { "c.id = o.id\tAND\nx".to_string() } else { format!("p{i} > {i}") };
+            rules.push(rule(&m("chain_03"), clause, &text, i == 5, &[("seed.shop.countries", "ID")]));
+        }
+        rules.push(rule(&m("chain_03"), "WHERE", "reads nothing the cache knows", false, &[("model.shop.ghost", "id")]));
+        rules.push(rule(&m("chain_04"), "JOIN", "a.id = b.id", false, &[("seed.shop.countries", "id"), (&m("chain_04"), "j")]));
+        rules.push(rule(&m("dia_b"), "WHERE", "status <> 'x'", false, &[("seed.shop.countries", "Id")]));
+        rules.push(rule("model.crm.customers", "WHERE", "region = 'eu'", false, &[("seed.shop.countries", "id")]));
+
+        let value = json!({
+            "version": 1, "source": "collin", "target": "qa", "generated_at": "2030-01-02T03:04:05Z", "producer": "collin 0.12.0",
+            "edges": edges,
+            "roots": [
+                { "node": m("dia_a"), "column": "id", "expressions": ["'web'", "'shop'"] },
+                { "node": m("dia_b"), "column": "amount", "expressions": [] },
+                { "node": m("dia_c"), "column": "Region", "expressions": ["'a'"] },
+                { "node": m("dia_c"), "column": "region", "expressions": ["'b'"] },
+                { "node": m("dia_d"), "column": "Region", "expressions": ["'a'"] },
+                { "node": m("dia_d"), "column": "region", "expressions": [] },
+                { "node": m("ghost"), "column": "id", "expressions": ["1"] },
+            ],
+            "rules": rules,
+            "expressions": [
+                { "node": m("dia_d"), "column": "Total_\u{c4}", "kind": "aggregate", "text": "sum(amount)", "steps": 3 },
+                { "node": m("dia_b"), "column": "amount", "kind": "cast", "text": "cast(x as int)", "steps": 32, "cut": true },
+                { "node": m("dia_b"), "column": "AMOUNT", "kind": "cast", "text": "short", "steps": 2 },
+                { "node": m("hub"), "column": "metric", "kind": "", "text": "", "steps": 0 },
+            ],
+            "partial": [
+                { "node": m("dia_b"), "column": "amount", "reason": "name_unresolved", "name": "b" },
+                { "node": m("dia_b"), "column": "amount", "reason": "relation_unknown", "name": "a" },
+                { "node": m("dia_b"), "column": "amount", "reason": "cte_lacks_name", "name": "a" },
+                { "node": m("dia_b"), "column": "amount", "reason": "steps_capped", "name": "x" },
+                { "node": m("dia_c"), "column": "id", "reason": "steps_capped", "name": "id" },
+                { "node": m("dia_d"), "column": "id", "reason": "window_key_unbound", "name": "" },
+                { "node": m("hub"), "column": "metric", "reason": "name_unresolved", "name": "z\u{e9}" },
+            ],
+        });
+        serde_json::from_value(value).unwrap()
+    }
+
+    /// collin's notes on a few models of the case, as `notes_of` hands them to the cards: its report named
+    /// where a model's SQL was read, under the project, and what it found wrong with a column.
+    fn case_notes() -> HashMap<String, ModelNote> {
+        let root = Path::new("/work/shop");
+        let note = |provenance: &str, parse_error: &str, sql_file: &str, columns: Vec<collin_run::ColumnNote>| {
+            scrubbed(
+                ModelNote {
+                    provenance: provenance.into(),
+                    parse_error: parse_error.into(),
+                    issues: columns.len(),
+                    sql_file: sql_file.into(),
+                    set_aside: false,
+                    columns,
+                },
+                root,
+            )
+        };
+        let lost = collin_run::ColumnNote {
+            column: "amount".into(),
+            kind: "lost",
+            detail: "name_unresolved".into(),
+            names: vec!["b".into()],
+            of: 0,
+        };
+        HashMap::from([
+            ("model.shop.dia_a".to_string(), note("per_column", "", "/work/shop/target/compiled/shop/models/marts/dia_a.sql", vec![lost])),
+            ("model.shop.orders.v1".to_string(), note("unresolved", "cannot read /work/shop/models/marts/orders.sql", "", Vec::new())),
+            ("model.shop.dia_b".to_string(), note("parsed", "", "/elsewhere/dia_b.sql", Vec::new())),
+        ])
+    }
+
+    /// The case graph with `cache` merged, as `generate` does it: after the catalog, which the case has none of.
+    fn merged(mut graph: Graph, cache: crate::collin::RawColLineage) -> Graph {
+        graph.merge_col_lineage(cache, 0);
+        graph
+    }
+
+    /// A cache of invented edges, roots, expressions, gaps and rules among a dozen nodes of the case, from a
+    /// seed: cycles, self-edges, roles of every kind and stops arise as they will. Another cache over the
+    /// same index, which the invented one above is not.
+    fn random_cache(seed: u64) -> crate::collin::RawColLineage {
+        let mut state = seed;
+        let mut roll = move |n: u64| {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state % n
+        };
+        let nodes = [
+            "model.shop.dia_a", "model.shop.dia_b", "model.shop.dia_c", "model.shop.dia_d", "model.shop.hub", "seed.shop.countries",
+            "model.shop.orders.v1", "model.shop.orders.v2", "model.shop.customers", "model.shop.fork", "model.shop.fork_a",
+            "model.shop.fork_b",
+        ];
+        let columns = ["id", "c0", "c1", "C2"];
+        let kinds =
+            ["passthrough", "rename", "cast", "window", "aggregate", "transform", "filter", "join_key", "dedup_key", "JOIN_KEY", ""];
+        let pick = |roll: &mut dyn FnMut(u64) -> u64| (nodes[roll(12) as usize], columns[roll(4) as usize]);
+        let mut edges = Vec::new();
+        for _ in 0..45 {
+            let (from, fc) = pick(&mut roll);
+            let (to, tc) = pick(&mut roll);
+            let kind = kinds[roll(11) as usize];
+            edges.push(json!({ "from": from, "from_col": fc, "to": to, "to_col": tc, "kind": kind }));
+        }
+        let mut roots = Vec::new();
+        let mut expressions = Vec::new();
+        let mut partial = Vec::new();
+        let mut rules = Vec::new();
+        for _ in 0..12 {
+            let (n, c) = pick(&mut roll);
+            let values: Vec<String> = (0..roll(3)).map(|i| format!("{i}")).collect();
+            roots.push(json!({ "node": n, "column": c, "expressions": values }));
+            let (n, c) = pick(&mut roll);
+            let (kind, text, steps, cut) = (kinds[roll(6) as usize], format!("e{}", roll(9)), roll(40), roll(4) == 0);
+            expressions.push(json!({ "node": n, "column": c, "kind": kind, "text": text, "steps": steps, "cut": cut }));
+            let (n, c) = pick(&mut roll);
+            let (reason, name) =
+                (["name_unresolved", "steps_capped", "cte_lacks_name"][roll(3) as usize], ["", "a", "b"][roll(3) as usize]);
+            partial.push(json!({ "node": n, "column": c, "reason": reason, "name": name }));
+            let (n, _) = pick(&mut roll);
+            let (r, rc) = pick(&mut roll);
+            let text = format!("w{}", roll(9));
+            rules.push(json!({ "node": n, "clause": "WHERE", "text": text, "cut": false, "columns": [{ "node": r, "column": rc }] }));
+        }
+        serde_json::from_value(json!({
+            "version": 1, "source": "collin", "target": "qa", "generated_at": "2030-01-03T00:00:00Z", "producer": "collin 0.12.0",
+            "edges": edges, "roots": roots, "expressions": expressions, "partial": partial, "rules": rules,
+        }))
+        .unwrap()
+    }
+
+    /// What an older collin writes, or Fusion: edges and nothing else, no root, no rule, no indirect role, and a column from a
+    /// table no node owns. With no roots a column's lack of an edge says nothing, so no mark is drawn.
+    fn plain_cache() -> crate::collin::RawColLineage {
+        let m = |n: &str| format!("model.shop.{n}");
+        let edge = |from: &str, fc: &str, to: &str, tc: &str, kind: &str| json!({ "from": from, "from_col": fc, "to": to, "to_col": tc, "kind": kind });
+        serde_json::from_value(json!({
+            "version": 1, "source": "fusion", "target": "qa", "generated_at": "2030-01-04T00:00:00Z",
+            "edges": [
+                edge("rel:analytics.raw.stage", "id", "source.shop.raw.orders", "id", ""),
+                edge("source.shop.raw.orders", "id", &m("dia_a"), "id", ""),
+                edge(&m("dia_a"), "id", &m("dia_b"), "id", ""),
+                edge(&m("dia_b"), "id", &m("dia_d"), "id", ""),
+                edge(&m("dia_a"), "id", &m("dia_c"), "id", ""),
+                edge(&m("dia_c"), "id", &m("dia_d"), "id", ""),
+            ],
+        }))
+        .unwrap()
+    }
+
+    /// `/api/collineage` and `/api/colreach` as the server answers them for each of the cases below, over
+    /// a graph with a cache merged, with the file the page loads them from.
+    fn column_cases(graph: &Graph, deep: bool, every: usize) -> (String, Vec<Value>, Vec<Value>) {
+        let text = format!("EDITH_SITE_CLL({});\n", js_json(&cll_of(graph).expect("a merged cache")));
+        let ask = |id: &str, column: &str, up: u32, down: u32, max: Option<usize>, cut: &str, indirect: u8| {
+            let mut path = format!("/api/collineage?id={}&column={}&up={up}&down={down}&indirect={indirect}", enc(id), enc(column));
+            if let Some(max) = max {
+                path.push_str(&format!("&max={max}"));
+            }
+            if !cut.is_empty() {
+                path.push_str(&format!("&cut={}", enc(cut)));
+            }
+            let idx = graph.index[id];
+            let col = graph.col_slot(idx, column).unwrap_or_else(|| panic!("no column {column} in {id}"));
+            let cuts: Vec<&str> = cut.split(',').filter(|r| !r.is_empty()).collect();
+            let want =
+                serde_json::to_value(api::col_lineage_answer(graph, ColRef { node: idx, col }, up, down, max, &cuts, indirect)).unwrap();
+            json!({ "path": path, "want": want })
+        };
+        let mut cases: Vec<Value> = Vec::new();
+        // The columns the cache says something of, at the depth the page opens on: with the indirect button on where an
+        // indirect edge touches the column, off elsewhere, where on would answer the same. A column it names nothing of
+        // answers as a lone box, so one such column stands for them. Of a chain whose links answer alike, every few.
+        let cll = graph.cll.as_ref().expect("a merged cache");
+        let mut said: std::collections::HashSet<ColRef> = std::collections::HashSet::new();
+        for e in cll.edge_list() {
+            said.extend([e.from, e.to]);
+        }
+        said.extend(cll.root_list().iter().map(|(c, _)| *c));
+        said.extend(cll.expression_list().iter().map(|(c, _)| *c));
+        said.extend(cll.lost_columns());
+        said.extend(cll.outside_list().iter().copied());
+        let touched_by_rows: std::collections::HashSet<ColRef> =
+            cll.edge_list().iter().filter(|e| cll.is_indirect(e)).flat_map(|e| [e.from, e.to]).collect();
+        let (mut quiet, mut seen) = (0, 0);
+        for (i, node) in graph.nodes.iter().enumerate() {
+            let link = node.id.strip_prefix("model.shop.chain_").and_then(|n| n.parse::<u32>().ok());
+            if link.is_some_and(|n| ![1, 11, 12, 15, 22].contains(&n)) {
+                continue;
+            }
+            for (slot, column) in node.columns.iter().enumerate() {
+                let c = ColRef { node: i as u32, col: slot as u32 };
+                // Asked far both ways below, where the same column shows more.
+                if [
+                    ("model.shop.dia_a", "id"),
+                    ("model.shop.chain_01", "k"),
+                    ("model.shop.chain_11", "k"),
+                    ("model.shop.chain_22", "k"),
+                    ("model.shop.dia_b", "id"),
+                    ("model.shop.dia_d", "id"),
+                ]
+                .contains(&(node.id.as_str(), column.name.as_str()))
+                {
+                    continue;
+                }
+                if !said.contains(&c) {
+                    quiet += 1;
+                    if quiet > 1 {
+                        continue;
+                    }
+                } else {
+                    seen += 1;
+                    if seen % every != 0 {
+                        continue;
+                    }
+                }
+                for indirect in if touched_by_rows.contains(&c) { vec![0, 1] } else { vec![0] } {
+                    cases.push(ask(&node.id, &column.name, 2, 2, None, "", indirect));
+                }
+            }
+        }
+        if deep {
+            let (chain, dia, hub, fork) = ("model.shop.chain_11", "model.shop.dia_a", "model.shop.hub", "model.shop.fork_a");
+            // As far as the menu goes, a chain that goes further, and under a cap that cuts it on either side.
+            for (id, column, up, down, max, cut, indirect) in [
+                (chain, "k", 20, 20, None, "", 0),
+                (chain, "k", 20, 20, Some(7), "", 0),
+                (chain, "k", 20, 20, Some(3), "", 1),
+                // A cap met only on the walk's extra level past the twentieth cuts nothing drawn.
+                ("model.shop.chain_01", "k", 0, 20, Some(21), "", 0),
+                ("model.shop.chain_22", "k", 20, 0, Some(21), "", 0),
+                ("model.shop.chain_01", "k", 0, 20, Some(20), "", 0),
+                // A stop reached around the cut, and the roles named for it, one that is none.
+                (dia, "id", 1, 3, None, "window", 0),
+                (dia, "id", 2, 3, None, "window,nonsense", 0),
+                (dia, "id", 0, 2, Some(3), "window", 0),
+                (dia, "id", 0, 4, Some(4), "window,aggregate", 1),
+                ("source.shop.raw.orders", "id", 0, 5, None, "rename,window", 0),
+                ("model.shop.chain_12", "m", 0, 3, Some(3), "window", 0),
+                ("model.shop.chain_12", "m", 0, 3, Some(4), "window", 1),
+                ("model.shop.chain_18", "p", 0, 3, None, "", 1),
+                ("model.shop.chain_15", "q", 0, 2, None, "window,aggregate", 0),
+                ("model.shop.chain_15", "q", 0, 3, None, "window,aggregate", 1),
+                // The indirect edges' boxes under a cap, past the columns that reach them.
+                ("seed.shop.countries", "id", 0, 2, Some(3), "", 1),
+                ("seed.shop.countries", "id", 1, 3, Some(12), "", 1),
+                ("seed.shop.countries", "id", 2, 2, Some(1), "", 1),
+                (hub, "metric", 20, 20, Some(5), "", 1),
+                (hub, "metric", 20, 20, None, "window", 0),
+                // Cycles: two models, and a column that reads itself.
+                (fork, "c1", 20, 20, None, "", 0),
+                (fork, "c1", 3, 3, Some(2), "", 1),
+                ("model.shop.fork", "s", 2, 2, None, "", 1),
+                // The route's clamps, a column in another case, one that is not ASCII.
+                (dia, "ID", 99, 99, Some(99_999), "", 1),
+                ("model.shop.dia_d", "TOTAL_\u{c4}", 2, 2, None, "", 0),
+            ] {
+                cases.push(ask(id, column, up, down, max, cut, indirect));
+            }
+            // No depth, no cap and no indirect given: the route's own defaults.
+            let (idx, col) = (graph.index[dia], graph.col_slot(graph.index[dia], "id").unwrap());
+            let want = serde_json::to_value(api::col_lineage_answer(graph, ColRef { node: idx, col }, 2, 2, None, &[], 0)).unwrap();
+            cases.push(json!({ "path": format!("/api/collineage?id={}&column=id", enc(dia)), "want": want }));
+        } else {
+            // A cache from a seed: every column far both ways, under a cap and a cut, where the graph is a tangle.
+            for node in graph.nodes.iter().filter(|n| n.columns.iter().any(|c| c.name == "c0")).take(1) {
+                cases.push(ask(&node.id, "c0", 20, 20, Some(9), "window,aggregate", 1));
+                cases.push(ask(&node.id, "c0", 20, 20, Some(14), "filter,join_key", 0));
+            }
+        }
+        // Every node with a column, and one with none, which answers an empty list.
+        let mut bare = false;
+        let reach = graph
+            .nodes
+            .iter()
+            .filter(|n| {
+                let first = n.columns.is_empty() && !bare;
+                bare |= first;
+                !n.columns.is_empty() || first
+            })
+            .map(|n| {
+                let want = serde_json::to_value(api::col_reach_rows(graph, graph.index[&n.id])).unwrap();
+                json!({ "path": format!("/api/colreach?id={}", enc(&n.id)), "want": want })
+            })
+            .collect();
+        (text, cases, reach)
+    }
+
+    // ------------------------------------------ column lineage, from a folder ----
+
+    /// A cache of invented edges between the three models `write_project` has, for `generate` to find
+    /// beside the manifest, and the report collin writes with it, one model noted.
+    fn write_cache(project: &Path, source: &str) {
+        let target = project.join("target");
+        let edge = |from: &str, to: &str, kind: &str| json!({ "from": format!("model.shop.{from}"), "from_col": "id", "to": format!("model.shop.{to}"), "to_col": "id", "kind": kind });
+        let cache = json!({
+            "version": 1, "source": source, "target": "qa", "generated_at": "2030-01-02T03:04:05Z", "producer": "collin 0.12.0",
+            "edges": [edge("raw_orders", "stg_orders", "passthrough"), edge("stg_orders", "orders", "transform")],
+        });
+        std::fs::write(target.join("column_lineage.collin.json"), serde_json::to_vec(&cache).unwrap()).unwrap();
+        // The model's SQL was read from a file under the project, which a published card must not name by its place on this machine.
+        let sql_file = format!("{}/target/compiled/shop/models/orders.sql", project.display());
+        let report = json!({
+            "totals": { "models": 3, "parsed": 3 },
+            "models": [{ "unique_id": "model.shop.orders", "provenance": "per_column", "parse_error": format!("cannot read {sql_file}, /elsewhere/deep/b.sql, C:\\Users\\x\\c.sql and \\\\?\\D:\\t\\e.sql"),
+                         "sql_file": sql_file, "lost_columns": [{ "column": "id", "ends": [] }] }],
+        });
+        std::fs::write(target.join(collin_run::REPORT), serde_json::to_vec(&report).unwrap()).unwrap();
+    }
+
+    fn site_index(project: &Path) -> Value {
+        let text = std::fs::read_to_string(project.join("target/edith-site/data/index.js")).unwrap();
+        serde_json::from_str(text.trim_end().strip_prefix("window.EDITH_SITE=").unwrap().trim_end_matches(';')).unwrap()
+    }
+
+    fn no_collin() -> collin_run::Located {
+        panic!("collin was asked for, and --site alone never starts it")
+    }
+
+    fn run_site(project: &Path, ask: &Ask, locate: impl FnOnce() -> collin_run::Located) -> (i32, String, String) {
+        let (mut out, mut err) = (Vec::new(), Vec::new());
+        let code = generate_with(project, None, None, ask, locate, &mut out, &mut err);
+        (code, String::from_utf8(out).unwrap(), String::from_utf8(err).unwrap())
+    }
+
+    #[test]
+    fn a_site_with_no_cache_says_so_and_starts_nothing() {
+        let project = scratch("cll-none");
+        write_project(&project);
+        let (code, out, err) = run_site(&project, &ask_for("https://github.com/acme/shop"), no_collin);
+        assert_eq!(code, ls::ANSWERED, "{err}");
+        assert!(err.contains("no column lineage: collin has written no cache beside the manifest, and --run-collin writes one"), "{err}");
+        assert!(!out.contains("column lineage:"), "{out}");
+        let site = project.join("target/edith-site");
+        assert!(!site.join("data/cll.js").exists());
+        let json = site_index(&project);
+        assert_eq!(json["meta"]["cll"], false);
+        assert!(json["meta"].get("cll_file").is_none());
+        // The limits are there whatever the cache is: a page asks them of any site.
+        assert_eq!(json["limits"]["col_depth"], 2);
+        let _ = std::fs::remove_dir_all(&project);
+    }
+
+    #[test]
+    fn a_cache_beside_the_manifest_is_carried_whole_and_named_bare() {
+        let project = scratch("cll-cache");
+        write_project(&project);
+        write_cache(&project, "collin");
+        let ask = ask_for("https://github.com/acme/shop");
+        let (code, out, err) = run_site(&project, &ask, no_collin);
+        assert_eq!(code, ls::ANSWERED, "{err}");
+        assert!(out.contains("  column lineage: 2 edges from collin"), "{out}");
+        assert!(!err.contains("no column lineage") && !err.contains("older than the manifest"), "{err}");
+        let json = site_index(&project);
+        let meta = &json["meta"];
+        assert_eq!(
+            (meta["cll"].clone(), meta["cll_tool"].clone(), meta["cll_file"].clone(), meta["cll_edges"].clone(), meta["cll_stale"].clone()),
+            (json!(true), json!("collin"), json!("column_lineage.collin.json"), json!(2), json!(false))
+        );
+        assert_eq!(
+            (meta["cll_source"].as_str(), meta["cll_target"].as_str(), meta["cll_generated_at"].as_str()),
+            (Some("collin"), Some("qa"), Some("2030-01-02T03:04:05Z"))
+        );
+        assert_eq!(meta["cll_kinds"], json!([{ "kind": "passthrough", "edges": 1 }, { "kind": "transform", "edges": 1 }]));
+        // Neither a time nor a producer, which the page has no use for and a run would change.
+        assert!(meta.get("cll_mtime").is_none() && meta.get("cll_producer").is_none());
+
+        // The file is the cache as merged, and the same bytes on every run, with no path of this machine in any of it.
+        let first = files_of(&project.join("target/edith-site"));
+        let cll = String::from_utf8(first["data/cll.js"].clone()).unwrap();
+        assert!(cll.starts_with("EDITH_SITE_CLL({") && cll.ends_with("});\n"), "{cll}");
+        let (code, _, err) = run_site(&project, &ask, no_collin);
+        assert_eq!(code, ls::ANSWERED, "{err}");
+        assert_eq!(files_of(&project.join("target/edith-site")), first);
+        let temp = std::env::temp_dir().display().to_string();
+        for (name, bytes) in &first {
+            if name.starts_with("vendor/") {
+                continue;
+            }
+            let text = String::from_utf8_lossy(bytes);
+            for needle in [project.to_string_lossy().as_ref(), temp.as_str()] {
+                assert!(!text.contains(needle), "{name} holds {needle}");
+            }
+        }
+        // The card of the model collin noted says what it found, and not where on this machine it looked.
+        let cards = String::from_utf8_lossy(&first["data/cards/0000.js"]).into_owned();
+        assert!(cards.contains("\"provenance\":\"per_column\""), "{cards}");
+        assert!(cards.contains("\"sql_file\":\"target/compiled/shop/models/orders.sql\"") && !cards.contains("parse_error"), "{cards}");
+        for outside in ["elsewhere", "Users", "\\\\\\\\?"] {
+            assert!(!cards.contains(outside), "a card holds {outside}: {cards}");
+        }
+        let _ = std::fs::remove_dir_all(&project);
+    }
+
+    #[test]
+    fn a_cache_older_than_the_manifest_is_carried_with_its_warning() {
+        let project = scratch("cll-stale");
+        write_project(&project);
+        write_cache(&project, "collin");
+        let cache = project.join("target/column_lineage.collin.json");
+        let aged = |file: &Path, by: u64| {
+            let f = std::fs::OpenOptions::new().write(true).open(file).unwrap();
+            f.set_modified(std::time::SystemTime::now() - std::time::Duration::from_secs(by)).unwrap();
+        };
+        // The manifest an hour old, the cache a day: the cache is behind.
+        aged(&project.join("target/manifest.json"), 3600);
+        aged(&cache, 86_400);
+        let (code, out, err) = run_site(&project, &ask_for("https://github.com/acme/shop"), no_collin);
+        assert_eq!(code, ls::ANSWERED, "{err}");
+        assert!(
+            err.contains(
+                "warning: collin's column lineage is older than the manifest: it may not match this commit; --run-collin writes it again"
+            ),
+            "{err}"
+        );
+        assert!(out.contains("column lineage: 2 edges from collin"), "{out}");
+        assert_eq!(site_index(&project)["meta"]["cll_stale"], true);
+        assert!(project.join("target/edith-site/data/cll.js").is_file(), "a stale cache is carried, with its warning");
+
+        // Written after the manifest: current.
+        aged(&cache, 60);
+        let (_, _, err) = run_site(&project, &ask_for("https://github.com/acme/shop"), no_collin);
+        assert!(!err.contains("older than the manifest"), "{err}");
+        assert_eq!(site_index(&project)["meta"]["cll_stale"], false);
+        let _ = std::fs::remove_dir_all(&project);
+    }
+
+    #[test]
+    fn a_cache_that_cannot_be_read_is_left_out_and_said() {
+        let project = scratch("cll-broken");
+        write_project(&project);
+        let cache = project.join("target/column_lineage.collin.json");
+        let ask = ask_for("https://github.com/acme/shop");
+        for (text, why) in [
+            ("{ not json", "warning: no column lineage, the cache was ignored:"),
+            ("{\"version\":2,\"source\":\"collin\",\"edges\":[]}", "is not a column lineage cache this build can read"),
+            // A report left under the cache's name: no edges, no cache.
+            ("{\"totals\":{},\"models\":[]}", "is not a column lineage cache this build can read"),
+        ] {
+            std::fs::write(&cache, text).unwrap();
+            let (code, out, err) = run_site(&project, &ask, no_collin);
+            assert_eq!(code, ls::ANSWERED, "{err}");
+            assert!(err.contains(why), "{text}: {err}");
+            assert!(!out.contains("column lineage:") && !project.join("target/edith-site/data/cll.js").exists(), "{text}");
+            assert_eq!(site_index(&project)["meta"]["cll"], false);
+        }
+        let _ = std::fs::remove_dir_all(&project);
+    }
+
+    #[test]
+    fn a_cache_another_tool_wrote_names_that_tool_and_reads_no_report() {
+        let project = scratch("cll-fusion");
+        write_project(&project);
+        write_cache(&project, "fusion");
+        let (code, out, err) = run_site(&project, &ask_for("https://github.com/acme/shop"), no_collin);
+        assert_eq!(code, ls::ANSWERED, "{err}");
+        assert!(out.contains("  column lineage: 2 edges from fusion"), "{out}");
+        assert_eq!(site_index(&project)["meta"]["cll_tool"], "fusion");
+        // collin's report is collin's: no card carries a note when another tool's cache is the one carried.
+        let cards = String::from_utf8_lossy(&std::fs::read(project.join("target/edith-site/data/cards/0000.js")).unwrap()).into_owned();
+        assert!(!cards.contains("per_column"), "{cards}");
+        let _ = std::fs::remove_dir_all(&project);
+    }
+
+    #[cfg(unix)]
+    fn stand_in(dir: &Path, body: &str) -> collin_run::Located {
+        let bin = dir.join("collin-stand-in");
+        let script = format!(
+            "#!/bin/sh\n[ \"$1\" = --version ] && echo 'collin 0.12.0' && exit 0\nout=''\nreport=''\n\
+             while [ $# -gt 0 ]; do [ \"$1\" = --out ] && out=\"$2\"; [ \"$1\" = --report ] && report=\"$2\"; shift; done\n{body}\n"
+        );
+        collin_run::tests::executable(&bin, &script);
+        collin_run::Located { bin: Some(bin), ..Default::default() }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn run_collin_writes_the_cache_first_and_the_site_carries_it() {
+        let project = scratch("cll-run");
+        write_project(&project);
+        let tools = scratch("cll-run-tools");
+        let writes = r#"echo '{"version":1,"source":"collin","producer":"collin 0.12.0","edges":[{"from":"model.shop.raw_orders","from_col":"id","to":"model.shop.orders","to_col":"id","kind":"passthrough"}]}' > "$out"
+echo '{"totals":{"models":3,"parsed":3},"models":[]}' > "$report""#;
+        let ask = Ask { produce: Some(ls_column::Produce { catalog: None, compiled: None }), ..ask_for("https://github.com/acme/shop") };
+        let (code, out, err) = run_site(&project, &ask, || stand_in(&tools, writes));
+        assert_eq!(code, ls::ANSWERED, "{err}");
+        assert!(err.starts_with("collin 0.12.0 wrote"), "{err}");
+        assert!(out.contains("column lineage: 1 edges from collin"), "{out}");
+        assert!(project.join("target/column_lineage.collin.json").is_file() && project.join("target").join(collin_run::REPORT).is_file());
+        assert_eq!(site_index(&project)["meta"]["cll_stale"], false, "the cache was just written");
+        assert!(project.join("target/edith-site/data/cll.js").is_file());
+
+        // A run that writes nothing leaves no site: the folder it would have been is as it was.
+        let project2 = scratch("cll-run-fails");
+        write_project(&project2);
+        let (code, _, err) = run_site(&project2, &ask, || stand_in(&tools, "exit 1"));
+        assert_eq!(code, ls::CANNOT_RUN, "{err}");
+        assert!(err.contains("error: collin wrote no cache"), "{err}");
+        assert!(!project2.join("target/edith-site").exists(), "nothing was written");
+        // No collin to run: the same, with the way to get one.
+        let (code, _, err) = run_site(&project2, &ask, collin_run::Located::default);
+        assert_eq!(code, ls::CANNOT_RUN, "{err}");
+        assert!(err.contains("--run-collin found no collin to run"), "{err}");
+        assert!(!project2.join("target/edith-site").exists());
+        // A cache that was written and cannot be read ends the run too, rather than a site without it.
+        let (code, _, err) = run_site(&project2, &ask, || stand_in(&tools, r#"echo '{ broken' > "$out""#));
+        assert_eq!(code, ls::CANNOT_RUN, "{err}");
+        assert!(!project2.join("target/edith-site").exists());
+        // A folder refused is refused before collin runs: no cache is written for nothing.
+        let project3 = scratch("cll-run-refused");
+        write_project(&project3);
+        let refused = Ask { dir: Some(project3.join("target")), ..ask };
+        let (code, _, err) = run_site(&project3, &refused, no_collin);
+        assert_eq!(code, ls::CANNOT_RUN, "{err}");
+        assert!(!project3.join("target/column_lineage.collin.json").exists());
+        for dir in [&project, &project2, &project3, &tools] {
+            let _ = std::fs::remove_dir_all(dir);
+        }
+    }
+
+    #[test]
+    fn a_note_names_nothing_of_this_machine() {
+        let root = Path::new("/work/shop");
+        let scrubbed = |sql_file: &str, parse_error: &str| {
+            let note = ModelNote { sql_file: sql_file.into(), parse_error: parse_error.into(), ..ModelNote::default() };
+            let note = super::scrubbed(note, root);
+            (note.sql_file, note.parse_error)
+        };
+        assert_eq!(scrubbed("/work/shop/target/compiled/a.sql", "").0, "target/compiled/a.sql");
+        assert_eq!(scrubbed("target/compiled/a.sql", "").0, "target/compiled/a.sql", "a file already relative stays");
+        assert_eq!(scrubbed("/elsewhere/a.sql", "").0, "", "a file outside the project is dropped");
+        assert_eq!(scrubbed("../up/a.sql", "").0, "");
+        assert_eq!(scrubbed("C:\\other\\a.sql", "").0, "");
+        assert_eq!(scrubbed("", "no file /work/shop/models/a.sql and /work/shop").1, "no file models/a.sql and ");
+        // A text that still holds a path outside the root, a Windows one, a verbatim one or a share is dropped whole, and so
+        // is one whose path has a space in it, which a word-by-word rewrite would leave the tail of.
+        for text in [
+            "cannot read /elsewhere/deep/b.sql: no such file",
+            "cannot read 'C:\\Users\\x\\c.sql' or (D:/data/d.sql)",
+            "at \\\\?\\C:\\tmp\\e.sql",
+            "\\\\host\\share\\f.sql",
+            "cannot read /Users/John Smith/x.sql",
+            "cannot read C:\\Users\\John Smith\\x.sql",
+        ] {
+            assert_eq!(scrubbed("", text).1, "", "{text}");
+        }
+        assert_eq!(
+            scrubbed("", "a / b, a/b and 5:30 stay").1,
+            "a / b, a/b and 5:30 stay",
+            "division, a relative path and a time are no path"
+        );
+        assert_eq!(
+            scrubbed("", "no file /work/shop/my dir/a.sql").1,
+            "no file my dir/a.sql",
+            "a space below the root stays: the root is cut"
+        );
+        assert_eq!(scrubbed("/work/shop/../x.sql", "").0, "", "a way up out of the project is dropped");
+        assert_eq!(scrubbed("\\\\?\\C:\\tmp\\g.sql", "").0, "");
+        assert_eq!(scrubbed("D:/data/h.sql", "").0, "");
+        let column = collin_run::ColumnNote {
+            column: "id".into(),
+            kind: "lost",
+            detail: "/work/shop/x and /other/z.sql".into(),
+            names: vec!["/work/shop/y".into(), "C:\\w\\v.sql".into(), "/Users/John Smith/w.sql".into()],
+            of: 0,
+        };
+        let note =
+            super::scrubbed(ModelNote { columns: vec![column], provenance: "from /srv/q/p.sql".into(), ..ModelNote::default() }, root);
+        assert_eq!(note.provenance, "");
+        assert_eq!(note.columns[0].detail, "");
+        assert_eq!(note.columns[0].names, ["y"], "a name holding a path is removed from the list");
+    }
+
+    #[test]
+    fn a_column_is_a_number_and_the_file_is_the_cache_as_merged() {
+        let graph = merged(case_graph(), case_cache());
+        let cll = graph.cll.as_ref().unwrap();
+        let file = cll_of(&graph).unwrap();
+        // A column's number is where its node starts plus its slot, so the order of a column is the number's.
+        let at: Vec<usize> = file["at"].as_array().unwrap().iter().map(|v| v.as_u64().unwrap() as usize).collect();
+        assert_eq!(at.len(), graph.nodes.len() + 1);
+        for (i, n) in graph.nodes.iter().enumerate() {
+            assert_eq!(at[i + 1] - at[i], n.columns.len(), "{}", n.id);
+        }
+        assert_eq!(file["nm"].as_array().unwrap().len(), at[graph.nodes.len()]);
+        // The edges come back as they are held: by source then target, which is the order the walks meet them in.
+        let (mut f, mut seen) = (0, Vec::new());
+        for (i, d) in file["from"].as_array().unwrap().iter().enumerate() {
+            f += d.as_u64().unwrap() as usize;
+            seen.push((f, file["to"][i].as_u64().unwrap() as usize, file["ek"][i].as_u64().unwrap() as u8));
+        }
+        let held: Vec<(usize, usize, u8)> = cll
+            .edge_list()
+            .iter()
+            .map(|e| (at[e.from.node as usize] + e.from.col as usize, at[e.to.node as usize] + e.to.col as usize, e.kind))
+            .collect();
+        assert_eq!(seen, held);
+        assert!(seen.windows(2).all(|w| (w[0].0, w[0].1) < (w[1].0, w[1].1)), "sorted by source then target, never twice");
+        // A name and a type are interned, and each column's is the one the node has.
+        let names = file["names"].as_array().unwrap();
+        let types = file["types"].as_array().unwrap();
+        for (i, n) in graph.nodes.iter().enumerate() {
+            for (slot, c) in n.columns.iter().enumerate() {
+                assert_eq!(names[file["nm"][at[i] + slot].as_u64().unwrap() as usize], c.name.as_str());
+                assert_eq!(types[file["ty"][at[i] + slot].as_u64().unwrap() as usize], c.data_type.as_str());
+            }
+        }
+        // The roles that say which rows exist are named by their kind, with their strength.
+        let kinds: Vec<&str> = file["kinds"].as_array().unwrap().iter().map(|k| k.as_str().unwrap()).collect();
+        let rank = |k: &str| file["rank"][kinds.iter().position(|x| *x == k).unwrap()].as_u64().unwrap();
+        assert_eq!(
+            (rank("filter"), rank("FILTER"), rank("join_key"), rank("dedup_key"), rank("passthrough"), rank("")),
+            (1, 1, 2, 3, 0, 0)
+        );
+        let row: Vec<&str> = file["row"].as_array().unwrap().iter().map(|k| kinds[k.as_u64().unwrap() as usize]).collect();
+        assert!(row.contains(&"FILTER") && row.contains(&"dedup_key") && !row.contains(&"window"), "{row:?}");
+        // The same file every time, and no path in it.
+        assert_eq!(js_json(&file), js_json(&cll_of(&graph).unwrap()));
+        assert!(cll_of(&case_graph()).is_none(), "no cache, no file");
+    }
+
+    /// A model's box on a column canvas is the node as the lineage draws it on its own, with a depth, its
+    /// own line and no +N: `web/site.js` builds it from the index's base, so the two must be one.
+    #[test]
+    fn a_models_box_on_a_column_canvas_is_its_base_and_four_fields() {
+        let graph = case_graph();
+        for i in 0..graph.nodes.len() as u32 {
+            let got = serde_json::to_value(graph.whole_model_node(i, 3)).unwrap();
+            let mut want = graph.box_base(i);
+            let n = &graph.nodes[i as usize];
+            // What only a test says of itself is not on a model's box, whatever node a cache names.
+            for key in ["test_name", "column", "namespace", "warn", "host"] {
+                want.as_object_mut().unwrap().remove(key);
+            }
+            want["depth"] = json!(3);
+            want["hidden_up"] = json!(0);
+            want["hidden_down"] = json!(0);
+            want["sub"] = json!(if n.materialized.is_empty() {
+                "whole model".to_string()
+            } else {
+                format!("{}  \u{b7}  whole model", n.materialized)
+            });
+            assert_eq!(got, want, "{}", n.id);
+        }
+    }
+
+    /// The site's page and the server's say the same words to a column, which the golden file proves for the
+    /// walks: these are the clamps the page is told, which are the route's own constants.
+    #[test]
+    fn the_columns_limits_are_the_routes_own() {
+        let index = index_of(&case_graph(), json!({}));
+        let l = &index["limits"];
+        assert_eq!(
+            (l["col_depth"].as_u64(), l["col_depth_max"].as_u64(), l["col_drawn"].as_u64(), l["col_most"].as_u64(), l["rows_by"].as_u64()),
+            (Some(2), Some(20), Some(1000), Some(3000), Some(8))
+        );
+        assert_eq!(api::COL_DEPTH_MAX as usize, MAX_LEVELS, "the menu lists as many levels as the route walks");
     }
 
     // ----------------------------------------------------- the golden case ----
@@ -1817,11 +2867,15 @@ mod tests {
     /// The whole fixture, as the text of the file. What `web/site.js` is held to.
     fn case_text() -> String {
         let (graph, manifest) = case_parts();
+        // With the invented cache merged, as `generate` merges one: the cards carry what the cache says of their columns.
+        let graph = merged(graph, case_cache());
+        let notes = case_notes();
         let base = "https://github.com/acme/shop/blob/0123456789abcdef0123456789abcdef01234567/analytics/";
-        let meta = json!({ "project": "shop", "root": "shop", "environment": "qa", "commit": "", "commit_url": "", "repo_url": "", "file_base": base, "catalog": false });
+        let mut meta = json!({ "project": "shop", "root": "shop", "environment": "qa", "commit": "", "commit_url": "", "repo_url": "", "file_base": base, "catalog": false });
+        cll_meta(&graph, Some(false), &mut meta);
         let mut index = index_of(&graph, meta);
         // Small buckets, so the lookup of a card by its number is exercised, and the SQL's own cut is not the cards'.
-        let (cuts, buckets) = cards_in(&graph, 7, BUCKET_BYTES).unwrap();
+        let (cuts, buckets) = cards_in(&graph, Some(&notes), 7, BUCKET_BYTES).unwrap();
         index["cuts"] = json!(cuts);
         let code = sql_of(&graph, serde_json::from_value(manifest).unwrap());
         let (sql_cuts, sql) = sql_in(code.clone(), 5, BUCKET_BYTES).unwrap();
@@ -1897,7 +2951,7 @@ mod tests {
             ("\u{1f600}", "", Some(3)),
             ("customers", "", Some(4)),
             ("leaf_", "model", Some(3)),
-            ("chain", "model", Some(200_000)),
+            ("chain_1", "model", Some(200_000)),
             ("raw", "", Some(3)),
             ("unique", "test", Some(3)),
             ("nothing matches this", "", None),
@@ -1934,13 +2988,16 @@ mod tests {
             .collect();
 
         // The cards: a handful by their id, through the buckets.
-        let nodes: Vec<Value> = ["model.shop.dia_a", "model.shop.orders.v1", "exposure.shop.dashboard", "model.shop.old_hub"]
-            .iter()
-            .map(|name| {
-                let want = serde_json::to_value(api::node_detail(&graph, id(name), None, None)).unwrap();
-                json!({ "path": format!("/api/node?id={}", enc(name)), "want": want })
-            })
-            .collect();
+        let nodes: Vec<Value> = [
+            "model.shop.dia_a", "model.shop.orders.v1", "exposure.shop.dashboard", "model.shop.old_hub", "model.shop.dia_b",
+            "model.shop.hub",
+        ]
+        .iter()
+        .map(|name| {
+            let want = serde_json::to_value(api::node_detail(&graph, id(name), notes.get(*name).cloned(), None)).unwrap();
+            json!({ "path": format!("/api/node?id={}", enc(name)), "want": want })
+        })
+        .collect();
 
         // The code of a node, with the file it came from and the link to it: only the project's own files are in the
         // repository, so a package's has none. A node with no code answers an empty one.
@@ -1968,7 +3025,19 @@ mod tests {
             })
             .collect();
 
-        let case = json!({ "site": index, "buckets": buckets, "sql": sql, "lineage": cases, "search": searches, "node": nodes, "dir": dirs, "code": codes });
+        // Column lineage: the invented cache, and one from a seed over the same index.
+        let (cll, collineage, colreach) = column_cases(&graph, true, 1);
+        let random = merged(case_parts().0, random_cache(0x5eed_1234_abcd_ef01));
+        let (random_cll, random_collineage, random_colreach) = column_cases(&random, false, 10);
+        let plain = merged(case_parts().0, plain_cache());
+        let (plain_cll, plain_collineage, plain_colreach) = column_cases(&plain, false, 1);
+
+        let case = json!({
+            "site": index, "buckets": buckets, "sql": sql, "lineage": cases, "search": searches, "node": nodes, "dir": dirs, "code": codes,
+            "cll": cll, "collineage": collineage, "colreach": colreach,
+            "random": { "cll": random_cll, "collineage": random_collineage, "colreach": random_colreach },
+            "plain": { "cll": plain_cll, "collineage": plain_collineage, "colreach": plain_colreach },
+        });
         format!(
             "// Written by `DBT_EDITH_BLESS=1 cargo test site_case` from an invented graph: Rust's answers, which web/tests/site.js\n\
              // holds web/site.js to. Never edited by hand.\nvar SITE_CASE = {};\n",
@@ -2091,11 +3160,11 @@ mod tests {
         ranks.sort_unstable();
         assert_eq!(ranks, (0..n as u64).collect::<Vec<_>>(), "a rank is a position: each one once");
         // Buckets are contiguous and cover every node.
-        let (cuts, buckets) = cards_in(&graph, 7, BUCKET_BYTES).unwrap();
+        let (cuts, buckets) = cards_in(&graph, None, 7, BUCKET_BYTES).unwrap();
         assert_eq!(cuts, (0..n).step_by(7).collect::<Vec<_>>());
         assert_eq!(buckets.len(), cuts.len());
         // The byte limit closes a bucket as the count does.
-        let (cuts, _) = cards_in(&graph, 1000, 1).unwrap();
+        let (cuts, _) = cards_in(&graph, None, 1000, 1).unwrap();
         assert_eq!(cuts.len(), n);
     }
 }

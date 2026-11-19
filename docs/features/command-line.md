@@ -15,8 +15,8 @@ terminal can ask the same questions [over MCP](#over-mcp).
 [0102](../decisions/0102-a-node-and-the-project-are-described-on-the-command-line.md)):
 
 - **Nothing is served.** No port, no key, no browser, no settings read or
-  written, no watcher. `--column` alone ever starts a program, collin, and only
-  when `--run-collin` asks (0099).
+  written, no watcher. `--column` and `--site` alone ever start a program,
+  collin, and only when `--run-collin` asks (0099, 0182).
 - **stdout is the answer and nothing else.** stderr says what it is worth: the
   manifest that answered, when it was written, by which dbt, and how many
   nodes, then a `freshness:` line, the verdict of the
@@ -1055,13 +1055,21 @@ counts of its subtree, a zero left out.
 `--site [DIR]` writes a static documentation site and exits
 ([0177](../decisions/0177-a-static-site-is-written-from-dbts-artifacts.md),
 [0178](../decisions/0178-the-site-is-written-inside-the-project-into-a-marked-folder.md)):
-the manifest, the catalog beside it and git's `HEAD` and origin, nothing else,
-into `PROJECT/target/edith-site/` or the empty or marked folder inside the
-project it names. `--environment`, `--commit` and `--repo-url` go with it only.
-The project comes first: a word after `--site` is the folder. It takes the
-exit codes above, 2 for a refused folder and a bad value too. What it writes,
-and what the page does, is in [site.md](site.md). It is not over MCP: a tool
-that only answers writes no folder.
+the manifest, the catalog beside it, collin's column lineage cache and report
+beside it, and git's `HEAD` and origin, nothing else, into
+`PROJECT/target/edith-site/` or the empty or marked folder inside the project
+it names. `--environment`, `--commit` and `--repo-url` go with it only, and so
+does `--run-collin`, with its `--compiled` and `--catalog`: collin runs first,
+over the manifest as it stands, and writes the cache and report beside it as
+`--column --run-collin` does
+([0182](../decisions/0182-the-site-carries-collins-column-lineage.md)); without
+it `--site` only reads a cache already there, says so when there is none, and
+warns when the one there is older than the manifest. A run that writes no cache
+exits 2 and writes no site. The project comes first: a word after `--site` is
+the folder. It takes the exit codes above, 2 for a refused folder and a bad
+value too. What it writes, and what the page does, is in [site.md](site.md).
+It is not over MCP, `--run-collin` beside it included: a tool that only
+answers writes no folder.
 
 ## For an agent
 

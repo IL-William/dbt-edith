@@ -11,7 +11,10 @@ the page carries a policy that has the browser refuse one
 
 `target/manifest.json`, and `target/catalog.json` when there is one, so a
 column has the type the warehouse gave it; `--manifest` and `--catalog` name
-others. The SQL of each node is the manifest's own, its `raw_code` and its
+others. Beside the manifest, collin's column lineage: its cache
+`column_lineage.collin.json`, and its report `collin.report.json` for the notes
+on the cards ([0182](../decisions/0182-the-site-carries-collins-column-lineage.md)).
+The SQL of each node is the manifest's own, its `raw_code` and its
 `compiled_code`, and never a file of `target/`
 ([0180](../decisions/0180-the-sites-sql-is-the-manifests.md)). From git, the
 commit `HEAD` names, `remote.origin.url` and where the project sits in its
@@ -21,8 +24,8 @@ Nothing else:
 - no `.env` is read and no `env_var()` resolved: a location is shown as the
   manifest wrote it, and the card has no environment to pick;
 - no profile is opened and no warehouse reached;
-- no collin run, no job file, no Snowflake: column lineage and the jobs are
-  not in the site yet.
+- no collin run unless `--run-collin` asks, no job file, no Snowflake: the jobs
+  are not in the site yet.
 
 Every environment has its own version of the code, so the site describes the
 one manifest it was given, and the header says which.
@@ -30,7 +33,7 @@ one manifest it was given, and the header says which.
 ## Writing it
 
 ```
-dbt-edith PROJECT --site [DIR] [--environment NAME] [--commit SHA] [--repo-url URL]
+dbt-edith PROJECT --site [DIR] [--environment NAME] [--commit SHA] [--repo-url URL] [--run-collin [--compiled DIR]]
 ```
 
 - **DIR** defaults to `PROJECT/target/edith-site/`. It must be strictly inside
@@ -50,14 +53,23 @@ dbt-edith PROJECT --site [DIR] [--environment NAME] [--commit SHA] [--repo-url U
   token and an ssh port are dropped. An ssh alias such as `work.github.com` gives
   no link, and the run says to pass `--repo-url`. The origin itself is never
   printed or written.
-- **Exit codes**: 0 written; 2 for no manifest, a refused folder or a bad value.
-  stdout is the folder and the counts; stderr says what it could not do: no
-  catalog, no commit, no link, no file links, and no compiled SQL in the
-  manifest.
+- **`--run-collin`** runs collin first, over the manifest as it stands, and
+  writes the cache and the report beside it, as `--column --run-collin` does, with
+  `--compiled` and `--catalog` handed to it; the site then carries what it wrote.
+  Without it `--site` never starts collin: it reads a cache that is there, says
+  `no column lineage` when there is none and carries none, ignores one it cannot
+  read with a warning, and carries one older than the manifest (by the files' times,
+  which a checkout resets) with a warning that says so and names `--run-collin`. A
+  run that writes no cache, or one that cannot be read, exits 2 and writes no site.
+- **Exit codes**: 0 written; 2 for no manifest, a refused folder, a bad value or a
+  collin run that wrote no cache. stdout is the folder and the counts, and
+  `column lineage: N edges from collin` when it carries any; stderr says what it
+  could not do: no catalog, no commit, no link, no file links, no compiled SQL in
+  the manifest, and the state of the column lineage.
 
 The same inputs give the same bytes: nothing written holds a path of the
-machine, a time of the run or a duration. `--site` goes with `--manifest` and
-`--catalog` alone, and over MCP it is refused.
+machine, a time of the run or a duration. `--site` goes with `--manifest`,
+`--catalog` and `--run-collin` alone, and over MCP it is refused.
 
 ## The folder
 
@@ -70,6 +82,7 @@ LICENSE.txt THIRD_PARTY_NOTICES.md
 data/index.js            window.EDITH_SITE = {...}
 data/cards/NNNN.js       EDITH_SITE_CARDS(start, [card, ...])
 data/sql/NNNN.js         EDITH_SITE_SQL(start, [{raw, compiled?, lang?} | 0, ...])
+data/cll.js              EDITH_SITE_CLL({...}), when there is column lineage
 ```
 
 `data/index.js` holds the header's facts, one entry per node as the canvas draws
@@ -79,11 +92,15 @@ columns, tests and parents, is in a bucket of about 200 nodes or 512 KiB, a
 script appended to the page when a card is first opened: a project of
 thousands of nodes loads its index once and a bucket per card. The SQL is in
 buckets of its own, cut at the same 200 nodes or 512 KiB but on their own cuts,
-and loaded when a node's Code tab is first opened. The browser
-answers `/api/lineage`, `/api/node` and `/api/search` itself, with the walks the
-server makes, written again in `web/site.js` and held to Rust's answers by a
-golden file and by `scripts/walk_site.py`, which compares them for every node
-of Jaffle Shop and Shopify.
+and loaded when a node's Code tab is first opened. The column
+lineage is one script, `data/cll.js`: the cache as it was merged, a column a
+number, the edges in the order the walks read them, and what the cards say of
+each column, loaded whole when the first column is asked about. The browser
+answers `/api/lineage`, `/api/node`, `/api/search`, `/api/collineage` and
+`/api/colreach` itself, with the walks the server makes, written again in
+`web/site.js` and held to Rust's answers by a golden file and by
+`scripts/walk_site.py`, which compares them for every node of Jaffle Shop and
+Shopify, and for every column of both over an invented cache.
 
 ## The page
 
@@ -117,6 +134,21 @@ and the status bar's venv, environment, branch, shell and update.
   **Catalog**, whose Preview and Columns are the manifest's and the catalog's,
   and which has no Open file. Where the Columns have no type, its hint says to
   run `--site` after `dbt docs generate` or `dbt compile --write-catalog`.
+- **Column lineage**, when the site carries any, as on the server's page: a click
+  on a column of the Columns tab, or a double click on a column box, draws its
+  canvas, with the depth menus, the **Indirect** button, the **Stop at** menu, the
+  legend and the cards of columns (what computes a column, the names collin could
+  not trace, the rows a column keeps, the predicates a model applies); the
+  Columns tab's Lineage cell counts the whole chain on each side. The first
+  column asked about loads the file, and the status line says so while it does.
+  There is no menu to pick another cache, no Regenerate and no Snowflake: the
+  site carries the one cache it was written with, and the Columns tab says, in the
+  tone collin's alpha has on the server's page, that it can be wrong, and how
+  much of it is guessed by name. A cache older than the manifest says so in a
+  few words after the canvas's status line (the whole sentence is its title), in a
+  hint of its own in the Columns tab, and in the line of an export that names the
+  cache. A card of a column collin read in part links to the model's Code tab,
+  where the server's links to the editor and the compiled pane.
 - **The Code tab**, beside Preview and Columns, for a model, a snapshot, an
   analysis, a test or an operation (a seed, a source and an exposure have no
   code). A **Source | Compiled** toggle, Source first and the last choice kept
@@ -144,7 +176,7 @@ and the status bar's venv, environment, branch, shell and update.
 ## What is not in it
 
 Each is a deferred entry in [state.md](../state.md): sources and the tree's other
-files (macros, analyses); column lineage; the jobs; dbt selector expressions;
+files (macros, analyses); the column lineage of another tool than collin; the jobs; dbt selector expressions;
 writing outside the project; a mark for a dirty working tree; a `--repo-path` for
 a checkout git cannot place; Azure's file links; and a Python mode for the Code
 tab. Firefox is not verified: `script-src 'self'` is expected to allow a
