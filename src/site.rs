@@ -13,13 +13,15 @@
 //!
 //! The browser answers the page's questions itself, with the same walks the
 //! server makes (`web/site.js`), from the data this file lays out: one index,
-//! and the cards in buckets loaded when a node is first opened.
+//! and the cards and the SQL in buckets loaded when a node is first opened. The
+//! SQL is the manifest's own `raw_code` and `compiled_code`, read in a second
+//! pass over the same file, and never a file of `target/` (0180).
 
 use crate::api::{self, Assets};
 use crate::graph::{Graph, Kind, MAX_LEVELS};
 use crate::{git, ls};
 use serde_json::{json, Value};
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::io::Write;
 use std::path::{Component, Path, PathBuf};
 
@@ -128,13 +130,31 @@ pub(crate) fn generate(
         (Some(r), Some(c)) => commit_link(r, c),
         _ => String::new(),
     };
+    let file_base = match (&repo, &commit) {
+        (Some(r), Some(c)) => file_links(r, c, &root, err),
+        _ => None,
+    };
+    let code = match read_code(&manifest_path).map(|c| sql_of(&graph, c)) {
+        Ok(code) => code,
+        Err(why) => {
+            let _ = writeln!(err, "error: {why}");
+            return ls::CANNOT_RUN;
+        }
+    };
+    if !code.iter().flatten().any(|s| s.compiled.is_some()) {
+        let _ = writeln!(err, "no compiled SQL in the manifest: run --site after dbt build, compile or docs generate");
+    }
 
     let meta = json!({
         "project": graph.meta.project,
+        // The root project's package, which a node's own tells its files from a package's: the manifest's
+        // name, or `dbt_project.yml`'s when the manifest has none, as the tree reads it.
+        "root": graph.macros.root(),
         "environment": environment.clone().unwrap_or_default(),
         "commit": commit.clone().unwrap_or_default(),
         "commit_url": commit_url,
         "repo_url": repo.as_ref().map(|r| r.url.clone()).unwrap_or_default(),
+        "file_base": file_base,
         "generated_at": graph.meta.generated_at,
         "dbt_version": graph.meta.dbt_version,
         "adapter": graph.meta.adapter,
@@ -143,7 +163,7 @@ pub(crate) fn generate(
         "edith": env!("CARGO_PKG_VERSION"),
     });
     let title = title_of(&graph.meta.project, environment.as_deref().unwrap_or(""));
-    let built = match build(&graph, meta, &title) {
+    let built = match build(&graph, meta, &title, code) {
         Ok(b) => b,
         Err(why) => {
             let _ = writeln!(err, "error: {why}");
@@ -203,6 +223,9 @@ fn valid_environment(name: &str) -> Result<String, String> {
 enum Host {
     GitLab,
     Bitbucket,
+    /// Azure DevOps: a commit has the common shape, but a file's address takes a
+    /// query (`?path=`), which is not written yet.
+    Azure,
     /// GitHub, and every host that is told by `--repo-url` without saying
     /// which it is: `/commit/<sha>` is the common shape.
     Other,
@@ -310,6 +333,8 @@ pub(crate) fn repo_from_flag(url: &str) -> Result<Repo, String> {
         Host::GitLab
     } else if host.contains("bitbucket") {
         Host::Bitbucket
+    } else if host.contains("dev.azure.com") || host.contains("visualstudio.com") {
+        Host::Azure
     } else {
         Host::Other
     };
@@ -325,9 +350,50 @@ pub(crate) fn commit_link(repo: &Repo, sha: &str) -> String {
     let pattern = match repo.host {
         Host::GitLab => "-/commit",
         Host::Bitbucket => "commits",
-        Host::Other => "commit",
+        Host::Other | Host::Azure => "commit",
     };
     format!("{}/{pattern}/{sha}", repo.url)
+}
+
+/// A percent-encoding as `encodeURIComponent` writes it: what a path's segment
+/// may hold on a host's address, so a `#`, a `?` or a space in a folder's name
+/// stays in its segment.
+fn escape_segment(text: &str) -> String {
+    text.bytes()
+        .map(|b| if b.is_ascii_alphanumeric() || b"-_.!~*'()".contains(&b) { (b as char).to_string() } else { format!("%{b:02X}") })
+        .collect()
+}
+
+/// Where the files of the project are on the host, at one commit, up to what the
+/// page appends: a node's path, each segment escaped there. `prefix` is the
+/// project's place in the repository (`git::show_prefix`), "" at its root. None
+/// for a host whose file address this does not write (Azure's takes a query).
+pub(crate) fn file_base(repo: &Repo, sha: &str, prefix: &str) -> Option<String> {
+    let pattern = match repo.host {
+        Host::GitLab => "-/blob",
+        Host::Bitbucket => "src",
+        Host::Other => "blob",
+        Host::Azure => return None,
+    };
+    let prefix: String = prefix.split('/').filter(|s| !s.is_empty()).map(|s| format!("{}/", escape_segment(s))).collect();
+    Some(format!("{}/{pattern}/{sha}/{prefix}", repo.url))
+}
+
+/// `file_base` for the run, with what stderr says when there is none. The
+/// project's place in its repository is asked of git through the gate (0121);
+/// without it a link would guess a path, so no file is linked.
+fn file_links(repo: &Repo, sha: &str, root: &Path, err: &mut impl Write) -> Option<String> {
+    if repo.host == Host::Azure {
+        let _ = writeln!(err, "no file links: the file addresses of Azure DevOps are not written yet");
+        return None;
+    }
+    let base = git::show_prefix(root).and_then(|prefix| file_base(repo, sha, &prefix));
+    if base.is_none() {
+        let why =
+            if git::in_repository(root) { "git did not say where the project sits in its repository" } else { "not a git repository" };
+        let _ = writeln!(err, "no file links: {why}");
+    }
+    base
 }
 
 // ------------------------------------------------------------------ folder ----
@@ -613,33 +679,134 @@ pub(crate) struct Built {
     pub index: String,
     /// One file per bucket of cards, in node order.
     pub buckets: Vec<String>,
+    /// One file per bucket of SQL, cut by its own rule.
+    pub sql: Vec<String>,
     /// The assets the page loads, by their path in the folder.
     pub assets: Vec<(String, Vec<u8>)>,
 }
 
-/// Every node's card, in contiguous runs of node numbers that close at
-/// `max_nodes` cards or `max_bytes` of text, whichever comes first: the page
-/// loads a run when one of its cards is first opened. Where each run starts, and
-/// the text of its file.
-fn cards_in(graph: &Graph, max_nodes: usize, max_bytes: usize) -> Result<(Vec<usize>, Vec<String>), String> {
+/// One node's code as the manifest holds it (0180). Read from the manifest alone, never from a file
+/// of `target/`, so the site stays the picture of one manifest.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct Sql {
+    pub raw: String,
+    /// None when dbt did not compile the node when it wrote the manifest: a `dbt parse` or the
+    /// language server writes none.
+    pub compiled: Option<String>,
+    /// A Python model: shown as plain text, there being no mode for it.
+    pub python: bool,
+}
+
+/// The fields of a node the SQL is read from, in a second pass over the manifest's file: the server's
+/// `RawNode` keeps no code in memory and stays as it is.
+#[derive(serde::Deserialize, Default)]
+struct CodeNode {
+    #[serde(default)]
+    raw_code: Option<String>,
+    #[serde(default)]
+    compiled_code: Option<String>,
+    #[serde(default)]
+    language: Option<String>,
+}
+
+#[derive(serde::Deserialize, Default)]
+pub(crate) struct Code {
+    #[serde(default)]
+    nodes: HashMap<String, CodeNode>,
+    #[serde(default)]
+    disabled: HashMap<String, Vec<CodeNode>>,
+}
+
+/// The manifest's code, read from the same file the graph was: only these three fields of a node, the
+/// rest skipped as it is read.
+pub(crate) fn read_code(manifest: &Path) -> Result<Code, String> {
+    let file = std::fs::File::open(manifest).map_err(|e| format!("cannot read {}: {e}", manifest.display()))?;
+    serde_json::from_reader(std::io::BufReader::new(file)).map_err(|e| format!("cannot read the SQL of {}: {e}", manifest.display()))
+}
+
+/// What a card has a Code tab for: `web/app.js` lists the same kinds. A seed, a source and an
+/// exposure have no code of their own.
+fn has_code(kind: Kind) -> bool {
+    matches!(kind, Kind::Model | Kind::Snapshot | Kind::Test | Kind::Analysis | Kind::Operation)
+}
+
+/// A line ending is one: a manifest written on Windows holds the file's CRLF, which a page shows twice.
+fn lf(text: String) -> String {
+    if text.contains("\r\n") {
+        text.replace("\r\n", "\n")
+    } else {
+        text
+    }
+}
+
+/// The code of each node, by the graph's numbering: a node the graph took from `nodes`, and a disabled
+/// one from the first entry of `disabled`, as `Graph::build` does (the two cannot be told apart by id
+/// alone: a disabled node is in `disabled` and not in `nodes`). None for a node with no code to show,
+/// a seed's empty `raw_code` included.
+pub(crate) fn sql_of(graph: &Graph, mut code: Code) -> Vec<Option<Sql>> {
+    graph
+        .nodes
+        .iter()
+        .map(|n| {
+            if !has_code(n.kind) {
+                return None;
+            }
+            let node = if n.disabled {
+                let held = code.disabled.get_mut(&n.id)?;
+                if held.is_empty() {
+                    return None;
+                }
+                held.swap_remove(0)
+            } else {
+                code.nodes.remove(&n.id)?
+            };
+            let raw = node.raw_code.unwrap_or_default();
+            if raw.is_empty() && node.compiled_code.is_none() {
+                return None;
+            }
+            Some(Sql { raw: lf(raw), compiled: node.compiled_code.map(lf), python: node.language.as_deref() == Some("python") })
+        })
+        .collect()
+}
+
+/// A bucket's entry: the raw text, the compiled when there is one, `lang` only for what is not SQL.
+fn sql_entry(sql: Option<Sql>) -> Value {
+    let Some(s) = sql else { return json!(0) };
+    let mut entry = json!({ "raw": s.raw });
+    if let Some(c) = s.compiled {
+        entry["compiled"] = json!(c);
+    }
+    if s.python {
+        entry["lang"] = json!("python");
+    }
+    entry
+}
+
+/// Every item as the text of one script call, in contiguous runs of node numbers that close at
+/// `max_nodes` items or `max_bytes` of text, whichever comes first: the page loads a run when one of
+/// its items is first opened. `call` is the function the script calls, `start` its first argument.
+/// Where each run starts, and the text of its file.
+fn runs_of(
+    items: impl Iterator<Item = Result<String, String>>, call: &str, max_nodes: usize, max_bytes: usize,
+) -> Result<(Vec<usize>, Vec<String>), String> {
     let mut cuts: Vec<usize> = Vec::new();
     let mut buckets: Vec<String> = Vec::new();
     let mut run: Vec<String> = Vec::new();
     let mut bytes = 0;
     let mut start = 0;
     let flush = |run: &mut Vec<String>, start: usize, buckets: &mut Vec<String>| {
-        buckets.push(format!("EDITH_SITE_CARDS({start},[{}]);\n", run.join(",")));
+        buckets.push(format!("{call}({start},[{}]);\n", run.join(",")));
         run.clear();
     };
-    for i in 0..graph.nodes.len() {
+    for (i, item) in items.enumerate() {
         if run.is_empty() {
             start = i;
             cuts.push(i);
             bytes = 0;
         }
-        let card = js_json(&serde_json::to_value(api::node_detail(graph, i as u32, None, None)).map_err(|e| e.to_string())?);
-        bytes += card.len() + 1;
-        run.push(card);
+        let item = item?;
+        bytes += item.len() + 1;
+        run.push(item);
         if run.len() >= max_nodes || bytes >= max_bytes {
             flush(&mut run, start, &mut buckets);
         }
@@ -650,12 +817,27 @@ fn cards_in(graph: &Graph, max_nodes: usize, max_bytes: usize) -> Result<(Vec<us
     Ok((cuts, buckets))
 }
 
-/// Lays out the index and the cards, and rewrites the page: everything the
+/// Every node's card in runs (`runs_of`).
+fn cards_in(graph: &Graph, max_nodes: usize, max_bytes: usize) -> Result<(Vec<usize>, Vec<String>), String> {
+    let cards = (0..graph.nodes.len())
+        .map(|i| serde_json::to_value(api::node_detail(graph, i as u32, None, None)).map(|v| js_json(&v)).map_err(|e| e.to_string()));
+    runs_of(cards, "EDITH_SITE_CARDS", max_nodes, max_bytes)
+}
+
+/// Every node's code in runs, on a cut of their own: a card is a few kilobytes and a node's SQL
+/// may be a hundred times that, so the two do not close together.
+fn sql_in(code: Vec<Option<Sql>>, max_nodes: usize, max_bytes: usize) -> Result<(Vec<usize>, Vec<String>), String> {
+    runs_of(code.into_iter().map(|s| Ok(js_json(&sql_entry(s)))), "EDITH_SITE_SQL", max_nodes, max_bytes)
+}
+
+/// Lays out the index, the cards and the SQL, and rewrites the page: everything the
 /// folder holds, as text, before any of it is written.
-pub(crate) fn build(graph: &Graph, meta: Value, title: &str) -> Result<Built, String> {
+pub(crate) fn build(graph: &Graph, meta: Value, title: &str, code: Vec<Option<Sql>>) -> Result<Built, String> {
     let mut index = index_of(graph, meta);
     let (cuts, buckets) = cards_in(graph, BUCKET_NODES, BUCKET_BYTES)?;
     index["cuts"] = json!(cuts);
+    let (sql_cuts, sql) = sql_in(code, BUCKET_NODES, BUCKET_BYTES)?;
+    index["sql_cuts"] = json!(sql_cuts);
 
     let embedded = Assets::get("index.html").ok_or("the page is not embedded")?;
     let html = page(&String::from_utf8_lossy(&embedded.data), title)?;
@@ -669,7 +851,7 @@ pub(crate) fn build(graph: &Graph, meta: Value, title: &str) -> Result<Built, St
     }
     assets.push(("LICENSE.txt".to_string(), include_bytes!("../LICENSE").to_vec()));
     assets.push(("THIRD_PARTY_NOTICES.md".to_string(), include_bytes!("../THIRD_PARTY_NOTICES.md").to_vec()));
-    Ok(Built { html, index: format!("window.EDITH_SITE={};\n", js_json(&index)), buckets, assets })
+    Ok(Built { html, index: format!("window.EDITH_SITE={};\n", js_json(&index)), buckets, sql, assets })
 }
 
 /// Empties the folder and writes every file, the marker first.
@@ -689,6 +871,9 @@ fn write_site(dir: &Path, built: &Built) -> std::io::Result<()> {
     put("data/index.js", built.index.as_bytes())?;
     for (i, bucket) in built.buckets.iter().enumerate() {
         put(&format!("data/cards/{i:04}.js"), bucket.as_bytes())?;
+    }
+    for (i, bucket) in built.sql.iter().enumerate() {
+        put(&format!("data/sql/{i:04}.js"), bucket.as_bytes())?;
     }
     Ok(())
 }
@@ -952,7 +1137,8 @@ mod tests {
         for path in &loaded {
             assert!(written.contains_key(path), "{path} is loaded and was not written");
         }
-        let extra: BTreeSet<&String> = written.keys().filter(|p| !loaded.contains(*p) && !p.starts_with("data/cards/")).collect();
+        let extra: BTreeSet<&String> =
+            written.keys().filter(|p| !loaded.contains(*p) && !p.starts_with("data/cards/") && !p.starts_with("data/sql/")).collect();
         let want: BTreeSet<String> = ["index.html", MARKER, "LICENSE.txt", "THIRD_PARTY_NOTICES.md"].map(String::from).into();
         assert_eq!(extra.into_iter().cloned().collect::<BTreeSet<_>>(), want);
         assert!(loaded.contains("data/index.js") && loaded.contains("site.js") && loaded.contains("vendor/codemirror.js"));
@@ -988,6 +1174,8 @@ mod tests {
                 "unrendered_config": { "database": "{{ env_var('DBT_DATABASE') }}", "schema": "{{ env_var('DBT_SCHEMA') }}" },
                 "config": { "materialized": "table" },
                 "description": "A model.",
+                "raw_code": format!("select 1 as id -- {name}"),
+                "language": "sql",
                 "columns": { "id": { "name": "id", "description": "The key.", "data_type": "int" } },
                 "depends_on": { "nodes": parents.iter().map(|p| format!("model.shop.{p}")).collect::<Vec<_>>() },
             })
@@ -1045,8 +1233,14 @@ mod tests {
         let dir = project.join("target").join("edith-site");
         assert!(out.starts_with(&dir.display().to_string()), "{out}");
         assert!(err.contains("no catalog.json"), "{err}");
+        assert!(err.contains("no compiled SQL in the manifest: run --site after dbt build, compile or docs generate"), "{err}");
+        assert!(err.contains("no file links: not a git repository"), "{err}");
         let first = files_of(&dir);
         assert!(first.contains_key(MARKER) && first.contains_key("data/index.js") && first.contains_key("data/cards/0000.js"));
+        assert!(first.contains_key("data/sql/0000.js"));
+        // The SQL is in a script that no name in it can close, and no absolute path is in it.
+        let sql = String::from_utf8_lossy(&first["data/sql/0000.js"]).into_owned();
+        assert!(sql.starts_with("EDITH_SITE_SQL(0,[{\"raw\":\"select 1 as id -- orders\"}"), "{sql}");
         assert!(!first.contains_key(".env"));
 
         // A stale file of an earlier run is gone, and the bytes are the same.
@@ -1080,6 +1274,9 @@ mod tests {
         let meta = &json["meta"];
         assert_eq!(meta["environment"], "prod");
         assert_eq!(meta["commit_url"], "https://github.com/acme/shop/commit/0123456789abcdef0123456789abcdef01234567");
+        // Not in a repository: the commit is linked, no file is.
+        assert_eq!(meta["file_base"], Value::Null);
+        assert_eq!(json["sql_cuts"], json!([0]));
         assert_eq!(meta["generated_at"], "2030-01-02T03:04:05Z");
         assert_eq!(meta["dbt_version"], "1.9.0");
         assert_eq!(meta["catalog"], false);
@@ -1121,6 +1318,280 @@ mod tests {
         let _ = std::fs::remove_dir_all(&project);
     }
 
+    // ---------------------------------------------------- files and the SQL ----
+
+    #[test]
+    fn a_file_is_linked_by_its_hosts_pattern_below_the_projects_place() {
+        let sha = "0123456789abcdef0123456789abcdef01234567";
+        let base = |url: &str, prefix: &str| file_base(&repo_from_flag(url).unwrap(), sha, prefix);
+        assert_eq!(base("https://github.com/acme/shop", "").as_deref(), Some(format!("https://github.com/acme/shop/blob/{sha}/").as_str()));
+        assert_eq!(
+            base("https://github.com/acme/shop", "analytics/dbt/").as_deref(),
+            Some(format!("https://github.com/acme/shop/blob/{sha}/analytics/dbt/").as_str())
+        );
+        assert_eq!(
+            base("https://gitlab.com/acme/data/shop", "dbt/").as_deref(),
+            Some(format!("https://gitlab.com/acme/data/shop/-/blob/{sha}/dbt/").as_str())
+        );
+        assert_eq!(
+            base("https://bitbucket.org/acme/shop", "dbt/").as_deref(),
+            Some(format!("https://bitbucket.org/acme/shop/src/{sha}/dbt/").as_str())
+        );
+        assert_eq!(base("https://git.example.com/shop", "").as_deref(), Some(format!("https://git.example.com/shop/blob/{sha}/").as_str()));
+        // A folder's name stays in its segment, whatever it holds.
+        assert_eq!(
+            base("https://github.com/acme/shop", "my project/a#b/").as_deref(),
+            Some(format!("https://github.com/acme/shop/blob/{sha}/my%20project/a%23b/").as_str())
+        );
+        // Azure's file address takes a query: its commit is linked, its files are not.
+        for azure in ["https://dev.azure.com/acme/shop/_git/shop", "https://acme.visualstudio.com/shop/_git/shop"] {
+            let repo = repo_from_flag(azure).unwrap();
+            assert_eq!(repo.host, Host::Azure, "{azure}");
+            assert_eq!(file_base(&repo, sha, ""), None, "{azure}");
+            assert_eq!(commit_link(&repo, sha), format!("{}/commit/{sha}", repo.url));
+        }
+    }
+
+    /// Writes the site for `project` and reads back its index, with what stderr said.
+    fn written(project: &Path, ask: &Ask) -> (Value, String) {
+        let (mut out, mut err) = (Vec::new(), Vec::new());
+        let code = generate(project, None, None, ask, &mut out, &mut err);
+        let err = String::from_utf8(err).unwrap();
+        assert_eq!(code, ls::ANSWERED, "{err}");
+        let dir = ask.dir.clone().unwrap_or_else(|| project.join("target").join("edith-site"));
+        let index = std::fs::read_to_string(dir.join("data/index.js")).unwrap();
+        (serde_json::from_str(index.trim_end().strip_prefix("window.EDITH_SITE=").unwrap().trim_end_matches(';')).unwrap(), err)
+    }
+
+    fn ask_for(repo: &str) -> Ask {
+        Ask {
+            dir: None,
+            environment: None,
+            commit: Some("0123456789abcdef0123456789abcdef01234567".to_string()),
+            repo_url: Some(repo.to_string()),
+        }
+    }
+
+    fn init_repository(dir: &Path) {
+        let out = std::process::Command::new("git")
+            .arg("-C")
+            .arg(dir)
+            .args(["init", "-q", "-b", "main"])
+            .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .env("GIT_CONFIG_NOSYSTEM", "1")
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    }
+
+    #[test]
+    fn a_project_below_the_repositorys_root_links_its_files_with_the_prefix() {
+        let root = scratch("links-prefix");
+        init_repository(&root);
+        let project = root.join("analytics");
+        write_project(&project);
+        let (json, err) = written(&project, &ask_for("https://github.com/acme/shop"));
+        assert_eq!(json["meta"]["file_base"], "https://github.com/acme/shop/blob/0123456789abcdef0123456789abcdef01234567/analytics/");
+        assert!(!err.contains("no file links"), "{err}");
+
+        // At the root of the repository the prefix is empty.
+        let flat = scratch("links-flat");
+        init_repository(&flat);
+        write_project(&flat);
+        let (json, _) = written(&flat, &ask_for("https://gitlab.com/acme/shop"));
+        assert_eq!(json["meta"]["file_base"], "https://gitlab.com/acme/shop/-/blob/0123456789abcdef0123456789abcdef01234567/");
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&flat);
+    }
+
+    #[test]
+    fn no_repository_gives_no_file_links_but_keeps_the_commit_link() {
+        let project = scratch("links-none");
+        write_project(&project);
+        let (json, err) = written(&project, &ask_for("https://github.com/acme/shop"));
+        assert_eq!(json["meta"]["file_base"], Value::Null);
+        assert_eq!(json["meta"]["commit_url"], "https://github.com/acme/shop/commit/0123456789abcdef0123456789abcdef01234567");
+        assert!(err.contains("no file links: not a git repository"), "{err}");
+        let _ = std::fs::remove_dir_all(&project);
+
+        // Azure is a repository that is read, and still has no file address to write.
+        let azure = scratch("links-azure");
+        init_repository(&azure);
+        write_project(&azure);
+        let (json, err) = written(&azure, &ask_for("https://dev.azure.com/acme/shop/_git/shop"));
+        assert_eq!(json["meta"]["file_base"], Value::Null);
+        assert!(json["meta"]["commit_url"].as_str().unwrap().ends_with("/commit/0123456789abcdef0123456789abcdef01234567"));
+        assert!(err.contains("no file links: the file addresses of Azure DevOps"), "{err}");
+        let _ = std::fs::remove_dir_all(&azure);
+    }
+
+    #[test]
+    fn a_paused_repository_gives_no_file_links() {
+        let project = scratch("links-paused");
+        init_repository(&project);
+        let config = std::process::Command::new("git")
+            .arg("-C")
+            .arg(&project)
+            .args(["config", "filter.evil.clean", "cat"])
+            .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .env("GIT_CONFIG_NOSYSTEM", "1")
+            .output()
+            .unwrap();
+        assert!(config.status.success());
+        write_project(&project);
+        let (json, err) = written(&project, &ask_for("https://github.com/acme/shop"));
+        assert_eq!(json["meta"]["file_base"], Value::Null);
+        assert!(err.contains("no file links: git did not say where the project sits"), "{err}");
+        let _ = std::fs::remove_dir_all(&project);
+    }
+
+    /// A manifest with no `metadata.project_name`, which `dbt_project.yml` then names: the root package is the
+    /// one the tree already takes, and the page's links go by it, not by the manifest's blank.
+    #[test]
+    fn the_root_is_dbt_projects_name_when_the_manifest_has_none() {
+        let repo = scratch("root-name");
+        init_repository(&repo);
+        let project = repo.join("analytics");
+        write_project(&project);
+        let manifest = project.join("target/manifest.json");
+        let mut value: Value = serde_json::from_slice(&std::fs::read(&manifest).unwrap()).unwrap();
+        value["metadata"].as_object_mut().unwrap().remove("project_name");
+        let mut package = value["nodes"]["model.shop.orders"].clone();
+        package["name"] = json!("accounts");
+        package["package_name"] = json!("crm");
+        package["original_file_path"] = json!("models/accounts.sql");
+        value["nodes"]["model.crm.accounts"] = package;
+        std::fs::write(&manifest, serde_json::to_vec(&value).unwrap()).unwrap();
+
+        let (json, _) = written(&project, &ask_for("https://github.com/acme/shop"));
+        assert_eq!(json["meta"]["project"], "", "the manifest names none");
+        assert_eq!(json["meta"]["root"], "shop", "dbt_project.yml does");
+        assert_eq!(json["meta"]["file_base"], "https://github.com/acme/shop/blob/0123456789abcdef0123456789abcdef01234567/analytics/");
+        // The tree agrees: the project's own files at their paths, the package's where `dbt deps` puts it.
+        let models: Vec<&str> = json["tree"]["models"].as_array().unwrap().iter().map(|e| e[0].as_str().unwrap()).collect();
+        assert_eq!(models, ["orders.sql", "raw_orders.sql", "stg_orders.sql"]);
+        assert!(json["tree"].get("dbt_packages/crm/models").is_some(), "{}", json["tree"]);
+        let _ = std::fs::remove_dir_all(&repo);
+    }
+
+    /// An invented manifest with one node of each shape the SQL can take.
+    fn code_manifest() -> Value {
+        let node = |name: &str, kind: &str, extra: Value| {
+            let mut v =
+                json!({ "name": name, "resource_type": kind, "package_name": "shop", "original_file_path": format!("models/{name}.sql") });
+            for (k, x) in extra.as_object().unwrap() {
+                v[k] = x.clone();
+            }
+            v
+        };
+        json!({
+            "metadata": { "project_name": "shop", "dbt_version": "1.9.0", "generated_at": "2030-01-02T03:04:05Z", "adapter_type": "duckdb" },
+            "nodes": {
+                "model.shop.a": node("a", "model", json!({ "raw_code": "select 1\r\nfrom x", "compiled_code": "select 1\r\nfrom db.x", "language": "sql" })),
+                "model.shop.b": node("b", "model", json!({ "raw_code": "select '</script><!--\u{2028}\u{2029}' as x" })),
+                "model.shop.py": node("py", "model", json!({
+                    "raw_code": "def model(dbt, session):\n    return dbt.ref('a')", "compiled_code": "def model(dbt, session):\n    return dbt.ref('a')", "language": "python" })),
+                "model.shop.empty": node("empty", "model", json!({ "raw_code": "" })),
+                "model.shop.only_compiled": node("only_compiled", "model", json!({ "compiled_code": "select 2" })),
+                "model.shop.in_nodes_off": node("in_nodes_off", "model", json!({ "raw_code": "select 'nodes'", "config": { "enabled": false } })),
+                "seed.shop.countries": node("countries", "seed", json!({ "raw_code": "" })),
+                "snapshot.shop.s": node("s", "snapshot", json!({ "raw_code": "select * from {{ source('a', 'b') }}", "compiled_code": "select * from a.b" })),
+                "analysis.shop.q": node("q", "analysis", json!({ "raw_code": "select 3", "compiled_code": "select 3" })),
+                "operation.shop.shop-on-run-end-0": node("shop-on-run-end-0", "operation", json!({ "raw_code": "grant select", "compiled_code": "grant select" })),
+                // A generic test: the macro call is the raw code, the SQL it makes the compiled one.
+                "test.shop.unique_a_id": node("unique_a_id", "test", json!({
+                    "raw_code": "{{ test_unique(**_dbt_generic_test_kwargs) }}", "compiled_code": "select id from db.a group by id having count(*) > 1" })),
+            },
+            "sources": { "source.shop.raw.orders": node("orders", "source", json!({ "source_name": "raw", "raw_code": "not code" })) },
+            "disabled": {
+                "model.shop.off": [
+                    node("off", "model", json!({ "raw_code": "select 'first'", "config": { "enabled": false } })),
+                    node("off", "model", json!({ "raw_code": "select 'second'", "config": { "enabled": false } })),
+                ],
+                "model.shop.in_nodes_off": [node("in_nodes_off", "model", json!({ "raw_code": "select 'disabled'", "config": { "enabled": false } }))],
+                "test.shop.off_test": [node("off_test", "test", json!({ "raw_code": "select 4", "config": { "enabled": false } }))],
+            },
+        })
+    }
+
+    fn code_graph(manifest: &Value) -> Graph {
+        let raw: crate::manifest::RawManifest = serde_json::from_value(manifest.clone()).unwrap();
+        Graph::build(raw, Path::new("manifest.json"), 0, 0)
+    }
+
+    #[test]
+    fn the_code_is_the_manifests_by_the_graphs_numbering() {
+        let manifest = code_manifest();
+        let graph = code_graph(&manifest);
+        let code = sql_of(&graph, serde_json::from_value(manifest).unwrap());
+        assert_eq!(code.len(), graph.nodes.len());
+        let of = |id: &str| code[graph.index[id] as usize].as_ref();
+        let sql = |raw: &str, compiled: Option<&str>, python: bool| Sql { raw: raw.into(), compiled: compiled.map(String::from), python };
+
+        // A line ending is one.
+        assert_eq!(of("model.shop.a"), Some(&sql("select 1\nfrom x", Some("select 1\nfrom db.x"), false)));
+        // No compiled code: the page says so, the site never reads target/compiled.
+        assert_eq!(of("model.shop.b").map(|s| s.compiled.clone()), Some(None));
+        assert_eq!(of("model.shop.py").map(|s| s.python), Some(true));
+        assert_eq!(of("model.shop.only_compiled"), Some(&sql("", Some("select 2"), false)));
+        assert_eq!(of("snapshot.shop.s").map(|s| s.raw.as_str()), Some("select * from {{ source('a', 'b') }}"));
+        assert!(of("analysis.shop.q").is_some() && of("operation.shop.shop-on-run-end-0").is_some());
+        // A generic test's raw code is its macro call, shown as it is.
+        assert_eq!(of("test.shop.unique_a_id").map(|s| s.raw.as_str()), Some("{{ test_unique(**_dbt_generic_test_kwargs) }}"));
+        // Nothing to show: an empty raw_code, a seed, a source.
+        assert_eq!(of("model.shop.empty"), None);
+        assert_eq!(of("seed.shop.countries"), None);
+        assert_eq!(of("source.shop.raw.orders"), None);
+        // A disabled node is numbered from the first entry of `disabled`, as the graph takes it; one
+        // `nodes` left out because it is disabled never shows its code.
+        assert_eq!(of("model.shop.off").map(|s| s.raw.as_str()), Some("select 'first'"));
+        assert_eq!(of("model.shop.in_nodes_off").map(|s| s.raw.as_str()), Some("select 'disabled'"));
+        assert!(!graph.index.contains_key("test.shop.off_test"), "a disabled test is not in the graph, so it has no code");
+    }
+
+    #[test]
+    fn the_sql_is_safe_in_a_script_and_cut_by_its_own_rule() {
+        let manifest = code_manifest();
+        let graph = code_graph(&manifest);
+        let code = sql_of(&graph, serde_json::from_value(manifest).unwrap());
+        let (cuts, buckets) = sql_in(code.clone(), 4, BUCKET_BYTES).unwrap();
+        assert_eq!(cuts, (0..graph.nodes.len()).step_by(4).collect::<Vec<_>>());
+        let all = buckets.join("");
+        assert!(!all.contains('<') && !all.contains('\u{2028}') && !all.contains('\u{2029}'), "{all}");
+        // Read back, the entry is what was written, whatever it held.
+        let at = graph.index["model.shop.b"] as usize;
+        let bucket = &buckets[at / 4];
+        let list = bucket.strip_prefix(&format!("EDITH_SITE_SQL({},[", at / 4 * 4)).unwrap().strip_suffix("]);\n").unwrap();
+        let entries: Vec<Value> = serde_json::from_str(&format!("[{list}]")).unwrap();
+        assert_eq!(entries[at % 4], json!({ "raw": "select '</script><!--\u{2028}\u{2029}' as x" }));
+        // A node with nothing to show is a 0, a Python model says so, and a missing compiled is absent.
+        let py = graph.index["model.shop.py"] as usize;
+        assert_eq!(sql_entry(code[py].clone())["lang"], "python");
+        assert_eq!(sql_entry(code[graph.index["seed.shop.countries"] as usize].clone()), json!(0));
+        assert!(sql_entry(code[at].clone()).get("compiled").is_none());
+        // The byte limit closes a bucket as the count does.
+        let (cuts, _) = sql_in(code, 1000, 1).unwrap();
+        assert_eq!(cuts.len(), graph.nodes.len());
+    }
+
+    #[test]
+    fn the_site_says_when_no_node_was_compiled_and_is_quiet_when_one_was() {
+        let project = scratch("compiled-line");
+        write_project(&project);
+        let manifest = project.join("target/manifest.json");
+        let (_, err) = written(&project, &ask_for("https://github.com/acme/shop"));
+        assert!(err.contains("no compiled SQL in the manifest"), "{err}");
+
+        let mut value: Value = serde_json::from_slice(&std::fs::read(&manifest).unwrap()).unwrap();
+        value["nodes"]["model.shop.orders"]["compiled_code"] = json!("select 1 as id from analytics.marts.stg_orders");
+        std::fs::write(&manifest, serde_json::to_vec(&value).unwrap()).unwrap();
+        let (_, err) = written(&project, &ask_for("https://github.com/acme/shop"));
+        assert!(!err.contains("no compiled SQL"), "{err}");
+        let sql = std::fs::read_to_string(project.join("target/edith-site/data/sql/0000.js")).unwrap();
+        assert!(sql.contains("\"compiled\":\"select 1 as id from analytics.marts.stg_orders\""), "{sql}");
+        let _ = std::fs::remove_dir_all(&project);
+    }
+
     // ----------------------------------------------------- the golden case ----
 
     /// A percent-encoding as `encodeURIComponent` writes it, which is how the page
@@ -1136,7 +1607,7 @@ mod tests {
     /// exposure, a chain of 22 levels, a fan-out, accents and emoji, the same name
     /// in two packages, and two materializations whose names order differently
     /// by code point than by UTF-16 unit.
-    fn case_graph() -> Graph {
+    fn case_parts() -> (Graph, Value) {
         let node = |name: &str, package: &str, kind: &str, folder: &str, parents: &[&str], extra: Value| {
             // A version is part of the id, as dbt writes it.
             let id = match extra.get("version") {
@@ -1206,6 +1677,9 @@ mod tests {
         add(node("orders", "shop", "model", "marts", &[&m("orders.v1")], json!({ "version": 2, "latest_version": 2 })));
         add(node("customers", "shop", "model", "marts", &["seed.shop.countries"], mat("table")));
         add(node("customers", "crm", "model", "crm", &["seed.shop.countries"], mat("table")));
+        // A path with a space and a `#`, which a link to the file must keep in one segment each.
+        let odd = json!({ "original_file_path": "models/odd dir/a#b.sql", "config": { "materialized": "table" } });
+        add(node("spaced", "shop", "model", "odd dir", &[&m("dia_d")], odd));
         // Accents, emoji, capitals and Unicode spaces in names and paths.
         add(node("caf\u{e9}_orders", "shop", "model", "caf\u{e9}", &[&m("dia_d")], mat("table")));
         add(node("orders_\u{1f600}", "shop", "model", "marts", &[&m("dia_d")], mat("table")));
@@ -1278,7 +1752,15 @@ mod tests {
             "disabled": disabled,
             "parent_map": parent_map.into_iter().collect::<BTreeMap<_, _>>(),
         });
-        let raw: crate::manifest::RawManifest = serde_json::from_value(manifest).unwrap();
+        let mut manifest = manifest;
+        // The SQL: one node of each shape the page shows, and a path that needs escaping.
+        for (id, code) in case_code() {
+            let at = if id.starts_with("model.shop.old_hub") { &mut manifest["disabled"][id][0] } else { &mut manifest["nodes"][id] };
+            for (k, v) in code.as_object().unwrap() {
+                at[k] = v.clone();
+            }
+        }
+        let raw: crate::manifest::RawManifest = serde_json::from_value(manifest.clone()).unwrap();
         let mut graph = Graph::build(raw, Path::new("manifest.json"), 0, 0);
         // A package model `dbt deps` put where it was found, as `place_packages` records it.
         let at = graph.index["model.crm.customers"] as usize;
@@ -1289,17 +1771,61 @@ mod tests {
         }
         graph.by_file.entry(place.clone()).or_default().push(at as u32);
         graph.nodes[at].place = place;
-        graph
+        (graph, manifest)
+    }
+
+    fn case_graph() -> Graph {
+        case_parts().0
+    }
+
+    /// The code the fixture's nodes carry, by id: what each shape of node holds, and a file whose path
+    /// needs escaping in a link.
+    fn case_code() -> Vec<(&'static str, Value)> {
+        vec![
+            // A line ending that is two characters, and a compiled text.
+            (
+                "model.shop.dia_a",
+                json!({ "raw_code": "select 1\r\nfrom {{ ref('countries') }}", "compiled_code": "select 1\nfrom analytics.seeds.countries", "language": "sql" }),
+            ),
+            // Not compiled, and a name that would close a script or end a line there.
+            ("model.shop.dia_b", json!({ "raw_code": "select '</script><!--\u{2028}\u{2029}' as a" })),
+            (
+                "model.shop.orders.v1",
+                json!({ "raw_code": "def model(dbt, session):\n    return dbt.ref('countries')", "compiled_code": "def model(dbt, session):\n    return dbt.ref('countries')", "language": "python" }),
+            ),
+            // A package's file is not in the repository: no link.
+            ("model.crm.customers", json!({ "raw_code": "select 'crm'", "compiled_code": "select 'crm'" })),
+            (
+                "model.shop.caf\u{e9}_orders",
+                json!({ "raw_code": "select '\u{e9}' as caf\u{e9}", "compiled_code": "select '\u{e9}' as caf\u{e9}" }),
+            ),
+            ("model.shop.spaced", json!({ "raw_code": "select 1", "compiled_code": "select 1" })),
+            (
+                "operation.shop.shop-on-run-end-0",
+                json!({ "raw_code": "grant select on all tables", "compiled_code": "grant select on all tables" }),
+            ),
+            (
+                "test.shop.unique_hub_id",
+                json!({ "raw_code": "{{ test_unique(**_dbt_generic_test_kwargs) }}", "compiled_code": "select id from analytics.marts.hub group by id having count(*) > 1" }),
+            ),
+            ("test.shop.assert_hub_matches_dia_d", json!({ "raw_code": "select 1 where false", "compiled_code": "select 1 where false" })),
+            // A disabled node has code and was never compiled.
+            ("model.shop.old_hub", json!({ "raw_code": "select 'old'" })),
+        ]
     }
 
     /// The whole fixture, as the text of the file. What `web/site.js` is held to.
     fn case_text() -> String {
-        let graph = case_graph();
-        let meta = json!({ "project": "shop", "environment": "qa", "commit": "", "commit_url": "", "repo_url": "", "catalog": false });
+        let (graph, manifest) = case_parts();
+        let base = "https://github.com/acme/shop/blob/0123456789abcdef0123456789abcdef01234567/analytics/";
+        let meta = json!({ "project": "shop", "root": "shop", "environment": "qa", "commit": "", "commit_url": "", "repo_url": "", "file_base": base, "catalog": false });
         let mut index = index_of(&graph, meta);
-        // Small buckets, so the lookup of a card by its number is exercised.
+        // Small buckets, so the lookup of a card by its number is exercised, and the SQL's own cut is not the cards'.
         let (cuts, buckets) = cards_in(&graph, 7, BUCKET_BYTES).unwrap();
         index["cuts"] = json!(cuts);
+        let code = sql_of(&graph, serde_json::from_value(manifest).unwrap());
+        let (sql_cuts, sql) = sql_in(code.clone(), 5, BUCKET_BYTES).unwrap();
+        index["sql_cuts"] = json!(sql_cuts);
 
         let id = |name: &str| graph.index.get(name).copied().unwrap_or_else(|| panic!("no node {name}"));
         let lineage = |focus: &str, up: u32, down: u32, tests: bool, max: usize| {
@@ -1416,7 +1942,33 @@ mod tests {
             })
             .collect();
 
-        let case = json!({ "site": index, "buckets": buckets, "lineage": cases, "search": searches, "node": nodes, "dir": dirs });
+        // The code of a node, with the file it came from and the link to it: only the project's own files are in the
+        // repository, so a package's has none. A node with no code answers an empty one.
+        let codes: Vec<Value> = case_code()
+            .iter()
+            .map(|(name, _)| *name)
+            .chain(["seed.shop.countries", "model.shop.dia_c"])
+            .map(|name| {
+                let i = id(name);
+                let n = &graph.nodes[i as usize];
+                let sql = code[i as usize].as_ref();
+                let url = if n.package == "shop" {
+                    json!(format!("{base}{}", n.on_disk().split('/').map(enc).collect::<Vec<_>>().join("/")))
+                } else {
+                    Value::Null
+                };
+                let want = json!({
+                    "raw": sql.map_or("", |s| s.raw.as_str()),
+                    "compiled": sql.and_then(|s| s.compiled.clone()),
+                    "lang": if sql.is_some_and(|s| s.python) { "python" } else { "sql" },
+                    "file": n.on_disk(),
+                    "url": url,
+                });
+                json!({ "path": format!("/api/site/code?id={}", enc(name)), "want": want })
+            })
+            .collect();
+
+        let case = json!({ "site": index, "buckets": buckets, "sql": sql, "lineage": cases, "search": searches, "node": nodes, "dir": dirs, "code": codes });
         format!(
             "// Written by `DBT_EDITH_BLESS=1 cargo test site_case` from an invented graph: Rust's answers, which web/tests/site.js\n\
              // holds web/site.js to. Never edited by hand.\nvar SITE_CASE = {};\n",

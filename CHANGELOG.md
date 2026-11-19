@@ -20,6 +20,12 @@ and bumps nothing.
 
 ## Unreleased
 
+## 2.26.0 - 2026-11-19
+
+- Show each node's SQL in the static site, its source and its compiled text
+  from the manifest in a Code tab, and link each file to the repository at the
+  site's commit, with the project's place in it (0180).
+
 ## 2.25.0 - 2026-11-19
 
 - Mark a newer release with a badge and a halo on Edith, blue in Graphite too,

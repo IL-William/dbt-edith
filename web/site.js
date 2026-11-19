@@ -1,5 +1,5 @@
-/* The static site's server: the answers /api/lineage, /api/node and /api/search give,
-   worked out in the browser from the data `dbt-edith --site` wrote (0177).
+/* The static site's server: the answers /api/lineage, /api/node, /api/search and /api/site/code give,
+   worked out in the browser from the data `dbt-edith --site` wrote (0177, 0180).
 
    Each walk below is a port of the Rust one, line by line, and the golden fixture
    tests/fixtures/site_case.js holds Rust's answers for web/tests/site.js to compare
@@ -7,12 +7,13 @@
    (DBT_EDITH_BLESS=1 cargo test site_case) and fails here until this file follows.
 
    Pure: nothing here touches the page. `make` takes the data and a way to load a
-   bucket of cards, so the harness runs it under jsc; the browser's own is made once
+   bucket of cards or of SQL, so the harness runs it under jsc; the browser's own is made once
    below, from window.EDITH_SITE, and read as EdithSite.get / .send / .meta.
    Nothing here asks for a network: a bucket is a <script> of the folder itself. */
 // biome-ignore lint/correctness/noUnusedVariables: the global app.js reads; a plain script has no export
 const EdithSite = (() => {
   const BUCKET_URL = (k) => 'data/cards/' + String(k).padStart(4, '0') + '.js';
+  const SQL_URL = (k) => 'data/sql/' + String(k).padStart(4, '0') + '.js';
   const NO_ROUTE = 'not in this site';
   const LOOK_KEY = 'dbt-edith-site-look';
   const LOOK_DEFAULT = { theme: 'night', follow: false, apparitions: true, boxes: 'tombstone' };
@@ -89,13 +90,78 @@ const EdithSite = (() => {
     return spec.split(',').filter((s) => s && SEARCH_KINDS.includes(s));
   }
 
+  /* The address of a node's file in the repository, at the commit the site was written for (0180):
+     the base Rust wrote, `file_base`, and the node's path with each segment escaped as the page
+     writes a query. Only a file of the root project is in the repository; a package's is not, and
+     a path that is not plain (an empty segment, `.` or `..`) is no link at all. The root is
+     `meta.root`, which Rust reads as the tree does, not the manifest's project name, which a
+     manifest may lack. '' for none. */
+  function fileUrl(meta, pkg, file) {
+    const base = meta && meta.file_base;
+    if (!base || !/^https:\/\//.test(base) || !meta.root || pkg !== meta.root || !file) return '';
+    const parts = file.split('/');
+    if (parts.some((p) => p === '' || p === '.' || p === '..')) return '';
+    return base + parts.map(encodeURIComponent).join('/');
+  }
+
   function make(data, loadBucket) {
-    const { base, parents, children, tests, rank, key, att, lv, cuts, limits, meta, tree, placed } = data;
+    const { base, parents, children, tests, rank, key, att, lv, cuts, sql_cuts: sqlCuts, limits, meta, tree, placed } = data;
     const total = base.length;
     const numbers = new Map();
     for (let i = 0; i < total; i++) numbers.set(base[i].id, i);
-    const cards = new Map();            // node number -> its card, once its bucket arrived
-    const pending = new Map();          // bucket -> { promise, resolve, reject }
+
+    /* Buckets of one kind of item, the cards or the SQL: each a script of the folder that hands its
+       items to `received`, found by the node's number among the cuts the index lists. One promise
+       per bucket, so a hover and the click after it are one load; a bucket that fails to load is
+       forgotten, so the next ask tries again. */
+    function buckets(cutList, urlOf, one, many) {
+      const held = new Map();           // node number -> its item, once its bucket arrived
+      const pending = new Map();        // bucket -> { promise, resolve, reject }
+
+      /* The bucket an item is in: the last run that starts at or before it. */
+      function bucketOf(n) {
+        let lo = 0;
+        let hi = cutList.length - 1;
+        while (lo < hi) {
+          const mid = (lo + hi + 1) >> 1;
+          if (cutList[mid] <= n) lo = mid; else hi = mid - 1;
+        }
+        return lo;
+      }
+
+      /* What a bucket's script calls once it runs. */
+      function received(start, list) {
+        list.forEach((item, i) => held.set(start + i, item));
+        const wait = pending.get(cutList.indexOf(start));
+        if (wait) wait.resolve();
+      }
+
+      function bucket(k) {
+        if (pending.has(k)) return pending.get(k).promise;
+        const wait = {};
+        wait.promise = new Promise((resolve, reject) => { wait.resolve = resolve; wait.reject = reject; });
+        pending.set(k, wait);
+        wait.promise.catch(() => { if (pending.get(k) === wait) pending.delete(k); });
+        Promise.resolve(loadBucket(k, urlOf(k))).then(() => {
+          // A script that ran and never gave its items is a file that is not one of ours.
+          if (held.has(cutList[k])) wait.resolve();
+          else wait.reject(new Error('the ' + many + ' of ' + urlOf(k) + ' did not arrive'));
+        }, (e) => wait.reject(e));
+        return wait.promise;
+      }
+
+      function get(n) {
+        if (held.has(n)) return Promise.resolve(held.get(n));
+        return bucket(bucketOf(n)).then(() => {
+          if (!held.has(n)) throw new Error('the ' + one + ' of ' + base[n].id + ' is not in its bucket');
+          return held.get(n);
+        });
+      }
+      return { get, received };
+    }
+    const cardBuckets = buckets(cuts, BUCKET_URL, 'card', 'cards');
+    // A site written before the SQL had none: its Code tab finds nothing, and says so.
+    const sqlBuckets = buckets(sqlCuts || [], SQL_URL, 'SQL', 'SQL');
 
     /* Tests and operations are hung under a model, never walked through. */
     const isGraph = (n) => base[n].kind !== 'test' && base[n].kind !== 'operation';
@@ -260,47 +326,21 @@ const EdithSite = (() => {
       return hits.slice(0, limit).map((h) => hit(h[1]));
     }
 
-    /* The bucket a node's card is in: the last run that starts at or before it. */
-    function bucketOf(n) {
-      let lo = 0;
-      let hi = cuts.length - 1;
-      while (lo < hi) {
-        const mid = (lo + hi + 1) >> 1;
-        if (cuts[mid] <= n) lo = mid; else hi = mid - 1;
-      }
-      return lo;
-    }
-
-    /* What a bucket's script calls once it runs. */
-    function received(start, list) {
-      list.forEach((card, i) => cards.set(start + i, card));
-      const k = cuts.indexOf(start);
-      const wait = pending.get(k);
-      if (wait) wait.resolve();
-    }
-
-    /* One promise per bucket, so a hover and the click after it are one load. A bucket that
-       fails to load is forgotten, so the next ask tries again. */
-    function bucket(k) {
-      if (pending.has(k)) return pending.get(k).promise;
-      const wait = {};
-      wait.promise = new Promise((resolve, reject) => { wait.resolve = resolve; wait.reject = reject; });
-      pending.set(k, wait);
-      wait.promise.catch(() => { if (pending.get(k) === wait) pending.delete(k); });
-      Promise.resolve(loadBucket(k, BUCKET_URL(k))).then(() => {
-        // A script that ran and never gave its cards is a file that is not one of ours.
-        if (cards.has(cuts[k])) wait.resolve();
-        else wait.reject(new Error('the cards of ' + BUCKET_URL(k) + ' did not arrive'));
-      }, (e) => wait.reject(e));
-      return wait.promise;
-    }
-
     function card(n) {
-      if (cards.has(n)) return Promise.resolve(cards.get(n));
-      return bucket(bucketOf(n)).then(() => {
-        if (!cards.has(n)) throw new Error('the card of ' + base[n].id + ' is not in its bucket');
-        return cards.get(n);
-      });
+      return cardBuckets.get(n);
+    }
+
+    /* One node's code as the manifest holds it (0180), with the file it is in and the link to it on the
+       repository's host. A node with nothing to show has an empty source and no compiled text; a text
+       missing from the manifest is null, which is what the page says "not compiled" for. */
+    function code(n) {
+      return Promise.all([card(n), sqlBuckets.get(n)]).then(([c, entry]) => ({
+        raw: entry ? entry.raw : '',
+        compiled: entry && typeof entry.compiled === 'string' ? entry.compiled : null,
+        lang: entry && entry.lang ? entry.lang : 'sql',
+        file: c.file,
+        url: fileUrl(meta, c.package, c.file) || null,
+      }));
     }
 
     /* The editor's tree, of the files the manifest builds from (src/site.rs tree_of): a folder's entries
@@ -360,6 +400,8 @@ const EdithSite = (() => {
           // By its unique_id only: the editor's file is not in this site.
           if (!('id' in params)) throw new Error(NO_ROUTE);
           resolve(card(number(params.id)));
+        } else if (name === '/api/site/code') {
+          resolve(code(number(params.id)));
         } else if (name === '/api/search') {
           resolve(search(params.q || '', parseKinds(params.kind || ''),
             Math.min(unsigned(params, 'limit', limits.search, Number.MAX_SAFE_INTEGER), limits.search_max)));
@@ -386,13 +428,13 @@ const EdithSite = (() => {
       });
     }
 
-    return { get, send, received, meta, limits, number, treePath, lineage: lineageAnswer, search, parseKinds, levels };
+    return { get, send, received: cardBuckets.received, receivedSql: sqlBuckets.received, meta, limits, number, treePath, lineage: lineageAnswer, search, parseKinds, levels };
   }
 
   /* The page's own, once the data has loaded: a bucket is a script appended to the page,
      which calls EDITH_SITE_CARDS. Absent without the data, so a harness loading this file
      alone, and the page before its data script ran, get the factory only. */
-  const out = { make, rustTrim, utf8Len, cmpCodePoints, parseQuery, parseKinds };
+  const out = { make, rustTrim, utf8Len, cmpCodePoints, parseQuery, parseKinds, fileUrl };
   if (typeof window !== 'undefined' && window.EDITH_SITE) {
     const loadScript = (k, url) => new Promise((resolve, reject) => {
       const el = document.createElement('script');
@@ -403,6 +445,7 @@ const EdithSite = (() => {
     });
     const site = make(window.EDITH_SITE, loadScript);
     window.EDITH_SITE_CARDS = site.received;
+    window.EDITH_SITE_SQL = site.receivedSql;
     Object.assign(out, site);
   }
   return out;

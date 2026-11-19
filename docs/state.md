@@ -3478,14 +3478,7 @@ of its own, and each panel updates the tour, its page under
     - No test pins the second sentence of the header `jobs.yml` is written with.
 58. **The static site's limits (0177, 0178, `--site`).** What the first
     version leaves out, each with the trap that keeps it out:
-    - **SQL and links to the repository's files (next).** `raw_code` and
-      `compiled_code` are in the manifest, v12 and Fusion's alike, but a link to
-      a file needs the host's blob pattern at the commit and a path relative to
-      the repository's root, which the project is not always: a dbt project in a
-      sub-folder of the repository would link to a file that does not exist. It
-      needs the project's place in the repository, from `git rev-parse
-      --show-prefix`, through the gate (0121), before a link is drawn.
-    - **Column lineage (after).** collin's cache is a file under `target/`; the
+    - **Column lineage (next).** collin's cache is a file under `target/`; the
       site would carry it as another bucketed script, and `/api/collineage`
       computes a walk the page would write again. The cache is large (the
       comparison with the server must be by walk, not by size), and a lineage
@@ -3502,8 +3495,15 @@ of its own, and each panel updates the tour, its page under
       have no file to list, and a Sources group would have to name each by its
       source and table, with a click that focuses the node. Macros and analyses
       are files of the project the manifest records with a path (`macros` carry
-      one, an analysis is a node), but opening one shows nothing the site holds
-      until the SQL does: they wait for the SQL entry above.
+      one, an analysis is a node), and the site now holds an analysis's code (0180):
+      listing analyses is a row each. A macro's body is not in the data, and
+      `macros` carry `macro_sql`, so showing one is a second pass of the kind
+      the SQL is, with its own bucket.
+    - **What the SQL left out (0180).** A `--repo-path` for a site written
+      from a checkout git cannot place, an exported archive, which has no file
+      links today and says so. Azure DevOps' file links, whose address takes a
+      query (`?path=`, `&version=GC<sha>`). A Python mode for the Code tab, which
+      shows a Python model as plain text, none being vendored.
     - **dbt selector expressions.** `src/select.rs` is large, and the golden
       comparison with `dbt ls` (0033) is by the server; a port to JavaScript
       needs the same oracle, and the Lineage space is a panel the site hides.
@@ -3526,10 +3526,7 @@ of its own, and each panel updates the tour, its page under
       paint, and
       over a network it is the file's size that counts: gzip is the host's to
       switch on. The model in focus is not highlighted in the Models list. The
-      dbt version shows twice in the header. The Columns tab's hint about
-      missing types still names Snowflake and `dbt compile --write-catalog`; in
-      a site it could say to run `--site` after the step that writes
-      `catalog.json`.
+      dbt version shows twice in the header.
 59. **What the release and update changes left (0174, 0175, 0176, 2.22.2).**
     - The hover card keeps half the row for the file in Firefox even when its
       path is shorter, as that browser does not know `calc-size()`.

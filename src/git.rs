@@ -944,6 +944,23 @@ pub fn head_commit(root: &Path) -> Result<String, String> {
     }
 }
 
+/// Where `root` sits in its repository, as `git rev-parse --show-prefix` says
+/// it: "" at the repository's root, `analytics/dbt/` for a project below it, so
+/// that a path relative to the project is one relative to the repository once
+/// the prefix is put before it. None outside a repository, with git paused
+/// there (0121) or with no answer: the site then has no link to a file, since a
+/// guessed path is a link to nothing. Only the line's end is cut, a folder
+/// name may carry a space.
+pub fn show_prefix(root: &Path) -> Option<String> {
+    if !in_repository(root) {
+        return None;
+    }
+    let out = read_auto(root, &["rev-parse", "--show-prefix"])?;
+    let prefix = out.trim_end_matches(['\n', '\r']);
+    // What git writes is `/`-separated; anything else is not a prefix this can put before a path.
+    (!prefix.contains('\\') && (prefix.is_empty() || prefix.ends_with('/'))).then(|| prefix.to_string())
+}
+
 /// The address `remote.origin.url` holds, as written, for the one that links
 /// to the repository on a host it recognises. None without a repository, an
 /// origin, or an answer: git paused counts as no answer, and the site then
@@ -1367,6 +1384,34 @@ mod tests {
         assert_eq!(head_commit(&unborn), Err("the repository has no commit yet".to_string()));
         let _ = std::fs::remove_dir_all(&loose);
         let _ = std::fs::remove_dir_all(&unborn);
+    }
+
+    #[test]
+    fn show_prefix_is_where_the_project_sits_in_its_repository() {
+        let dir = scratch("show-prefix");
+        repo(&dir);
+        assert_eq!(show_prefix(&dir).as_deref(), Some(""), "at the root of the repository");
+        write(&dir, "analytics/dbt/dbt_project.yml", "name: shop\n");
+        write(&dir, "my project/dbt_project.yml", "name: shop\n");
+        assert_eq!(show_prefix(&dir.join("analytics")).as_deref(), Some("analytics/"));
+        assert_eq!(show_prefix(&dir.join("analytics/dbt")).as_deref(), Some("analytics/dbt/"));
+        assert_eq!(show_prefix(&dir.join("my project")).as_deref(), Some("my project/"), "a space is kept");
+
+        let loose = scratch("show-prefix-loose");
+        assert_eq!(show_prefix(&loose), None, "not a repository");
+        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::remove_dir_all(&loose);
+    }
+
+    #[test]
+    fn no_prefix_is_read_from_a_paused_repository() {
+        let dir = scratch("show-prefix-paused");
+        repo(&dir);
+        write(&dir, "dbt/dbt_project.yml", "name: shop\n");
+        assert_eq!(show_prefix(&dir.join("dbt")).as_deref(), Some("dbt/"));
+        git(&dir, &["config", "filter.evil.clean", "cat"]);
+        assert_eq!(show_prefix(&dir.join("dbt")), None);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// Neither is asked of a repository whose configuration names a program: the
