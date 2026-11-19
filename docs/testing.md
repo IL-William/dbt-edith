@@ -106,7 +106,7 @@ $JSC web/tests/catalog.js     # the Catalog: the words beside the name, its tabs
 $JSC web/tests/fileicons.js   # a file's icon: its shape by extension, its colour by what the manifest builds it as, the tree's git letters
 $JSC web/tests/tabkinds.js    # the editor's tabs and Open editors: a model's tab draws its kind's bar, a row its file's icon, a late mark draws the tabs once more
 $JSC web/tests/site.js        # the static site's answers: web/site.js against Rust's, from tests/fixtures/site_case.js, and the pieces its walks lean on
-$JSC web/tests/sitepage.js    # a site's page: the header's facts and link, the tab's title, the node an address names
+$JSC web/tests/sitepage.js    # a site's page: the header's facts and link, the tab's title, the node an address names, the Code tab's text and notes
 ```
 
 The Snowflake script has tests of its own, against a fake connector and a fake
@@ -226,8 +226,9 @@ The static site (0177) is `dbt-edith PROJECT --site`, a folder that opens from
 The first is a golden file: `tests/fixtures/site_case.js` is written by a Rust
 test from an invented graph (a diamond, a test guarding two models, a disabled
 node, a versioned model, an operation, an exposure, a chain 22 levels deep, a
-fan-out, accents and emoji, one name in two packages), with what `/api/lineage`,
-`/api/search` and `/api/node` answer, and `web/tests/site.js` makes the same
+fan-out, accents and emoji, one name in two packages, a node of each kind of SQL
+and a path a link must escape), with what `/api/lineage`, `/api/search` and
+`/api/node` answer, and what `/api/site/code` gives (0180), and `web/tests/site.js` makes the same
 requests of `web/site.js` and compares them key for key. A change to a walk in
 `src/graph.rs` or `src/api.rs` that moves an answer fails the Rust test until
 the file is written again, and the jsc test until `web/site.js` follows:
@@ -238,16 +239,19 @@ DBT_EDITH_BLESS=1 cargo test site_case     # writes the file; without it the tes
 ```
 
 The second is a walk in Chrome. It writes the site on Jaffle Shop, built with
-its catalog, and on Fivetran's Shopify at the pinned tag (0056), parsed only,
-each a git repository with an invented github.com origin and a `.env` that holds
-a canary. It compares every node's lineage at 1+1, 2+2 and 20+20 with the tests
+its catalog, and on Fivetran's Shopify at the pinned tag (0056), parsed only, each
+in a folder of its git repository, with an invented github.com origin and a `.env`
+that holds a canary. It compares every node's lineage at 1+1, 2+2 and 20+20 with the tests
 on and off, and at 2+2 under a cap of 5, every card but its location resolved
 against a `.env`, a set of searches, and every folder of the project tree the page
 lists against the server's `/api/dir`, cut to the files that carry a kind and the
 folders that hold one, between the server and the page opened
 from the folder; reads the page as a person does (the header and its commit
 link, the Models list, a click, a box, the Catalog and its Columns, Cmd+K, an
-address that names a node, a click on what the site hides); and fails on a
+address that names a node, a click on what the site hides, the Code tab with its
+toggle and its links); compares the SQL, the compiled text of every node with what
+the server reads from `target/compiled` and the source with the node's file, and
+that a parsed manifest is compiled nowhere; and fails on a
 request outside the folder, an exception, a console error, a violation of the
 page's policy, an absolute path or the canary in what was written. Then it does
 the same over `http.server` under a sub-path, counting what the host was asked

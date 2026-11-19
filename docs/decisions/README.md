@@ -183,6 +183,7 @@ it; these files say why it is built this way, for whoever changes it next.
 | [0177](0177-a-static-site-is-written-from-dbts-artifacts.md) | A static site is written from dbt's artifacts | changing what `--site` reads or writes, what the page it writes may do, or how it answers a question the server answers |
 | [0178](0178-the-site-is-written-inside-the-project-into-a-marked-folder.md) | The site is written inside the project, into a folder Edith marks | changing where `--site` writes, what it empties, or adding a way to write elsewhere |
 | [0179](0179-the-virustotal-badge-reads-the-json-s-message.md) | The VirusTotal badge reads the JSON's message | changing the README's VirusTotal badge, the host that draws it, or its colour |
+| [0180](0180-the-sites-sql-is-the-manifests.md) | The site's SQL is the manifest's, and each file is linked at the commit | changing where the site's SQL comes from, what its Code tab says of a node dbt did not compile, or how a link to a file in the repository is made |
 | [0181](0181-a-newer-release-keeps-its-colour-in-every-theme.md) | A newer release keeps its colour in every theme | changing the colour, the badge, the pill or the buttons that say a newer release is out |
 
 ## Keeping these honest

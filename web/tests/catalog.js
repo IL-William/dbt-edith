@@ -51,6 +51,12 @@ check('a model has Preview and Columns, counted', catalogTabList({ kind: 'model'
   [{ key: 'preview', label: 'Preview', count: 0 }, { key: 'columns', label: 'Columns', count: 3 }]);
 check('a model with no column has no badge', catalogTabList({ kind: 'model', columns: [] })[1].count, 0);
 check('a test has Preview alone', catalogTabList({ kind: 'test', columns: [] }), [{ key: 'preview', label: 'Preview', count: 0 }]);
+check('the server\'s page has no Code tab', ['model', 'test', 'seed'].every((k) => catalogTabList({ kind: k, columns: [] }, false).every((t) => t.key !== 'code')), true);
+check('a site adds Code, last, to the kinds that have code', ['model', 'snapshot', 'analysis', 'operation'].map((k) => catalogTabList({ kind: k, columns: [] }, true).map((t) => t.key).join()),
+  ['preview,columns,code', 'preview,columns,code', 'preview,columns,code', 'preview,columns,code']);
+check('and to a test, which has no columns', catalogTabList({ kind: 'test', columns: [] }, true).map((t) => t.key), ['preview', 'code']);
+check('not to a seed, a source or an exposure', ['seed', 'source', 'exposure'].map((k) => catalogTabList({ kind: k, columns: [] }, true).map((t) => t.key).join()),
+  ['preview,columns', 'preview,columns', 'preview,columns']);
 // What the scripts, the tour and take_shots.py find the tabs by.
 check('the tabs keep the ctab class beside the dock\'s tab, and say what they are',
   /className = 'tab ctab'/.test(app) && /setAttribute\('role', 'tablist'\)/.test(app) && /setAttribute\('aria-selected'/.test(app), true);

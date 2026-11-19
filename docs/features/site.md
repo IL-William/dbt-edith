@@ -11,8 +11,11 @@ the page carries a policy that has the browser refuse one
 
 `target/manifest.json`, and `target/catalog.json` when there is one, so a
 column has the type the warehouse gave it; `--manifest` and `--catalog` name
-others. From git, the commit `HEAD` names and `remote.origin.url`, through the
-same gate as the Git tab ([0121](../decisions/0121-git-runs-nothing-a-repositorys-own-config-names.md)).
+others. The SQL of each node is the manifest's own, its `raw_code` and its
+`compiled_code`, and never a file of `target/`
+([0180](../decisions/0180-the-sites-sql-is-the-manifests.md)). From git, the
+commit `HEAD` names, `remote.origin.url` and where the project sits in its
+repository, through the same gate as the Git tab ([0121](../decisions/0121-git-runs-nothing-a-repositorys-own-config-names.md)).
 Nothing else:
 
 - no `.env` is read and no `env_var()` resolved: a location is shown as the
@@ -48,8 +51,9 @@ dbt-edith PROJECT --site [DIR] [--environment NAME] [--commit SHA] [--repo-url U
   no link, and the run says to pass `--repo-url`. The origin itself is never
   printed or written.
 - **Exit codes**: 0 written; 2 for no manifest, a refused folder or a bad value.
-  stdout is the folder and the counts; stderr says what it could not do, no
-  catalog, no commit, no link.
+  stdout is the folder and the counts; stderr says what it could not do: no
+  catalog, no commit, no link, no file links, and no compiled SQL in the
+  manifest.
 
 The same inputs give the same bytes: nothing written holds a path of the
 machine, a time of the run or a duration. `--site` goes with `--manifest` and
@@ -65,6 +69,7 @@ vendor/                  exactly the files the page loads
 LICENSE.txt THIRD_PARTY_NOTICES.md
 data/index.js            window.EDITH_SITE = {...}
 data/cards/NNNN.js       EDITH_SITE_CARDS(start, [card, ...])
+data/sql/NNNN.js         EDITH_SITE_SQL(start, [{raw, compiled?, lang?} | 0, ...])
 ```
 
 `data/index.js` holds the header's facts, one entry per node as the canvas draws
@@ -72,7 +77,9 @@ it, who feeds whom, a rank by name, each node's search key and the folders of
 the Project tab. A card, with its
 columns, tests and parents, is in a bucket of about 200 nodes or 512 KiB, a
 script appended to the page when a card is first opened: a project of
-thousands of nodes loads its index once and a bucket per card. The browser
+thousands of nodes loads its index once and a bucket per card. The SQL is in
+buckets of its own, cut at the same 200 nodes or 512 KiB but on their own cuts,
+and loaded when a node's Code tab is first opened. The browser
 answers `/api/lineage`, `/api/node` and `/api/search` itself, with the walks the
 server makes, written again in `web/site.js` and held to Rust's answers by a
 golden file and by `scripts/walk_site.py`, which compares them for every node
@@ -108,7 +115,28 @@ and the status bar's venv, environment, branch, shell and update.
 - **The lineage and its depth**, the tests toggle, the tests under a model, by
   folder, Fit and Export work as on the server's page; a click on a box fills the
   **Catalog**, whose Preview and Columns are the manifest's and the catalog's,
-  and which has no Open file.
+  and which has no Open file. Where the Columns have no type, its hint says to
+  run `--site` after `dbt docs generate` or `dbt compile --write-catalog`.
+- **The Code tab**, beside Preview and Columns, for a model, a snapshot, an
+  analysis, a test or an operation (a seed, a source and an exposure have no
+  code). A **Source | Compiled** toggle, Source first and the last choice kept
+  for the session; the file's path as a link to it on the repository's host, at
+  the site's commit (it opens in a new tab and tells the host nothing of where
+  you came from); Copy; and a read-only editor with line numbers. Source is read
+  as Jinja over SQL, Compiled as SQL, and a Python model as plain text. A
+  generic test's source is the macro call that makes it, and its compiled view
+  the SQL it ran. A node dbt did not compile when it wrote the manifest, as
+  `dbt parse` and the language server leave it, says so in the Compiled view and
+  names the remedy: run `dbt-edith --site` after `dbt build`, `dbt compile` or
+  `dbt docs generate`.
+- **The file's link**, in the Code tab and in the Catalog's crumb, is the host's
+  pattern at the commit: `/blob/<sha>/` for GitHub and any host named by
+  `--repo-url`, `/-/blob/<sha>/` on GitLab, `/src/<sha>/` on Bitbucket, with the
+  project's place in its repository before the path, from `git rev-parse
+  --show-prefix`. A file of a package is not in the repository and has no link;
+  outside a git repository no file is linked, and the commit still is, with
+  `--commit` and `--repo-url`; Azure DevOps (`dev.azure.com`,
+  `visualstudio.com`) gets the commit and no file.
 - **The address** names the node on screen, `index.html#model.shop.orders`, so a
   link to it opens on it.
 - **The theme** is kept in the browser, per browser.
@@ -116,9 +144,9 @@ and the status bar's venv, environment, branch, shell and update.
 ## What is not in it
 
 Each is a deferred entry in [state.md](../state.md): sources and the tree's other
-files (macros, analyses), the SQL of a model, raw and
-compiled, with links to its file in the repository; column lineage; the jobs;
-dbt selector expressions; writing outside the project; and a mark for a dirty
-working tree. Firefox is not verified: `script-src 'self'` is expected to allow a
+files (macros, analyses); column lineage; the jobs; dbt selector expressions;
+writing outside the project; a mark for a dirty working tree; a `--repo-path` for
+a checkout git cannot place; Azure's file links; and a Python mode for the Code
+tab. Firefox is not verified: `script-src 'self'` is expected to allow a
 page's own scripts from `file://` there, as it does in Chrome and Edge, and no
 one has opened a site in it yet.

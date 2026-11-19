@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """The static site (0177), written by `dbt-edith --site`, opened in headless Chrome beside the server.
 
-Two projects, each a git repository with an invented github.com origin and a
+Two projects, each in a git repository with an invented github.com origin and a
 .env that holds a canary: Jaffle Shop, built, with its catalog, and Fivetran's
-Shopify package at the pinned tag (0056), parsed only. On each:
+Shopify package at the pinned tag (0056), parsed only. Each project is in a
+sub-folder of its repository, which a link to a file must say. On each:
 
   - the site is written, and nothing in it is a path of this machine or the
     canary; its header facts are the manifest's and git's;
@@ -11,6 +12,11 @@ Shopify package at the pinned tag (0056), parsed only. On each:
     server's, node by node: /api/lineage at 1+1, 2+2 and 20+20, with the tests
     on and off, and at 2+2 under a cap of 5; /api/node but for the location
     resolved against a .env, which a site never holds; and a set of searches;
+  - the SQL (0180): for every node with a compiled text, the site's is what the
+    server reads from target/compiled, and the source is the node's file, cut of
+    its ends; on the project that was only parsed, no node is compiled and the
+    page says so; a link to a file is the host's pattern at the commit, with
+    the project's place in the repository, and a package's file has none;
   - the page reads: the header names the environment, the commit as a link
     that opens elsewhere and gives nothing away, when the manifest was written
     and dbt's version; the Models list, a click, a click on a box, the
@@ -172,15 +178,20 @@ def dbt(project, *args):
         raise RuntimeError(f"dbt {' '.join(args)} failed: {res.exception}")
 
 
+JAFFLE_FOLDER = "analytics"
+
+
 def jaffle(work):
-    """Jaffle Shop, built, with its catalog, a git repository with an invented origin."""
-    project = work / "jaffle_shop"
+    """Jaffle Shop, built, with its catalog, in a folder of a git repository with an invented origin: its files
+    are not at the repository's root, which a link to one must say."""
+    repo = work / "jaffle_repo"
+    project = repo / JAFFLE_FOLDER
     shutil.copytree(W.JAFFLE, project)
     (project / ".env").write_text(f"DBT_SCHEMA={CANARY}\nSECRET_TOKEN={CANARY}\n")
-    git(project, "init", "-q", "-b", "main")
-    git(project, "add", "-A")
-    git(project, "commit", "-q", "-m", "jaffle shop")
-    git(project, "remote", "add", "origin", "git@github.com:acme/jaffle-shop.git")
+    git(repo, "init", "-q", "-b", "main")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "jaffle shop")
+    git(repo, "remote", "add", "origin", "git@github.com:acme/jaffle-shop.git")
     dbt(project, "build")
     dbt(project, "docs", "generate")
     return project
@@ -222,10 +233,11 @@ def leaks(site, project, work):
     return found
 
 
-def generate(binary, project, tally, name):
-    """The site, into its default folder, and what the header's facts are."""
+def generate(binary, project, tally, name, prefix, compiled, home):
+    """The site, into its default folder, and what the header's facts are. `prefix` is the project's place in its
+    repository, `compiled` whether its manifest was written by a command that compiles."""
     run = subprocess.run([str(binary), str(project), "--site", "--environment", ENV], capture_output=True, text=True,
-                         env=dict(os.environ, HOME=str(project.parent / "home")))
+                         env=dict(os.environ, HOME=str(home)))
     tally.check(f"{name}: --site writes the folder and exits 0", run.returncode == 0, run.stderr[-500:])
     site = project / "target" / "edith-site"
     tally.check(f"{name}: it prints the folder it wrote", run.stdout.splitlines()[:1] == [str(site.resolve())], run.stdout[:300])
@@ -235,6 +247,10 @@ def generate(binary, project, tally, name):
     meta = data["meta"]
     repo = "https://github.com/acme/" + ("jaffle-shop" if "jaffle" in name else "dbt-shopify")
     tally.check(f"{name}: the commit is HEAD, and its link the origin's host's", meta["commit"] == head and meta["commit_url"] == f"{repo}/commit/{head}", canon(meta))
+    tally.check(f"{name}: a file is linked at the commit, below the project's place in its repository", meta["file_base"] == f"{repo}/blob/{head}/{prefix}", canon(meta))
+    said = "no compiled SQL in the manifest" in run.stderr
+    tally.check(f"{name}: the run says when no node was compiled, and only then", said == (not compiled), run.stderr[-500:])
+    tally.check(f"{name}: the site holds the SQL in buckets of its own", (site / "data" / "sql" / "0000.js").is_file() and bool(data["sql_cuts"]), canon(data["sql_cuts"][:3]))
     tally.check(f"{name}: the header says the environment, dbt's version and when", meta["environment"] == ENV and meta["dbt_version"] and meta["generated_at"], canon(meta))
     tally.check(f"{name}: the origin that was set is never in the site", "git@github.com" not in index and "acme/" not in index.replace(repo, ""), "")
     return site, data
@@ -301,6 +317,75 @@ def compare(tally, name, page, server, ids, searches):
             bad.append(path)
     tally.check(f"{name}: {len(paths)} searches are the server's", not bad, "\n        ".join(bad[:5]))
     return len(lineage) + len(cards) + len(paths)
+
+
+def encode_component(text):
+    """encodeURIComponent, as the page writes a segment of a path."""
+    return urllib.parse.quote(text, safe="!~*'()")
+
+
+def file_url(meta, file):
+    return meta["file_base"] + "/".join(encode_component(p) for p in file.split("/"))
+
+
+def compare_code(tally, name, page, server, project, data, compiled):
+    """The SQL the site gives for every node: compiled, what the server reads from target/compiled; source, the
+    node's file cut of its ends. A project that was only parsed has no compiled text, and a node says so.
+    Returns (nodes with code, compiled compared, source compared)."""
+    base = data["base"]
+    ids = [b["id"] for b in base]
+    paths = [f"/api/site/code?id={urllib.parse.quote(i, safe='')}" for i in ids]
+    got = batch_in_page(page, paths)
+    failed = [i for i, t in zip(ids, got, strict=True) if t.startswith("ERR ")]
+    tally.check(f"{name}: the site answers the code of all {len(ids)} nodes", not failed, ", ".join(failed[:5]))
+    answers = {i: json.loads(t) for i, t in zip(ids, got, strict=True) if not t.startswith("ERR ")}
+    meta = data["meta"]
+
+    with_code = [i for i, a in answers.items() if a["raw"] or a["compiled"] is not None]
+    # Only the kinds that have a Code tab have a text.
+    kinds = {b["id"]: b["kind"] for b in base}
+    stray = [i for i in with_code if kinds[i] in ("seed", "source", "exposure")]
+    tally.check(f"{name}: {len(with_code)} nodes have code, and no seed, source or exposure is one", len(with_code) > 0 and not stray, ", ".join(stray[:5]))
+
+    made = [i for i in with_code if answers[i]["compiled"] is not None]
+    if compiled:
+        bad, found = [], 0
+        for i in made:
+            # The answer's own fields, `info` being what the page calls them once read.
+            info = server.get(f"/api/compiled?kind=compiled&id={urllib.parse.quote(i, safe='')}")
+            if not info["found"] or info["truncated"]:
+                continue
+            found += 1
+            if info["content"] != answers[i]["compiled"]:
+                bad.append(i)
+        tally.check(f"{name}: the compiled SQL of {found} nodes is what the server reads from target/compiled", found > 0 and not bad,
+                    ", ".join(bad[:5]) or "no node was compared")
+    else:
+        found = 0
+        tally.check(f"{name}: no node is compiled, in a manifest only parsed", not made, ", ".join(made[:5]))
+
+    # The raw code of a model, a snapshot, an analysis or a singular test is its file, as dbt reads it: cut of its ends.
+    bad, same = [], 0
+    for i in with_code:
+        file = answers[i]["file"]
+        path = project / file
+        if kinds[i] in ("operation",) or not file.endswith(".sql") or not path.is_file():
+            continue
+        same += 1
+        if path.read_text(encoding="utf-8").strip() != answers[i]["raw"]:
+            bad.append(i)
+    tally.check(f"{name}: the source of {same} nodes is their file, trimmed", same > 0 and not bad, ", ".join(bad[:5]) or "no node was compared")
+
+    # A link is the host's pattern at the commit below the project's place, for the project's own files only.
+    root = meta["root"]
+    wrong = []
+    for i, a in answers.items():
+        mine = a["file"] and (i.split(".")[1] == root or kinds[i] == "operation")
+        want = file_url(meta, a["file"]) if mine and not a["file"].startswith("dbt_packages/") else None
+        if a["url"] != want:
+            wrong.append(f"{i}: {a['url']} for {a['file']}")
+    tally.check(f"{name}: a node's file is linked below the project's place in the repository, and a package's has no link", not wrong, "\n        ".join(wrong[:5]))
+    return len(with_code), found, same
 
 
 def server_tree(server, project, path="", seen=None):
@@ -453,6 +538,49 @@ def smoke(tally, name, page, ids, model):
     typed = [c["data_type"] for c in columns if c["data_type"]]
     if meta["catalog"] and typed:
         check("and the types the catalog gave", typed[0].lower() in text.lower(), text[:200])
+    hint = page.js("(() => { const h = document.querySelector('#catalog .coltools'); return h ? h.textContent : ''; })()")
+    if "no types" in hint:
+        check("the Columns hint names the site's step, not Snowflake", "dbt-edith --site" in hint and "Snowflake" not in hint, hint)
+
+    # The Code tab of that node: its source, its compiled text or why there is none, and the link to its file.
+    code = page.js(f"EdithSite.get('/api/site/code?id=' + encodeURIComponent({json.dumps(other)}))")
+    page.js("[...document.querySelectorAll('#catalog .ctab')].find((t) => t.textContent === 'Code').click()")
+    page.until("!!document.querySelector('#catalog .cat-code-cm .CodeMirror')", "the Code tab's editor")
+    editor = "document.querySelector('#catalog .CodeMirror').CodeMirror"
+    check("the Code tab opens on the source, in a read-only editor", page.js(f"{editor}.getValue()") == code["raw"] and page.js(f"{editor}.getOption('readOnly')") is True)
+    page.js("[...document.querySelectorAll('#catalog .segbtn')].find((b) => b.textContent === 'Compiled').click()")
+    if code["compiled"] is None:
+        page.until("!!document.querySelector('#catalog .compiled-empty')", "the note")
+        note = page.js("document.querySelector('#catalog .compiled-empty').textContent")
+        check("a node dbt did not compile says so and names the remedy", "did not compile this node" in note and "dbt-edith --site" in note and "dbt docs generate" in note, note)
+        check("and keeps no editor for it", page.js("!document.querySelector('#catalog .CodeMirror')"))
+    else:
+        page.until(f"!!document.querySelector('#catalog .CodeMirror') && {editor}.getValue() === {json.dumps(code['compiled'])}", "the compiled SQL")
+        check("Compiled shows the compiled SQL", True)
+    link = page.js("(() => { const a = document.querySelector('#catalog .cat-code a.repolink'); return a ? [a.getAttribute('href'), a.getAttribute('target'), a.getAttribute('rel'), a.textContent] : null; })()")
+    crumb = page.js("(() => { const a = document.querySelector('#catalog .crumb a.repolink'); return a ? a.getAttribute('href') : null; })()")
+    if code["url"]:
+        want = file_url(meta, code["file"])
+        check("the file is a link to the repository at the commit, with the project's place", link is not None and link[0] == want == code["url"], f"{link} for {want}")
+        check("the link opens elsewhere and gives the opener nothing", link is not None and link[1] == "_blank" and link[2] == "noopener noreferrer")
+        check("the crumb's file is the same link", crumb == want, str(crumb))
+    else:
+        # A model of a package: its file is not in the repository.
+        check("a package's file is no link, in the tab or in the crumb", link is None and crumb is None, f"{link} {crumb}")
+    page.js("[...document.querySelectorAll('#catalog .segbtn')].find((b) => b.textContent === 'Source').click()")
+    page.until(f"!!document.querySelector('#catalog .CodeMirror') && {editor}.getValue() === {json.dumps(code['raw'])}", "the source again")
+    check("the toggle goes back to the source", True)
+
+    # A package's file is not in the repository.
+    outside = next((i for i in ids if i.startswith("model.") and not i.startswith(f"model.{meta['root']}.")), None)
+    if outside:
+        page.js(f"location.hash = {json.dumps(urllib.parse.quote(outside, safe=''))}")
+        page.until(f"!!document.querySelector('#graph .nd.focus[data-id={json.dumps(outside)}]')", "the package's model")
+        page.js("document.querySelector('[data-dock=catalog]').click()")
+        page.until("!!document.querySelector('#catalog .cat-code .code-path')", "the package model's Code tab")
+        check("a package's file has no link, in the tab or in the crumb", page.js("!document.querySelector('#catalog a.repolink')")
+              and page.js("document.querySelector('#catalog .code-path').textContent") != "")
+    page.js("[...document.querySelectorAll('#catalog .ctab')].find((t) => t.textContent === 'Preview').click()")
     page.js("document.querySelector('[data-dock=lineage]').click()")
 
     # Cmd+K.
@@ -538,9 +666,9 @@ def over_http(tally, name, work, site, server, ids, model):
         host.shutdown()
 
 
-def walk_project(tally, binary, name, project, model, work):
+def walk_project(tally, binary, name, project, model, work, prefix, compiled):
     print(f"\n--- {name} ---")
-    site, data = generate(binary, project, tally, name)
+    site, data = generate(binary, project, tally, name, prefix, compiled, work / "home")
     found = leaks(site, project, work)
     tally.check(f"{name}: the folder holds no path of this machine and no value of the .env", not found, "; ".join(found[:5]))
     ids = [b["id"] for b in data["base"]]
@@ -557,6 +685,7 @@ def walk_project(tally, binary, name, project, model, work):
             open_site(page, url)
             compared = compare(tally, name, page, server, ids, searches_of(names))
             compare_tree(tally, name, page, server, project, data)
+            with_code, compiled_same, source_same = compare_code(tally, name, page, server, project, data, compiled)
             smoke(tally, name, page, ids, model)
             # The same address, written into a fresh page: the site opens on its node.
             first = next(i for i in ids if i.startswith("model."))
@@ -567,7 +696,7 @@ def walk_project(tally, binary, name, project, model, work):
         finally:
             page.close()
         over_http(tally, name, work, site, server, ids, model)
-        print(f"{name}: {len(ids)} nodes, {compared} answers compared")
+        print(f"{name}: {len(ids)} nodes, {compared} answers compared, the compiled SQL of {compiled_same} nodes and the source of {source_same} of {with_code} with code")
     finally:
         edith.stop()
 
@@ -581,13 +710,13 @@ def main():
     with tempfile.TemporaryDirectory(prefix="dbt-edith-site-") as tmp:
         work = Path(tmp)
         (work / "home").mkdir()
-        walk_project(tally, binary, "jaffle_shop", jaffle(work), "orders", work)
+        walk_project(tally, binary, "jaffle_shop", jaffle(work), "orders", work, JAFFLE_FOLDER + "/", True)
         try:
             project = shopify(work)
         except C.Unavailable as e:
             skipped = f"Shopify: {e}"
         else:
-            walk_project(tally, binary, "shopify", project, "shopify__orders", work)
+            walk_project(tally, binary, "shopify", project, "shopify__orders", work, "integration_tests/", False)
     if tally.failed:
         print(f"{tally.failed} check(s) failed")
         return 1

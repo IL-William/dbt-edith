@@ -2911,6 +2911,17 @@ kbd {
 .cdiffer .mono { font: 11.5px var(--mono); }
 .cdiffer .filelink { color: inherit; text-decoration: underline; text-decoration-style: dotted; text-underline-offset: 3px; }
 .cdiffer .filelink:hover { color: var(--fg); text-decoration: underline; text-decoration-style: dotted; }
+/* A site's Code tab (0180): the Compiled tab's head line over a read-only editor that takes the rest of the card. */
+.cat-body.cat-code { display: flex; flex-direction: column; padding: 0; overflow: hidden; }
+.cat-code .code-wait { padding: 12px 16px; margin: 0; }
+.cat-code .seg { flex: 0 0 auto; }
+.cat-code-cm { flex: 1; min-height: 0; overflow: hidden; }
+.cat-code-cm .CodeMirror { height: 100%; }
+/* A file on the repository's host: its name in the quiet dotted underline of the path links, an arrow after it. */
+.repolink { color: inherit; text-decoration: underline; text-decoration-style: dotted; text-underline-offset: 3px; }
+.repolink:hover { color: var(--accent); }
+.repolink .arr { margin-left: 3px; color: var(--fg-mute); text-decoration: none; display: inline-block; }
+.code-path { flex: 0 1 auto; min-width: 0; font: 11.5px var(--mono); color: var(--fg-mute); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .compiled-empty { padding: 16px; font-size: 12px; color: var(--fg-dim); }
 .compiled-empty code {
   display: inline-block; font: 11.5px var(--mono); background: var(--bg-3);

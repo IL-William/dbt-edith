@@ -46,7 +46,8 @@ const S = {
   env: '',                    // this tab's chosen .env file, '' for the manifest as parsed
   artifactRow: '',            // envRowKey() as the Compiled or Run row was last drawn
   node: null,                 // catalog: node currently displayed
-  catTab: 'preview',          // catalog: preview | columns
+  catTab: 'preview',          // catalog: preview | columns | code (a site's)
+  codeView: 'source',         // a site's Code tab: source | compiled, kept for the session
   graphMode: 'model',         // lineage canvas: model | column | select
   colFocus: null,             // {id, column} when the canvas shows columns
   colCut: new Set(),          // roles the column walk stops at downstream, kept across refocuses
@@ -10738,10 +10739,13 @@ function catalogMeta(n) {
 }
 
 /* The Catalog's tabs: a test has no columns of its own, so it has Preview
-   alone; `count` is the badge after a label, none for Preview. */
-function catalogTabList(n) {
-  if (n.kind === 'test') return [{ key: 'preview', label: 'Preview', count: 0 }];
-  return [{ key: 'preview', label: 'Preview', count: 0 }, { key: 'columns', label: 'Columns', count: n.columns.length }];
+   alone; `count` is the badge after a label, none for Preview. A site adds Code
+   to every node that has some, the kinds src/site.rs `has_code` lists (0180). */
+function catalogTabList(n, site) {
+  const code = site && ['model', 'snapshot', 'analysis', 'test', 'operation'].includes(n.kind)
+    ? [{ key: 'code', label: 'Code', count: 0 }] : [];
+  if (n.kind === 'test') return [{ key: 'preview', label: 'Preview', count: 0 }, ...code];
+  return [{ key: 'preview', label: 'Preview', count: 0 }, { key: 'columns', label: 'Columns', count: n.columns.length }, ...code];
 }
 
 function renderCatalog(n) {
@@ -10795,7 +10799,10 @@ function renderCatalog(n) {
   crumb.innerHTML = '';
   crumb.append(document.createTextNode(n.package || ''), document.createTextNode('  /  '));
   const b = document.createElement('b');
-  b.textContent = n.file || n.id;
+  // In a site the file is where it is on the repository's host, at the site's commit (0180).
+  const url = S.site && n.file ? EdithSite.fileUrl(S.meta, n.package, n.file) : '';
+  if (url) b.append(repoLink(n.file, url));
+  else b.textContent = n.file || n.id;
   crumb.appendChild(b);
 
   const tabs = document.createElement('div');
@@ -10803,8 +10810,9 @@ function renderCatalog(n) {
   tabs.setAttribute('role', 'tablist');
   // The tab picked stays picked, for the next model shown.
   const test = n.kind === 'test';
-  const shown = test ? 'preview' : S.catTab;
-  for (const { key, label, count } of catalogTabList(n)) {
+  const list = catalogTabList(n, S.site);
+  const shown = list.some((t) => t.key === S.catTab) ? S.catTab : 'preview';
+  for (const { key, label, count } of list) {
     // The dock's tab look; `ctab` stays for what finds the Catalog's tabs by it.
     const t = document.createElement('button');
     t.type = 'button';
@@ -10813,7 +10821,7 @@ function renderCatalog(n) {
     t.setAttribute('aria-selected', String(shown === key));
     t.append(label);
     if (count) t.append(Object.assign(document.createElement('span'), { className: 'tabbadge', textContent: String(count) }));
-    t.addEventListener('click', () => (test ? renderCatalog(n) : showCatalogTab(n, key)));
+    t.addEventListener('click', () => (test && key === 'preview' ? renderCatalog(n) : showCatalogTab(n, key)));
     tabs.appendChild(t);
   }
   head.append(title, crumb, tabs);
@@ -10821,7 +10829,7 @@ function renderCatalog(n) {
   const body = document.createElement('div');
   body.className = 'cat-body';
   // In the Lineage space's card the Catalog is laid out for a narrow column (0160).
-  (shown === 'columns' ? catalogColumns : test ? catalogTestPreview : catalogPreview)(body, n, !!host.closest('#selpanel-card'));
+  (shown === 'code' ? catalogCode : shown === 'columns' ? catalogColumns : test ? catalogTestPreview : catalogPreview)(body, n, !!host.closest('#selpanel-card'));
   host.append(head, body);
   const filter = typing && $('#col-filter');
   if (filter) {
@@ -10835,6 +10843,94 @@ function renderCatalog(n) {
 function showCatalogTab(n, key) {
   S.catTab = key;
   renderCatalog(n);
+}
+
+/* A link to a file on the repository's host (0180): it opens elsewhere and tells the host nothing of
+   where it came from, as the header's commit does. */
+function repoLink(text, url, className) {
+  const a = document.createElement('a');
+  a.className = 'repolink' + (className ? ' ' + className : '');
+  a.setAttribute('href', url);
+  a.setAttribute('target', '_blank');
+  a.setAttribute('rel', 'noopener noreferrer');
+  a.title = 'This file, at the site\'s commit, on the repository\'s host';
+  a.append(text, Object.assign(document.createElement('span'), { className: 'arr', textContent: '\u2197' }));
+  return a;
+}
+
+/* A site's Code tab: the node's source and its compiled SQL, as the manifest holds them (0180). The
+   answer comes from a bucket of the folder, so the tab says it is waiting while it loads. */
+function catalogCode(body, n) {
+  body.classList.add('cat-code');
+  body.append(Object.assign(document.createElement('p'), { className: 'muted code-wait', textContent: 'Loading the code\u2026' }));
+  api.get('/api/site/code?id=' + encodeURIComponent(n.id)).then((code) => {
+    // A click on another node or tab since the ask has drawn something else over this body.
+    if (body.isConnected) paintCode(body, code);
+  }, () => {
+    if (!body.isConnected) return;
+    body.textContent = '';
+    body.append(Object.assign(document.createElement('p'), { className: 'muted', textContent: 'The code of this node could not be loaded.' }));
+  });
+}
+
+/* The tab's head, the toggle, the file and Copy, and its body, a read-only editor or the note that
+   says why there is none. The view picked stays picked for the next node. */
+function paintCode(body, code) {
+  const view = S.codeView === 'compiled' ? 'compiled' : 'source';
+  const shown = siteCodeBody(code, view);
+  body.textContent = '';
+  const line = document.createElement('div');
+  line.className = 'chead';
+  const seg = document.createElement('div');
+  seg.className = 'seg';
+  seg.setAttribute('role', 'group');
+  seg.setAttribute('aria-label', 'Which SQL');
+  for (const [key, label] of [['source', 'Source'], ['compiled', 'Compiled']]) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'segbtn' + (view === key ? ' active' : '');
+    b.setAttribute('aria-pressed', String(view === key));
+    b.textContent = label;
+    b.addEventListener('click', () => {
+      if (S.codeView === key) return;
+      S.codeView = key;
+      paintCode(body, code);
+    });
+    seg.append(b);
+  }
+  line.append(seg);
+  if (code.url) line.append(repoLink(code.file, code.url, 'code-path'));
+  else line.append(Object.assign(document.createElement('span'), { className: 'code-path', textContent: code.file, title: 'The file this node is written in' }));
+  line.append(Object.assign(document.createElement('div'), { className: 'grow' }));
+  if (shown.text !== undefined) {
+    const copy = copyGlyph(shown.text, 'Copy the SQL');
+    // The label is not the whole text, which copyGlyph names it by.
+    copy.setAttribute('aria-label', 'Copy the SQL');
+    line.append(copy);
+  }
+  body.append(line);
+
+  if (shown.note) {
+    const box = document.createElement('div');
+    box.className = 'compiled-empty';
+    const p = document.createElement('p');
+    p.style.margin = '0';
+    p.append(shown.note);
+    box.append(p);
+    if (shown.run) {
+      const how = document.createElement('p');
+      how.style.margin = '6px 0 0';
+      how.append(shown.run[0], Object.assign(document.createElement('code'), { textContent: shown.run[1] }), shown.run[2]);
+      box.append(how);
+    }
+    body.append(box);
+    return;
+  }
+  const host = document.createElement('div');
+  host.className = 'cat-code-cm';
+  body.append(host);
+  const cm = CodeMirror(host, { lineNumbers: true, readOnly: true, mode: shown.mode, lineWrapping: false, value: shown.text });
+  setTimeout(() => cm.refresh(), 0);
 }
 
 function h3(label) {
@@ -18951,7 +19047,7 @@ function catalogColumns(body, n) {
   const typed = n.columns.length - untyped;
   if (!typed) {
     tools.append(Object.assign(document.createElement('span'), {
-      textContent: 'no types: run dbt compile --write-catalog to pull them from Snowflake',
+      textContent: siteNoTypes(S.site),
     }));
   }
   tools.append(sourceMenu());
@@ -22629,6 +22725,32 @@ function siteHashId(hash) {
 }
 
 function siteHash(id) { return '#' + encodeURIComponent(id); }
+
+/* What the Code tab shows of one answer of /api/site/code, for the view picked (0180): the text and
+   the CodeMirror mode it is read in, or a note saying why there is none. Source is Jinja over SQL,
+   compiled is SQL, and a Python model is plain text in both, no mode for it being loaded. A manifest
+   that has no compiled text for a node was written by dbt parse or the language server, and the
+   remedy is the step the pipeline runs before the site. Pure, for web/tests/sitepage.js. */
+function siteCodeBody(code, view) {
+  const sql = !code.lang || code.lang === 'sql';
+  if (view === 'compiled') {
+    if (typeof code.compiled !== 'string') {
+      return { note: 'dbt did not compile this node when it wrote the manifest.',
+        run: ['Run ', 'dbt-edith --site', ' after dbt build, dbt compile or dbt docs generate.'] };
+    }
+    return { text: code.compiled, mode: sql ? 'text/x-sql' : 'text/plain' };
+  }
+  if (!code.raw) return { note: 'The manifest holds no source for this node.' };
+  return { text: code.raw, mode: sql ? 'dbt-sql' : 'text/plain' };
+}
+
+/* The Columns tab's word when no column has a type: the server's page can pull them from Snowflake,
+   a site cannot, and says which step writes them for it. */
+function siteNoTypes(site) {
+  return site
+    ? 'no types: run dbt-edith --site after dbt docs generate or dbt compile --write-catalog'
+    : 'no types: run dbt compile --write-catalog to pull them from Snowflake';
+}
 
 function paintSiteStamp(meta) {
   const stamp = siteStamp(meta);

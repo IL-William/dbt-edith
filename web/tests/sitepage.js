@@ -30,3 +30,19 @@ check('its escapes are read', siteHashId('#' + encodeURIComponent('model.shop.ca
 check('no address names none', siteHashId(''), '');
 check('a bad escape names none', siteHashId('#%E0%A4%A'), '');
 check('a node is written as it is read', siteHashId(siteHash('model.shop.orders_😀')), 'model.shop.orders_😀');
+
+// The Code tab says what the manifest holds, and what it does not.
+var code = { raw: 'select * from {{ ref(\'a\') }}', compiled: 'select * from db.a', lang: 'sql', file: 'models/b.sql', url: null };
+check('the source is Jinja over SQL', siteCodeBody(code, 'source'), { text: code.raw, mode: 'dbt-sql' });
+check('the compiled text is SQL', siteCodeBody(code, 'compiled'), { text: 'select * from db.a', mode: 'text/x-sql' });
+check('a Python model is plain text, source and compiled', [siteCodeBody({ raw: 'x', compiled: 'y', lang: 'python' }, 'source').mode, siteCodeBody({ raw: 'x', compiled: 'y', lang: 'python' }, 'compiled').mode],
+  ['text/plain', 'text/plain']);
+check('a node dbt did not compile says so, and names the remedy', siteCodeBody({ raw: 'x', compiled: null, lang: 'sql' }, 'compiled'),
+  { note: 'dbt did not compile this node when it wrote the manifest.', run: ['Run ', 'dbt-edith --site', ' after dbt build, dbt compile or dbt docs generate.'] });
+check('its source is still shown', siteCodeBody({ raw: 'x', compiled: null, lang: 'sql' }, 'source').text, 'x');
+check('a compiled text that is empty is a text, not a missing one', siteCodeBody({ raw: 'x', compiled: '', lang: 'sql' }, 'compiled').text, '');
+check('no source is said, not shown as an empty editor', siteCodeBody({ raw: '', compiled: 'select 2', lang: 'sql' }, 'source'), { note: 'The manifest holds no source for this node.' });
+check('no language is SQL', siteCodeBody({ raw: 'x', compiled: 'y' }, 'compiled').mode, 'text/x-sql');
+check('the server\'s hint about types is unchanged', siteNoTypes(false), 'no types: run dbt compile --write-catalog to pull them from Snowflake');
+check('a site\'s says which step writes the catalog, and not Snowflake', [siteNoTypes(true).includes('dbt-edith --site'), siteNoTypes(true).includes('dbt docs generate'), siteNoTypes(true).includes('--write-catalog'), siteNoTypes(true).includes('Snowflake')],
+  [true, true, true, false]);
