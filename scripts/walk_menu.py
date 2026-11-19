@@ -23,7 +23,9 @@ real pointer, through the DevTools protocol, and checks what that menu does:
     Escape gives the focus back to the button;
   - the manifest pill's card (0157), held open by a click, has a poll rewrite
     its age in place, the same element, and keeps the focus on its Run dbt
-    parse button when a poll changes the answer and the card is drawn again.
+    parse button when a poll changes the answer and the card is drawn again;
+  - Edith's mark, on a page of nothing else at twice the pixels, asks the page
+    for no frame while it idles, as the compositor runs its loop alone.
 
 It runs as scripts/walk_tour.py does, whose copy of Jaffle Shop, server and
 DevTools client it borrows: it needs dbt to parse the copy, and Chrome, and
@@ -33,6 +35,7 @@ Exit 0 when the menu behaves, 1 when it does not, 2 when skipped.
 """
 
 import os
+import re
 import shutil
 import sys
 import tempfile
@@ -61,6 +64,12 @@ LOOKS_ON = """(() => { const f = window.fetch;
     const u = await r.json();
     return new Response(JSON.stringify(Object.assign(u, { off: false })), { status: r.status, headers: r.headers });
   }; })()"""
+
+# The rest loop of Edith's mark (app.css, .bm-idle) animates HTML elements by transform and
+# opacity so that the compositor runs it. Chrome does that for an SVG child only at an effective
+# zoom of 1, so a screen at 2x would ask the page for a frame sixty times a second, for ever.
+FRAME = "ProxyMain::BeginMainFrame"
+TRACE = ["devtools.timeline", "disabled-by-default-devtools.timeline", "cc", "blink", "toplevel", "viz"]
 
 CARD = "document.querySelector('.mcard')"
 # The card's Run button holds the focus: that and which key it carries.
@@ -360,6 +369,52 @@ class Walk:
         return self.failed
 
 
+def main_thread_frames(page, seconds):
+    """How many frames the page was asked for on its main thread over `seconds`."""
+    page.call("Tracing.start", transferMode="ReportEvents", traceConfig={"includedCategories": TRACE})
+    time.sleep(seconds)
+    page.id += 1
+    page._send({"id": page.id, "method": "Tracing.end", "params": {}})
+    events = []
+    while True:
+        m = page._recv()
+        if m.get("method") == "Tracing.dataCollected":
+            events += m["params"]["value"]
+        elif m.get("method") == "Tracing.tracingComplete":
+            break
+    mains = {(e["pid"], e["tid"]) for e in events
+             if e.get("ph") == "M" and e.get("name") == "thread_name" and e["args"]["name"] == "CrRendererMain"}
+    # "X" only: Chrome also writes two flow events for each frame, which would count it three times.
+    return sum(1 for e in events if e.get("name") == FRAME and e.get("ph") == "X" and (e.get("pid"), e.get("tid")) in mains)
+
+
+def guard_rest_loop(work, check):
+    """Edith's mark at rest, on a page of nothing but the mark and app.css (the whole app has
+    frames of its own: the terminal, the polls), at twice the pixels. It must ask the page for no
+    frame; with the dashes of the working loop running, which the page repaints, it must."""
+    brand = re.search(r'<button id="brand".*?</button>', (W.ROOT / "web" / "index.html").read_text(), re.S).group(0)
+    page_file = work / "mark.html"
+    page_file.write_text(f'<!doctype html><html data-theme="night"><head><meta charset="utf-8">'
+                         f'<link rel="stylesheet" href="{(W.ROOT / "web" / "app.css").as_uri()}"></head>'
+                         f'<body><header id="topbar">{brand}</header></body></html>')
+    (work / "guard").mkdir()
+    page = W.Page(work / "guard", 2)
+    try:
+        page.call("Page.navigate", url=page_file.as_uri())
+        page.until("document.readyState === 'complete'", "the page of the mark")
+        time.sleep(1)
+        running = page.js("document.getAnimations().filter((a) => a.playState === 'running').length")
+        check("on a page of the mark alone its rest loop runs: six animations", running == 6, str(running))
+        rest = main_thread_frames(page, 2)
+        check("at twice the pixels it asks the page for no frame", rest == 0, f"{rest} main-thread frames in 2 s")
+        page.js("document.getElementById('brand').classList.add('working', 'flowing')")
+        time.sleep(1)
+        busy = main_thread_frames(page, 1)
+        check("the trace does see frames: the working loop asks for them", busy > 0, f"{busy} in 1 s")
+    finally:
+        page.close()
+
+
 def main():
     os.environ.setdefault("DBT_SEND_ANONYMOUS_USAGE_STATS", "False")
     os.environ.setdefault("DO_NOT_TRACK", "1")
@@ -374,7 +429,11 @@ def main():
         page = None
         try:
             page = W.Page(work, 1)
-            failed = Walk(page).run(edith.url, project)
+            walk = Walk(page)
+            failed = walk.run(edith.url, project)
+            print("--- Edith's mark at rest ---")
+            guard_rest_loop(work, walk.check)
+            failed = walk.failed
         finally:
             if page:
                 page.close()

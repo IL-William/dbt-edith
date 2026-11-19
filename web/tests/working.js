@@ -166,7 +166,7 @@ check('and the run ending stops it', state(), 'still');
 
 print('\n--- the drawing ---');
 ok('the mark is in the brand button, before the name, with a packet and a box per arm',
-  /<button id="brand"[^>]*>[\s\S]*?<svg class="brandmk"[\s\S]*?<\/svg><b>/.test(html)
+  /<button id="brand"[^>]*>[\s\S]*?<svg class="brandmk"[\s\S]*?<\/svg>[\s\S]*?<\/span><b>/.test(html)
   && (html.match(/class="bm-pk b[012]"/g) || []).length === 3 && (html.match(/class="bm-to b[012]"/g) || []).length === 3);
 ok('the button keeps her name as its label, the i being dotless', /id="brand"[^>]*aria-label="Edith"/.test(html));
 ok('the packets run only while she works', /\.brand\.working \.bm-pk \{ animation: bm-pk/.test(css) && !/^\.bm-pk \{[^}]*animation/m.test(css));
@@ -178,6 +178,34 @@ ok('no box is lit while no packet runs, whatever its animation says',
   /\.brand\.working:not\(\.flowing\) \.bm-to \{ fill: var\(--fg-dim\) !important; \}/.test(css));
 ok('still under reduced motion, the arms in the accent instead',
   /@media \(prefers-reduced-motion: reduce\) \{\s*\.brand\.working \.bm-pk, \.brand\.working \.bm-to \{ animation: none; \}[\s\S]*?\.brand\.flowing \.bm-arm \{[^}]*stroke: var\(--accent\)/.test(css));
+ok('at rest one packet runs per arm on elements of their own: three dots and three glows, HTML over the drawing',
+  (html.match(/<i class="bm-ip i[012]"><\/i>/g) || []).length === 3 && (html.match(/<i class="bm-ig i[012]"><\/i>/g) || []).length === 3
+  && /<\/svg><span class="bm-idle" aria-hidden="true">(<i class="bm-i[pg] i[012]"><\/i>){6}<\/span><\/span><b>/.test(html)
+  && /<span class="brandw"><svg class="brandmk"/.test(html) && !/bm-i[pg]/.test(html.slice(html.indexOf('<svg class="brandmk"'), html.indexOf('</svg>', html.indexOf('<svg class="brandmk"')))));
+ok('the rest elements are not b0 to b2, which .brand.working .b1 would give another delay',
+  !/class="bm-i[pg][^"]* b[012]/.test(html));
+var idlePk = /^\.bm-ip \{([^}]*)\}/m.exec(css), idleGlow = /^\.bm-ig \{([^}]*)\}/m.exec(css);
+ok('the rest loop runs without .working: its animations are on the elements, a turn of 5.4 s',
+  !!idlePk && !!idleGlow && /animation: bm-idle-pk0 5\.4s/.test(idlePk[1]) && /animation: bm-idle-glow 5\.4s/.test(idleGlow[1]));
+// Only a Chrome trace shows that no frame is asked of the page (walk_menu.py does that); this keeps the
+// properties the compositor can run, and keeps the elements out of the SVG, where it cannot at 2x.
+ok('the rest loop animates only transform and opacity, on HTML elements',
+  /@keyframes bm-idle-pk0 \{[^@]*transform: translate\([^@]*opacity:/.test(css) && /@keyframes bm-idle-glow \{[^@]*opacity/.test(css)
+  && !/@keyframes bm-idle-[^{]*\{[^@]*(stroke|fill|\bleft\b|\btop\b|\bwidth\b)/.test(css));
+ok('the arms take a third of the turn each, packets and glows in step',
+  /\.bm-ip\.i1, \.bm-ig\.i1 \{ animation-delay: -3\.6s; \}/.test(css) && /\.bm-ip\.i2, \.bm-ig\.i2 \{ animation-delay: -1\.8s; \}/.test(css)
+  && /@keyframes bm-idle-pk1 \{[^@]*22\.2%, 100% \{/.test(css));
+ok('the glow is gentler than the working loop: an overlay peaking at .55 where the working box turns fully accent',
+  /@keyframes bm-idle-glow \{[^@]*22\.2% \{ opacity: \.55; \}/.test(css));
+ok('the dot is out of sight in the source box and again at the target one',
+  /@keyframes bm-idle-pk0 \{\s*0% \{[^}]*opacity: 0;[^}]*\}[^@]*22\.2%, 100% \{[^}]*opacity: 0;/.test(css));
+ok('the rest loop fades out while she works and back after, over the same time as the packets',
+  new RegExp('\\.bm-idle \\{[^}]*transition: opacity ' + String(WORK_FADE / 1000).replace(/^0\./, '\\.') + 's').test(css)
+  && /\.brand\.flowing \.bm-idle \{ opacity: 0; \}/.test(css));
+ok('the rest loop stands still while she works, to be resumed where it was',
+  /\.brand\.flowing \.bm-ip, \.brand\.flowing \.bm-ig \{ animation-play-state: paused; \}/.test(css));
+ok('the rest loop is not shown under reduced motion, and its animations stopped, not just hidden, by a selector the delay rules do not outrank',
+  /@media \(prefers-reduced-motion: reduce\) \{\s*\.brand\.working \.bm-pk[^@]*?\.bm-idle \{ display: none; \}\s*(?:\/\*[^*]*\*\/\s*)?\.brand \.bm-idle \.bm-ip, \.brand \.bm-idle \.bm-ig \{ animation: none; \}/.test(css));
 ok('the fade in the stylesheet is the one the page waits for',
   new RegExp('\\.bm-pk \\{[^}]*transition: opacity ' + String(WORK_FADE / 1000).replace(/^0\./, '\\.') + 's').test(css));
 

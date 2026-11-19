@@ -1106,11 +1106,14 @@ kbd {
   border-radius: .04em; background: var(--accent);
 }
 /* Edith's mark, the cut of the tab's icon: thicker arms and filled boxes than
-   the large drawing, whose outlines blur at 16 px. While she waits on
-   something slower than a click (markWorking() in app.js) a packet runs along
-   each arm, a third of a loop apart, and the box it reaches lights up; it fades
-   when the work ends rather than stopping halfway along an arm. */
-.brandmk { display: block; flex: 0 0 auto; }
+   the large drawing, whose outlines blur at 16 px. It moves at two paces, each
+   saying something. At rest (.bm-idle) one packet at a time crosses an arm, the
+   box it reaches glowing softly: she is there. While she waits on something
+   slower than a click (markWorking() in app.js) a packet runs along each arm, a
+   third of a loop apart, and the box it reaches lights up in the accent: she is
+   waiting on something. The working loop fades when the work ends rather than
+   stopping halfway along an arm. */
+.brandmk { display: block; }
 .bm-from { fill: var(--accent); }
 .bm-to { fill: var(--fg-dim); }
 .bm-arm { fill: none; stroke: var(--fg-dim); stroke-width: 5; stroke-linecap: round; transition: opacity .3s; }
@@ -1133,15 +1136,86 @@ kbd {
 .brand.working .b2 { animation-delay: -1.2s; }
 .brand.flowing .bm-pk { opacity: 1; }
 .brand.flowing .bm-arm { opacity: .45; }
+/* The rest loop lives on elements of its own (.bm-idle, drawn in index.html)
+   that nothing ever restarts: the working loop starts and stops by class, and
+   a packet sharing its elements would jump when it did. The two groups cross-fade
+   instead, and the rest loop is where it should be when it comes back (it is
+   held still while the working one runs, so it costs nothing then). A packet and
+   the glow of the box it reaches share one 5.4 s turn and one delay per arm, so
+   they stay in step: each arm has a third of it, the packet crossing in 1.2 s
+   (22.2%) and the box glowing as it lands. The delays are negative so no element
+   waits in its first frame. Their own classes (i0 to i2), not b0 to b2:
+   .brand.working .b1 would reach them and set their delay.
+   They are HTML elements over the drawing, moved by transform and faded by
+   opacity, and not parts of the SVG: Chrome runs those two on the compositor,
+   with no work for the page per frame, but only for an HTML element, and for an
+   SVG child only at an effective zoom of 1. On a screen at 2x or a page zoomed
+   to 125% the same animation on an SVG child is repainted by the page on every
+   frame, about 30 ms of main-thread work a second for ever at rest. Sizes are
+   the drawing's in CSS pixels (a unit of its 64 is a quarter pixel). The dot
+   cannot slide under the boxes as the working dash does, so its opacity is 0
+   while it is in the source box and again as it reaches the target one. */
+.brandw { position: relative; display: block; flex: 0 0 auto; width: 16px; height: 16px; }
+.bm-idle { position: absolute; inset: 0; pointer-events: none; transition: opacity .3s; }
+.bm-ip, .bm-ig { position: absolute; left: 0; top: 0; background: var(--accent); opacity: 0; }
+.bm-ip { width: 1.5px; height: 1.5px; border-radius: 50%; animation: bm-idle-pk0 5.4s linear infinite; }
+.bm-ip.i1 { animation-name: bm-idle-pk1; }
+.bm-ip.i2 { animation-name: bm-idle-pk2; }
+.bm-ig { width: 5px; height: 3px; border-radius: .875px; animation: bm-idle-glow 5.4s ease-in-out infinite; }
+/* Placed by a fixed transform, not by left and top: at 1x Chrome rounds an element's
+   background to whole pixels by its box, which put the glow half a pixel off its SVG
+   box, and a transform is placed as the SVG is. Only the opacity animates. */
+.bm-ig.i0 { transform: translate(10.5px, 1px); }
+.bm-ig.i1 { transform: translate(10.5px, 6.5px); }
+.bm-ig.i2 { transform: translate(10.5px, 12px); }
+.bm-ip.i1, .bm-ig.i1 { animation-delay: -3.6s; }
+.bm-ip.i2, .bm-ig.i2 { animation-delay: -1.8s; }
+.brand.flowing .bm-idle { opacity: 0; }
+.brand.flowing .bm-ip, .brand.flowing .bm-ig { animation-play-state: paused; }
+@keyframes bm-idle-pk0 {
+  0% { transform: translate(4px, 7.25px); opacity: 0; }
+  3.17% { transform: translate(4.5px, 7.25px); opacity: 0; }
+  6.34% { transform: translate(5.85px, 6.675px); opacity: 0.8; }
+  9.51% { transform: translate(6.75px, 5.325px); opacity: 0.8; }
+  12.69% { transform: translate(7.5px, 3.675px); opacity: 0.8; }
+  15.86% { transform: translate(8.4px, 2.325px); opacity: 0.8; }
+  19.03% { transform: translate(9.75px, 1.75px); opacity: 0; }
+  22.2%, 100% { transform: translate(10.5px, 1.75px); opacity: 0; }
+}
+@keyframes bm-idle-pk1 {
+  0% { transform: translate(4px, 7.25px); opacity: 0; }
+  3.17% { transform: translate(4.5px, 7.25px); opacity: 0; }
+  6.34% { transform: translate(5.55px, 7.25px); opacity: 0.8; }
+  9.51% { transform: translate(6.6px, 7.25px); opacity: 0.8; }
+  12.69% { transform: translate(7.65px, 7.25px); opacity: 0.8; }
+  15.86% { transform: translate(8.7px, 7.25px); opacity: 0.8; }
+  19.03% { transform: translate(9.75px, 7.25px); opacity: 0; }
+  22.2%, 100% { transform: translate(10.5px, 7.25px); opacity: 0; }
+}
+@keyframes bm-idle-pk2 {
+  0% { transform: translate(4px, 7.25px); opacity: 0; }
+  3.17% { transform: translate(4.5px, 7.25px); opacity: 0; }
+  6.34% { transform: translate(5.85px, 7.825px); opacity: 0.8; }
+  9.51% { transform: translate(6.75px, 9.175px); opacity: 0.8; }
+  12.69% { transform: translate(7.5px, 10.825px); opacity: 0.8; }
+  15.86% { transform: translate(8.4px, 12.175px); opacity: 0.8; }
+  19.03% { transform: translate(9.75px, 12.75px); opacity: 0; }
+  22.2%, 100% { transform: translate(10.5px, 12.75px); opacity: 0; }
+}
+@keyframes bm-idle-glow { 0%, 18% { opacity: 0; } 22.2% { opacity: .55; } 40%, 100% { opacity: 0; } }
 @keyframes bm-pk { from { stroke-dashoffset: .3; } to { stroke-dashoffset: -1; } }
 @keyframes bm-lit { 0%, 66% { fill: var(--fg-dim); } 80% { fill: var(--accent); } 100% { fill: var(--fg-dim); } }
 /* Still, it says the same by colour: the arms in the accent until the work ends.
    Unlike the column wait, this is never the only sign: what was asked for shows
-   its own. */
+   its own. At rest nothing moves, and the rest loop is not shown at all, so the
+   mark is the plain one. */
 @media (prefers-reduced-motion: reduce) {
   .brand.working .bm-pk, .brand.working .bm-to { animation: none; }
   .brand.flowing .bm-pk { opacity: 0; }
   .brand.flowing .bm-arm { opacity: 1; stroke: var(--accent); }
+  .bm-idle { display: none; }
+  /* As specific as .bm-ip.i1, which would otherwise keep its animation-name. */
+  .brand .bm-idle .bm-ip, .brand .bm-idle .bm-ig { animation: none; }
 }
 /* A newer release is out: a badge in the corner of the name, inside the button
    so the divider after it stays clear, the pill in the status bar saying which.

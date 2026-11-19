@@ -54,14 +54,16 @@ check('shapeOf wants both properties, naming the same shape', [
 ], ['ok', '', '', 'bad']);
 
 print('--- nothing is a round marker ---');
-// A round shape stays where the shape is the control's, never a meaning.
+// A round shape is never a meaning. The allowlist holds each exemption with its reason: a control's
+// shape, or a light travelling in a drawing.
 var ROUND = {
   '.envmenu button.switch .knob, .sgroup button.switch .knob': 'where it sits on its track is the state',
   '.rb': 'a radio\'s ring is the control, picked or not',
   '.brand.newer::before': 'the badge\'s ground: the arrow on it, masked in ::after, is the shape that says a release is out',
+  '.bm-ip': 'a packet crossing an arm of Edith\'s mark is a light travelling in the drawing, round as the working loop\'s dash is, and it marks nothing',
 };
 var round = rules.filter(function (r) { return /border-radius:\s*(50%|100%|\d{3,}px)/.test(r.body); });
-check('every round rule of app.css is a control on the allowlist, each with its reason',
+check('every round rule of app.css is on the allowlist, which holds each exemption with its reason',
   round.filter(function (r) { return !ROUND[r.sel]; }).map(function (r) { return r.sel; }), []);
 check('and each allowed one is still there to be round',
   Object.keys(ROUND).filter(function (sel) { return !round.some(function (r) { return r.sel === sel; }); }), []);

@@ -214,7 +214,9 @@ function keyHeaders() {
 
 /* The requests that wait on something slower than the server's own reading:
    the manifest read again, collin, Snowflake, git over the network, GitHub's
-   releases. While one is out past WORK_DELAY, Edith's mark moves. Picked by
+   releases. While one is out past WORK_DELAY, Edith's mark moves fast, where
+   at rest it only drifts: the slow loop says she is there, this one that she is
+   waiting on something. Picked by
    route rather than by time alone, so a search that is slow on a big project
    or a poll nobody asked for never sets her going. */
 const WORK_ROUTES = ['/api/reload', '/api/collineage', '/api/collin/compare', '/api/snowflake/',

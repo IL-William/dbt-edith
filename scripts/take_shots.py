@@ -627,6 +627,16 @@ class Shots:
         self.edith = edith
         page = self.page
         page.call("Emulation.setDeviceMetricsOverride", width=WIDTH, height=HEIGHT, deviceScaleFactor=self.scale, mobile=False)
+        # Every picture shows the top bar, and Edith's mark never rests: its
+        # loop would be caught at whatever phase the shot happens at, and the
+        # same page would give a different picture each time. So the rest loop
+        # is hidden and stopped, which is how the mark looked before it moved and what
+        # every committed picture shows; a page loaded again keeps it so.
+        page.call("Page.addScriptToEvaluateOnNewDocument", source="""document.addEventListener('DOMContentLoaded', () => {
+          const s = document.createElement('style');
+          s.textContent = '.bm-idle { display: none !important; } .bm-ip, .bm-ig { animation: none !important; }';
+          document.head.appendChild(s);
+        })""")
         page.call("Page.navigate", url=edith.url)
         self.front()
         self.until("document.querySelector('#status-counts').textContent !== ''", "the page to load", 30)
