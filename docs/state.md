@@ -3549,6 +3549,13 @@ of its own, and each panel updates the tour, its page under
       row in Edith's menu (0176); accepted.
     - Releases before 2.23.0 have no `virustotal.json`; the README's badge
       shows the scan at a release's publication, never a new scan (0174).
+60. **What the 2.25.0 changes to Edith's mark left (0181, the rest loop).**
+    - The badge draws the Updates arrow through the shared `--m-newer` mask,
+      a little thinner than the picture it was chosen from; a thicker arrow
+      on the badge waits for someone to ask.
+    - The rest loop's compositor cost was measured in headless Chrome with
+      software compositing only; what it costs on a real graphics card is not
+      measured, and `.bm-idle { display: none }` is the one line that stops it.
 
 Left by the pull requests of 2026-10-14, each a known limit written in
 its pull request, unranked:
