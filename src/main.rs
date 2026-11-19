@@ -150,8 +150,8 @@ struct Args {
     #[arg(long, value_enum, value_name = "TOOL", requires = "column", conflicts_with = "column_lineage")]
     column_tool: Option<ls_column::Tool>,
 
-    /// Run collin over the manifest first, and answer --column from the cache it writes beside the manifest
-    #[arg(long, requires = "column", conflicts_with_all = ["column_lineage", "column_tool"])]
+    /// Run collin over the manifest first, and answer --column from the cache it writes beside the manifest, or write --site's column lineage from it
+    #[arg(long, conflicts_with_all = ["column_lineage", "column_tool"])]
     run_collin: bool,
 
     /// The folder dbt compiled into, one folder per package, that --run-collin reads a model's SQL from when the manifest has none (default: compiled/ beside the manifest; needs collin 0.9.0)
@@ -190,7 +190,7 @@ struct Args {
     #[arg(long, conflicts_with_all = ["select", "selector", "column", "describe", "overview", "job", "job_order"])]
     job_coverage: bool,
 
-    /// Write a static documentation site from the manifest, and the catalog when there is one, into DIR (default: PROJECT/target/edith-site), and exit, without serving. DIR must be inside the project and empty, or one an earlier run wrote. The site opens from file:// and any static host, reads no .env and reaches no network. Not over MCP
+    /// Write a static documentation site from the manifest, and the catalog when there is one, into DIR (default: PROJECT/target/edith-site), and exit, without serving. DIR must be inside the project and empty, or one an earlier run wrote. The site opens from file:// and any static host, reads no .env and reaches no network. It carries the column lineage collin wrote beside the manifest, and --run-collin writes it first; --site alone never starts collin. Not over MCP
     #[arg(
         long,
         value_name = "DIR",
@@ -200,7 +200,7 @@ struct Args {
         value_parser = clap::builder::TypedValueParser::map(clap::builder::OsStringValueParser::new(), PathBuf::from),
         conflicts_with_all = [
             "port", "column_lineage", "shell", "no_open", "no_update_check", "select", "exclude", "selector", "column", "up", "down",
-            "stop_at", "indirect", "rules", "casts", "column_tool", "run_collin", "compiled", "describe", "sql", "compiled_sql", "columns", "overview", "job", "job_order", "job_coverage", "count_by", "depth", "output", "against", "with",
+            "stop_at", "indirect", "rules", "casts", "column_tool", "describe", "sql", "compiled_sql", "columns", "overview", "job", "job_order", "job_coverage", "count_by", "depth", "output", "against", "with",
         ]
     )]
     site: Option<PathBuf>,
@@ -283,7 +283,7 @@ fn stray(args: &Args) -> Option<String> {
         (args.rules, "--rules", "--column or --describe", args.column.is_some() || !args.describe.is_empty()),
         (args.casts, "--casts", "--column", args.column.is_some()),
         (args.column_tool.is_some(), "--column-tool", "--column", args.column.is_some()),
-        (args.run_collin, "--run-collin", "--column", args.column.is_some()),
+        (args.run_collin, "--run-collin", "--column or --site", args.column.is_some() || args.site.is_some()),
         (args.compiled.is_some(), "--compiled", "--run-collin", args.run_collin),
         // A cache may be named for the page as for `--column`; the two modes
         // that read none would drop it without a word.
@@ -377,6 +377,7 @@ fn question_of(args: &Args) -> Option<Question> {
             environment: args.environment.clone(),
             commit: args.commit.clone(),
             repo_url: args.repo_url.clone(),
+            produce: args.run_collin.then(|| ls_column::Produce { catalog: args.catalog.clone(), compiled: args.compiled.clone() }),
         }));
     }
     match (&args.select, &args.selector) {
@@ -795,7 +796,8 @@ mod tests {
             ("--job-order --rules", "--rules goes with --column or --describe"),
             ("--describe orders --casts", "--casts goes with --column"),
             ("--overview --casts", "--casts goes with --column"),
-            ("--describe orders --run-collin", "--run-collin goes with --column"),
+            ("--describe orders --run-collin", "--run-collin goes with --column or --site"),
+            ("--run-collin", "--run-collin goes with --column or --site"),
             ("--select orders --down 1", "--down goes with --column"),
             ("--overview --stop-at window", "--stop-at goes with --column"),
             ("--column a.b --column-lineage c.json --compiled x", "--compiled goes with --run-collin"),
@@ -862,11 +864,36 @@ mod tests {
     }
 
     #[test]
+    fn site_runs_collin_first_only_when_asked() {
+        let ask = |line: &str| match question_of(&asked(line)) {
+            Some(Question::Site(ask)) => ask,
+            _ => panic!("{line} was not read as --site"),
+        };
+        // Alone it only reads a cache that is there: collin is never started (0182).
+        assert!(ask("--site").produce.is_none());
+        let run = ask("--site docs_site --run-collin --compiled sql --catalog c.json");
+        let produce = run.produce.expect("--run-collin asks for the run");
+        assert_eq!((produce.compiled, produce.catalog), (Some(PathBuf::from("sql")), Some(PathBuf::from("c.json"))));
+        assert!(ask("--site --run-collin").produce.is_some_and(|p| p.compiled.is_none() && p.catalog.is_none()));
+        // It goes with --site as it goes with --column, and with nothing else.
+        assert_eq!(stray(&asked("--site --run-collin")), None);
+        assert_eq!(stray(&asked("--site --run-collin --compiled sql")), None);
+        // A folder to compile from means a run, as it does for --column.
+        assert!(Args::try_parse_from(["dbt-edith", "--site", "--compiled", "sql"]).is_err());
+        // What conflicts with --site still does: a tool, a cache or a question of another kind.
+        for line in
+            ["--site --run-collin --column-tool collin", "--site --run-collin --column-lineage c.json", "--site --run-collin --column a.b"]
+        {
+            assert!(Args::try_parse_from(std::iter::once("dbt-edith").chain(line.split_whitespace())).is_err(), "{line}");
+        }
+    }
+
+    #[test]
     fn site_is_refused_beside_the_page_and_every_other_question() {
         for flag in [
             "--port 4321", "--no-open", "--no-update-check", "--shell bash", "--column-lineage c.json", "-s orders", "--selector nightly",
             "--column a.b", "--describe orders", "--overview", "--job jaffle_daily", "--job-order", "--job-coverage", "--output json",
-            "--against ../legacy", "--mcp", "--skill",
+            "--against ../legacy", "--mcp", "--skill", "--column-tool collin", "--stop-at window",
         ] {
             let line = format!("--site {flag}");
             let why = match Args::try_parse_from(std::iter::once("dbt-edith").chain(line.split_whitespace())) {

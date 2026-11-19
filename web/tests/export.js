@@ -264,6 +264,13 @@ check('column mode, and how far it reaches', colFacts.lines[0], 'amount · 2 col
 // A synthetic cache looks exactly like a real one apart from its source.
 ok('column mode names the cache it was drawn from', colFacts.lines[1].indexOf('column lineage from snowflake') >= 0);
 ok('no other mode does', facts.lines[1].indexOf('column lineage') < 0);
+// A site's cache older than its manifest says so in the file that leaves with the picture (0182).
+var colSub = { mode: 'column', focus: 0, focus_column: 'amount', truncated: false, edges: [[1, 0]],
+  nodes: [{ name: 'amount', sub: 'fct_orders  ·  number', depth: 0 }, { name: 'amount', sub: 'stg_payments', depth: -1 }] };
+ok('a cache older than the manifest says so in the line that names it', exportFacts(colSub, Object.assign({}, ctx, { cllStale: true })).lines[1]
+  .indexOf('column lineage from snowflake, older than the manifest') >= 0);
+ok('a current one says nothing of its age', exportFacts(colSub, ctx).lines[1].indexOf('older than the manifest') < 0);
+ok('and no other mode carries the word', exportFacts(capped, Object.assign({}, ctx, { cllStale: true })).lines.join('\n').indexOf('older than the manifest') < 0);
 var leaky = Object.assign({}, ctx, { manifest_path: '/Users/someone/p/target/manifest.json',
   root: '/Users/someone/p', sandbox: 'dev_someone', cll_file: '/Users/someone/p/target/column_lineage.json' });
 ok('a field outside the list never reaches the file', JSON.stringify(exportFacts(capped, leaky)).indexOf('someone') < 0);

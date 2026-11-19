@@ -5573,6 +5573,7 @@ async function focusNode(id, { open = false, keepDepth = false } = {}) {
     $('#lineage-empty').classList.add('hidden');
     const drawn = Lineage.render(sub, canvasOptions());
     $('#lineage-status').textContent = canvasStatus(sub, drawn);
+    if (S.site) paintSiteStatus(sub);
     landDepth('m|' + id, sub);
     paintLegend(sub);
     paintTestsCount(sub);
@@ -5659,6 +5660,11 @@ async function focusColumn(id, column) {
   const key = colAskKey(id, column, up, down, S.colCut, S.colIndirect);
   const raise = colRaiseFor(S.colRaise, key);
   if (!raise) S.colRaise = null;
+  // A site's column lineage is one file, loaded when the first column is asked about, which can take a moment.
+  if (S.site && !EdithSite.cllHeld()) {
+    $('#lineage-status').textContent = 'Loading the column lineage\u2026';
+    $('#lineage-status').title = '';
+  }
   const ask = ++S.colDraw;
   try {
     const sub = await api.get(
@@ -5673,6 +5679,7 @@ async function focusColumn(id, column) {
     $('#lineage-empty').classList.add('hidden');
     const drawn = Lineage.render(sub, canvasOptions());
     $('#lineage-status').textContent = canvasStatus(sub, drawn);
+    if (S.site) paintSiteStatus(sub);
     landDepth(depthKey, sub);
     paintColCap(colCapOffer(sub, raise), (max) => {
       S.colRaise = { key, max };
@@ -5899,6 +5906,13 @@ function openSelCard(id) {
 function catalogFor(id) {
   const ask = ++S.cardAsk;
   return nodeDetail({ id }).then((n) => { if (ask === S.cardAsk) renderCatalog(n); });
+}
+
+/* A site's way to a model's SQL: its Catalog, on the Code tab (0182). */
+function openCodeOf(id) {
+  S.catTab = 'code';
+  showDock('catalog');
+  return catalogFor(id).catch(() => {});
 }
 
 /* Closed, it is emptied too: opened again on another box, it would show the
@@ -6251,6 +6265,15 @@ function selectStatus(sub, folded = 0) {
   if (!drawn && context && !sub.truncated) return [`${context} for context`, edges, tests].filter(Boolean).join(' · ');
   const tail = [context && `${context} for context`, tests].filter(Boolean).map((s) => ` · ${s}`).join('');
   return `${head} · ${edges}${parts ? testsStatus(parts.tests, folded) : foldedStatus(folded)}${tail}`;
+}
+
+/* A site's line under the canvas, once written: the word that says its column lineage is older than the manifest
+   after a column canvas, and the sentence as the line's title, which a model canvas clears (0182). */
+function paintSiteStatus(sub) {
+  const el = $('#lineage-status');
+  const tail = sub.mode === 'column' ? siteStaleTail(S.meta) : '';
+  if (tail) el.textContent += tail;
+  el.title = tail ? siteStaleSaid() : '';
 }
 
 /* The line under the canvas, whichever mode drew it. One function rather than
@@ -7117,6 +7140,7 @@ function fillSourceMenu(menu, done, { cards = false } = {}) {
 /* One request switches the graph's column lineage and whether a click fetches
    from Snowflake, so the two can never disagree (0031). */
 async function switchLineage(body) {
+  if (S.site) return;
   try {
     applyInfo(await api.send('/api/collineage/source', 'POST', body));
     const label = lineagePickLabel(S.meta, S.cllTool, sidecarOn(), S.sidecar, S.collin);
@@ -7137,6 +7161,7 @@ function installCollin(from) {
 /* Runs collin and waits for it: the Regenerate button, and a column clicked
    while its cache is behind the manifest. True when the run succeeded. */
 async function regenerateCollin() {
+  if (S.site) return false;
   // Painted here rather than through paintCollin: this waits for the run, so
   // nothing needs to poll for its end.
   S.collin = Object.assign({}, S.collin, { state: 'running', error: '' });
@@ -9593,7 +9618,7 @@ function exportFacts(sub, ctx) {
     ctx.dbtVersion && `dbt ${ctx.dbtVersion}`,
     ctx.manifestAt && `manifest written ${ctx.manifestAt}`,
     ctx.branch && `branch ${ctx.branch}${ctx.sha ? ` at ${ctx.sha}` : ''}`,
-    sub.mode === 'column' && ctx.cllSource && `column lineage from ${ctx.cllSource}`,
+    sub.mode === 'column' && ctx.cllSource && `column lineage from ${ctx.cllSource}${ctx.cllStale ? ', older than the manifest' : ''}`,
   ].filter(Boolean).join('  ·  ');
   const when = [
     `Exported ${ctx.exportedAt}${ctx.version ? ` with dbt-edith ${ctx.version}` : ''}.`,
@@ -10036,6 +10061,8 @@ function exportLineage(day = localDay(new Date())) {
     branch: (S.git && S.git.repo && S.git.branch) || '',
     sha: (fresh && fresh.head && fresh.head.sha) || '',
     cllSource: meta.cll_source || '',
+    // A site's cache older than the manifest says so in the file that leaves with the picture (0182).
+    cllStale: !!(S.site && meta.cll && meta.cll_stale),
     fresh,
     version: S.version,
     exportedAt: stamp(Math.floor(Date.now() / 1000)),
@@ -15084,11 +15111,16 @@ function fillPartialCard(el, n) {
     a.addEventListener('click', () => { closeHoverCard(); run(); });
     return a;
   };
-  row.append(
-    link('open the file', 'Open the model and find these names', () => openFileOnNames(n.file, n.partial)),
-    '  ·  ',
-    link('compiled SQL', 'Open the compiled SQL of the model and find these names', () => openCompiledOnNames(splitColId(n.id).node, n.partial)),
-  );
+  // A site has neither the editor nor the compiled pane: the model's SQL is its Code tab, source and compiled (0182).
+  if (S.site) {
+    row.append(link('open the code', 'Open the model\'s Code tab, its source and its compiled SQL', () => openCodeOf(splitColId(n.id).node)));
+  } else {
+    row.append(
+      link('open the file', 'Open the model and find these names', () => openFileOnNames(n.file, n.partial)),
+      '  ·  ',
+      link('compiled SQL', 'Open the compiled SQL of the model and find these names', () => openCompiledOnNames(splitColId(n.id).node, n.partial)),
+    );
+  }
   el.append(row);
 }
 
@@ -19050,7 +19082,8 @@ function catalogColumns(body, n) {
       textContent: siteNoTypes(S.site),
     }));
   }
-  tools.append(sourceMenu());
+  // A site's column lineage is the file it was written with: there is no other to pick (0182).
+  if (!S.site) tools.append(sourceMenu());
   // This table can only ever show the tests that name a column. Saying how many
   // it cannot show is what stops it from reading as the whole story.
   const onModel = splitTests(n.tests).model.length;
@@ -19063,7 +19096,7 @@ function catalogColumns(body, n) {
     tools.appendChild(span);
   }
   const hint = columnsHint(S.sidecar, n.columns.some((c) => c.up || c.down))
-    || collinHint(S.cllTool, S.collin, S.meta && S.meta.cll_kinds);
+    || (S.site ? siteCllHint(S.meta) : collinHint(S.cllTool, S.collin, S.meta && S.meta.cll_kinds));
   if (hint) {
     const span = document.createElement('span');
     span.className = 'colhint';
@@ -22584,7 +22617,10 @@ async function boot() {
     onHoverOut: hoverLeave,
     onHoverClose: closeHoverCard,
     // A fold chip redrew the canvas in place: only the line under it changes.
-    onRefold: (d, drawn) => { $('#lineage-status').textContent = canvasStatus(d, drawn); },
+    onRefold: (d, drawn) => {
+      $('#lineage-status').textContent = canvasStatus(d, drawn);
+      if (S.site) paintSiteStatus(d);
+    },
     onFound: paintGraphFind,
     onOpen: (n) => {
       const { node: nodeId, column } = splitColId(n.id);
@@ -22752,6 +22788,30 @@ function siteNoTypes(site) {
     : 'no types: run dbt compile --write-catalog to pull them from Snowflake';
 }
 
+/* What a site says when the column lineage it carries is older than the manifest, which it was written from
+   (0182): the whole sentence, and the short word that goes on the status line. A cache is compared with the
+   manifest by file time when the site is written, which a checkout resets, so it is said as what it is, a
+   possibility. Pure, for web/tests/sitepage.js. */
+function siteStaleSaid() {
+  return 'collin\'s column lineage is older than the manifest: it may not match this commit. dbt-edith --site --run-collin writes it again.';
+}
+
+function siteStaleTail(meta) {
+  return meta && meta.cll && meta.cll_stale ? ' \u00b7 column lineage older than the manifest' : '';
+}
+
+/* What the Columns tab says beside the table of a site that carries column lineage: that it is older than the
+   manifest, else, for collin's, how far to trust it, as a server's page says it while collin is the tool.
+   Nothing without a cache, and nothing to say of another tool's. */
+function siteCllHint(meta) {
+  if (!meta || !meta.cll) return null;
+  if (meta.cll_stale) return { text: 'older than the manifest: it may not match this commit', tone: 'stale', title: siteStaleSaid() };
+  if (meta.cll_tool !== 'collin') return null;
+  const { inferred, total } = inferredShare(meta.cll_kinds);
+  const share = inferred ? Math.max(1, Math.round((100 * inferred) / total)) : 0;
+  return { text: share ? `alpha, can be wrong \u00b7 ${share}% guessed by name` : 'alpha, can be wrong', tone: 'alpha', title: collinCaveat(meta.cll_kinds, null) };
+}
+
 function paintSiteStamp(meta) {
   const stamp = siteStamp(meta);
   const el = $('#site-stamp');
@@ -22788,6 +22848,11 @@ function paintSiteStamp(meta) {
 function applySiteMeta(meta) {
   S.meta = Object.assign({ counts: {}, sandbox: '' }, meta, { manifest_mtime: 0 });
   S.version = meta.edith || '';
+  // The column lineage a site carries is collin's cache as written, by its bare file name. There is no menu to
+  // pick another and no collin, Snowflake or features to ask about: a column goes straight to its canvas (0182).
+  S.cllTool = meta.cll ? (meta.cll_tool || '') : '';
+  S.cllActive = meta.cll ? (meta.cll_file || '') : '';
+  S.cllSources = [];
   document.title = siteTitle(meta);
   $('#project').textContent = meta.project || '(no project)';
   $('#project').title = meta.project || '';

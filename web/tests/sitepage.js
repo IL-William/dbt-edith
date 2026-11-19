@@ -2,6 +2,9 @@
 // Run from the repository root: jsc web/tests/sitepage.js
 var src = read('web/app.js');
 eval(src.slice(src.indexOf('function siteStamp'), src.indexOf('function paintSiteStamp')));
+// What the Columns hint of a site reads of the cache: the share of its edges collin matched by name.
+eval(src.slice(src.indexOf('function collinRead('), src.indexOf('function collinModelNote')));
+eval(src.slice(src.indexOf('function inferredShare'), src.indexOf('/* How old a cache is')));
 
 function check(label, got, want) {
   var g = JSON.stringify(got), w = JSON.stringify(want);
@@ -46,3 +49,20 @@ check('no language is SQL', siteCodeBody({ raw: 'x', compiled: 'y' }, 'compiled'
 check('the server\'s hint about types is unchanged', siteNoTypes(false), 'no types: run dbt compile --write-catalog to pull them from Snowflake');
 check('a site\'s says which step writes the catalog, and not Snowflake', [siteNoTypes(true).includes('dbt-edith --site'), siteNoTypes(true).includes('dbt docs generate'), siteNoTypes(true).includes('--write-catalog'), siteNoTypes(true).includes('Snowflake')],
   [true, true, true, false]);
+
+// The column lineage a site carries: older than the manifest, said in the Columns tab and on the status line, and nowhere else.
+var kinds = [{ kind: 'passthrough', edges: 6 }, { kind: 'inferred', edges: 2 }];
+var fresh = { cll: true, cll_tool: 'collin', cll_stale: false, cll_kinds: kinds };
+check('no column lineage, nothing to say', [siteCllHint({}), siteCllHint({ cll: false }), siteCllHint(null)], [null, null, null]);
+check('a cache older than the manifest says so, in its own tone', siteCllHint(Object.assign({}, fresh, { cll_stale: true })),
+  { text: 'older than the manifest: it may not match this commit', tone: 'stale', title: siteStaleSaid() });
+check('and says it whatever tool wrote it', siteCllHint({ cll: true, cll_tool: 'fusion', cll_stale: true }).tone, 'stale');
+check('collin\'s cache says how far to trust it, as the server\'s page does', siteCllHint(fresh).text, 'alpha, can be wrong \u00b7 25% guessed by name');
+check('and its tooltip says why', siteCllHint(fresh).title.split('\n').slice(0, 2),
+  ['Alpha: collin is new and can be wrong. Check an edge against the compiled SQL before relying on it.', '2 of the 8 edges are a match by column name, not read from the SQL.']);
+check('a cache read whole has the alpha line alone', siteCllHint({ cll: true, cll_tool: 'collin', cll_kinds: [{ kind: 'rename', edges: 3 }] }).text, 'alpha, can be wrong');
+check('another tool\'s fresh cache has nothing to say', siteCllHint({ cll: true, cll_tool: 'fusion', cll_kinds: kinds }), null);
+check('the sentence names what writes it again', siteStaleSaid().includes('--run-collin') && siteStaleSaid().includes('older than the manifest') && siteStaleSaid().includes('may not match'), true);
+check('the status line says it in a few words, after a stale cache only', [siteStaleTail(fresh), siteStaleTail({}), siteStaleTail(null), siteStaleTail(Object.assign({}, fresh, { cll_stale: true }))],
+  ['', '', '', ' \u00b7 column lineage older than the manifest']);
+check('no column lineage in the meta, however stale it says', siteStaleTail({ cll: false, cll_stale: true }), '');

@@ -804,6 +804,40 @@ impl ColLineage {
         !self.rules.is_empty()
     }
 
+    // Read-only views of what the static site writes out (0182): it lays the cache down as it was
+    // merged, in the order the walks read it, never a second parse of the file.
+
+    pub(crate) fn edge_list(&self) -> &[ColEdge] {
+        &self.edges
+    }
+
+    pub(crate) fn row_kind_list(&self) -> &[u8] {
+        &self.row_kinds
+    }
+
+    pub(crate) fn root_list(&self) -> &[(ColRef, Vec<String>)] {
+        &self.roots
+    }
+
+    pub(crate) fn expression_list(&self) -> &[(ColRef, Expr)] {
+        &self.expressions
+    }
+
+    pub(crate) fn rule_list(&self) -> &[(u32, RawRule)] {
+        &self.rules
+    }
+
+    pub(crate) fn outside_list(&self) -> &[ColRef] {
+        &self.outside
+    }
+
+    /// The columns with a name collin lost (see `lost`), sorted, each once.
+    pub(crate) fn lost_columns(&self) -> Vec<ColRef> {
+        let mut cols: Vec<ColRef> = self.partial.iter().filter(|(_, g)| marked(g)).map(|(c, _)| *c).collect();
+        cols.dedup();
+        cols
+    }
+
     pub fn outgoing(&self, r: ColRef) -> &[ColEdge] {
         let lo = self.edges.partition_point(|e| e.from < r);
         let hi = self.edges.partition_point(|e| e.from <= r);
@@ -2056,7 +2090,7 @@ impl Graph {
     /// A model drawn as one box on a column canvas, standing for every column
     /// of it an indirect edge reaches (0118): the model's own box, double
     /// clicked into its lineage, and a leaf, with no +N of its own.
-    fn whole_model_node(&self, i: u32, depth: i32) -> LineageNode<'_> {
+    pub(crate) fn whole_model_node(&self, i: u32, depth: i32) -> LineageNode<'_> {
         let n = &self.nodes[i as usize];
         let sub = if n.materialized.is_empty() { "whole model".to_string() } else { format!("{}  ·  whole model", n.materialized) };
         LineageNode {

@@ -152,7 +152,8 @@ fn read_with(command: clap::Command, line: &str, root: &Path, manifest: Option<&
     args.manifest = manifest.map(Path::to_path_buf);
     args.catalog = catalog.map(Path::to_path_buf);
     if let Some(sentence) = stray(&args) {
-        return Err(refusal(sentence));
+        // `--site` is the command line's: here it is refused, so a flag that goes with it says it goes with `--column`.
+        return Err(refusal(sentence.replace("--column or --site", "--column")));
     }
     match question_of(&args) {
         Some(question) => Ok(Read::Ask { question, output: args.output }),
@@ -512,6 +513,20 @@ mod tests {
     fn a_flag_of_another_mode_is_named_by_the_command_lines_own_check() {
         assert_eq!(refused("--overview --sql"), "error: --sql goes with --describe\n`help` lists every flag.");
         assert!(refused("--describe orders --indirect").contains("--indirect goes with --column"));
+    }
+
+    #[test]
+    fn a_site_is_refused_with_its_collin_run_too() {
+        // --run-collin is allowed with --column, and with --site it would write a folder and start a process.
+        let said = refused("--site --run-collin");
+        assert!(said.contains("--site") && said.contains("writes a folder"), "{said}");
+        assert!(got("--column orders.amount --run-collin").is_ok());
+    }
+
+    #[test]
+    fn a_flag_that_goes_with_a_mode_names_only_the_modes_the_tool_has() {
+        let said = refused("--overview --run-collin");
+        assert!(said.contains("--run-collin goes with --column") && !said.contains("--site"), "{said}");
     }
 
     #[test]

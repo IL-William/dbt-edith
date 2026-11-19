@@ -198,7 +198,7 @@ dbt-edith [PROJECT]                       dbt project root, default the current 
          [--stop-at window,aggregate]    roles --column does not walk past downstream
          [--indirect]                    --column crosses collin's indirect edges too, left out by default
          [--column-tool collin]          whose cache --column reads, default collin's or Fusion's newest
-         [--run-collin]                  run collin over the manifest first, and answer --column from its cache
+         [--run-collin]                  run collin over the manifest first, and answer --column from its cache, or write --site's column lineage from it
          [--compiled DIR]                the compiled SQL --run-collin reads, default compiled/ beside the manifest
          [--against DIR]                 with --column, compare it with the same figure in the dbt project at DIR, by the source columns they share; reads DIR's target/manifest.json and collin's cache beside it
          [--with model.column]           with --against, the column of that project to compare with, instead of searching for the closest

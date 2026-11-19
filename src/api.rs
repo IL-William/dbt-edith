@@ -233,16 +233,27 @@ async fn caches(st: &Arc<AppState>) -> Vec<collin::Available> {
 /// After merge_catalog, never before: both re-sort Node.columns and the column
 /// slots recorded by the lineage merge are positions in that final order.
 pub fn merge_cache(graph: &mut Graph, cll_path: &Path) {
-    if cll_path.exists() {
-        match RawColLineage::load(cll_path) {
-            Ok(raw) => {
-                let n = graph.merge_col_lineage(raw, mtime_secs(cll_path));
-                graph.meta.cll_file = cll_path.display().to_string();
-                eprintln!("  column lineage merged ({n} edges)");
-            }
-            Err(e) => eprintln!("  column lineage ignored: {e}"),
-        }
+    match try_merge_cache(graph, cll_path) {
+        Some(Ok(n)) => eprintln!("  column lineage merged ({n} edges)"),
+        Some(Err(e)) => eprintln!("  column lineage ignored: {e}"),
+        None => {}
     }
+}
+
+/// `merge_cache` without a word of its own: None when there is no file, else the edges merged or
+/// why the file was not read. The static site (0182) says what it did on its own stderr.
+pub(crate) fn try_merge_cache(graph: &mut Graph, cll_path: &Path) -> Option<Result<usize, String>> {
+    if !cll_path.exists() {
+        return None;
+    }
+    Some(match RawColLineage::load(cll_path) {
+        Ok(raw) => {
+            let n = graph.merge_col_lineage(raw, mtime_secs(cll_path));
+            graph.meta.cll_file = cll_path.display().to_string();
+            Ok(n)
+        }
+        Err(e) => Err(e.to_string()),
+    })
 }
 
 pub fn router(state: Arc<AppState>) -> Router {
@@ -3300,11 +3311,15 @@ struct ColLineageQuery {
 
 /// How many nodes a column's lineage is drawn with unless the page asks for
 /// more: columns fan out harder than models, hence the cap under a selection's.
-const COL_DRAWN: usize = 1000;
+pub(crate) const COL_DRAWN: usize = 1000;
 
 /// The most one click may ask a column's lineage to draw, sent with every
 /// answer so the page never offers more (0118).
-const COL_MOST: usize = 3000;
+pub(crate) const COL_MOST: usize = 3000;
+
+/// How many levels each way a column's lineage is walked, whatever the page asks: the depth menu's
+/// own ceiling.
+pub(crate) const COL_DEPTH_MAX: u32 = 20;
 
 /// Column-level lineage around one column.
 async fn col_lineage(State(st): State<Arc<AppState>>, Query(q): Query<ColLineageQuery>) -> Response {
@@ -3318,15 +3333,23 @@ async fn col_lineage(State(st): State<Arc<AppState>>, Query(q): Query<ColLineage
     let Some(col) = graph.col_slot(idx, &q.column) else {
         return (StatusCode::NOT_FOUND, "unknown column").into_response();
     };
-    let focus = ColRef { node: idx, col };
-    let (max, cut) = (q.max.unwrap_or(COL_DRAWN).min(COL_MOST), q.cut.split(',').filter(|r| !r.is_empty()).collect::<Vec<_>>());
-    let row_edges = if q.indirect == 1 { RowEdges::ToModels } else { RowEdges::Hidden };
-    let mut sub = graph.column_lineage(focus, q.up.min(20), q.down.min(20), max, &cut, row_edges);
+    let cut = q.cut.split(',').filter(|r| !r.is_empty()).collect::<Vec<_>>();
+    Json(col_lineage_answer(&graph, ColRef { node: idx, col }, q.up, q.down, q.max, &cut, q.indirect)).into_response()
+}
+
+/// What `/api/collineage` answers once the node and the column are found: the canvas's own walk, the
+/// levels the depth menu lists past it (0158) and the names a card says. The static site's browser makes
+/// the same answer from the same cache (0182), and its golden file is written from this.
+pub(crate) fn col_lineage_answer<'a>(
+    graph: &'a Graph, focus: ColRef, up: u32, down: u32, max: Option<usize>, cut: &[&str], indirect: u8,
+) -> crate::graph::Lineage<'a> {
+    let max = max.unwrap_or(COL_DRAWN).min(COL_MOST);
+    let row_edges = if indirect == 1 { RowEdges::ToModels } else { RowEdges::Hidden };
+    let mut sub = graph.column_lineage(focus, up.min(COL_DEPTH_MAX), down.min(COL_DEPTH_MAX), max, cut, row_edges);
     sub.most = COL_MOST;
-    // The depth menu lists the levels past the columns drawn (0158).
-    sub.levels = graph.column_levels(focus, q.up.min(20), max, &cut, row_edges);
+    sub.levels = graph.column_levels(focus, up.min(COL_DEPTH_MAX), max, cut, row_edges);
     graph.name_rows_by(&mut sub);
-    Json(sub).into_response()
+    sub
 }
 
 #[derive(Deserialize)]
@@ -3335,7 +3358,7 @@ struct ColReachQuery {
 }
 
 #[derive(serde::Serialize)]
-struct ColReach {
+pub(crate) struct ColReach {
     name: String,
     up: usize,
     down: usize,
@@ -3351,32 +3374,36 @@ async fn col_reach(State(st): State<Arc<AppState>>, Query(q): Query<ColReachQuer
     let Some(&idx) = graph.index.get(&q.id) else {
         return (StatusCode::NOT_FOUND, "unknown node").into_response();
     };
-    let walk = tokio::task::spawn_blocking(move || {
-        let Some(cll) = graph.cll.as_ref() else { return Vec::new() };
-        let columns = &graph.nodes[idx as usize].columns;
-        let at = |i: usize| ColRef { node: idx, col: i as u32 };
-        // The default canvas's figures: the indirect edges left out (0097).
-        let degree: Vec<(usize, usize)> = (0..columns.len()).map(|i| cll.degree(at(i), false)).collect();
-        // Each side walked once for every column that has an edge on it.
-        let side = |upstream: bool| {
-            let starts: Vec<usize> = (0..columns.len()).filter(|&i| if upstream { degree[i].0 > 0 } else { degree[i].1 > 0 }).collect();
-            let counts = cll.reach_all(&starts.iter().map(|&i| at(i)).collect::<Vec<_>>(), upstream, false);
-            let mut all = vec![0; columns.len()];
-            for (&i, n) in starts.iter().zip(counts) {
-                all[i] = n;
-            }
-            all
-        };
-        let (up, down) = (side(true), side(false));
-        (0..columns.len())
-            .filter(|&i| degree[i].0 + degree[i].1 > 0)
-            .map(|i| ColReach { name: columns[i].name.clone(), up: up[i], down: down[i] })
-            .collect::<Vec<_>>()
-    });
+    let walk = tokio::task::spawn_blocking(move || col_reach_rows(&graph, idx));
     match walk.await {
         Ok(rows) => Json(rows).into_response(),
         Err(_) => (StatusCode::INTERNAL_SERVER_ERROR, "walking the column lineage failed").into_response(),
     }
+}
+
+/// The rows of `/api/colreach` for one node: the walk of the handler, on its own so the static site's
+/// golden file (0182) is written from the server's own code.
+pub(crate) fn col_reach_rows(graph: &Graph, idx: u32) -> Vec<ColReach> {
+    let Some(cll) = graph.cll.as_ref() else { return Vec::new() };
+    let columns = &graph.nodes[idx as usize].columns;
+    let at = |i: usize| ColRef { node: idx, col: i as u32 };
+    // The default canvas's figures: the indirect edges left out (0097).
+    let degree: Vec<(usize, usize)> = (0..columns.len()).map(|i| cll.degree(at(i), false)).collect();
+    // Each side walked once for every column that has an edge on it.
+    let side = |upstream: bool| {
+        let starts: Vec<usize> = (0..columns.len()).filter(|&i| if upstream { degree[i].0 > 0 } else { degree[i].1 > 0 }).collect();
+        let counts = cll.reach_all(&starts.iter().map(|&i| at(i)).collect::<Vec<_>>(), upstream, false);
+        let mut all = vec![0; columns.len()];
+        for (&i, n) in starts.iter().zip(counts) {
+            all[i] = n;
+        }
+        all
+    };
+    let (up, down) = (side(true), side(false));
+    (0..columns.len())
+        .filter(|&i| degree[i].0 + degree[i].1 > 0)
+        .map(|i| ColReach { name: columns[i].name.clone(), up: up[i], down: down[i] })
+        .collect()
 }
 
 // ------------------------------------------------------------- snowflake ----

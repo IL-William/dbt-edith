@@ -3429,6 +3429,8 @@ span.envpill:hover { filter: none; }
 .coltools .colhint[data-tone="busy"] { color: var(--warn); }
 .coltools .colhint[data-tone="failed"] { color: var(--err); }
 .coltools .colhint[data-tone="alpha"] { color: var(--warn); }
+/* A site's column lineage older than its manifest (0182). */
+.coltools .colhint[data-tone="stale"] { color: var(--warn); }
 /* What collin's report says about the model shown, full width under the tools. */
 .colnote {
   margin: 0 0 8px; padding: 5px 8px; border-left: 2px solid var(--warn); background: color-mix(in srgb, var(--warn) 8%, transparent);

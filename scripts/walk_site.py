@@ -23,6 +23,17 @@ sub-folder of its repository, which a link to a file must say. On each:
     Catalog and its Columns, Cmd+K and an address that names a node; what the
     site has no use for is not on the page, and a click on what is hidden does
     nothing and says nothing;
+  - the column lineage (0182): an invented cache and the report beside it, written before the
+    site and before the server starts, over the project's own columns (the parent of a model's
+    column of the same name, renames and casts, filters and join keys into every column of a
+    model, roots, expressions, gaps, rules, a cycle, a self-edge, a table no node owns). For every
+    column of every node, /api/collineage at 2+2 with the indirect edges hidden and drawn is the
+    server's, and a sample of them at 1+1, at 20+20, with a role cut and under a cap; /api/colreach
+    is the server's for every node, and a card carries collin's note; in the page, a column
+    opens, the indirect button and the stop at menu work, there is no menu to pick another
+    cache and no Regenerate, and data/cll.js is asked for once; a cache older than the manifest
+    says so on the status line and in the Columns tab; and `--site --run-collin` runs a stand-in
+    collin first and carries what it wrote;
   - the page asks for nothing beyond its own folder, throws nothing, writes no
     error to the console, and the policy it carries is never violated.
 
@@ -42,8 +53,10 @@ import functools
 import http.server
 import json
 import os
+import random
 import re
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -215,6 +228,108 @@ def shopify(work):
     return project
 
 
+KINDS = ["passthrough", "rename", "cast", "transform", "aggregate", "window", "inferred", ""]
+ROWS = ["filter", "join_key", "dedup_key", "FILTER"]
+OWNED = ("model", "seed", "snapshot", "source")
+
+
+def invent_cache(project, seed):
+    """collin's cache and report beside the manifest, invented over the project's own columns: from the YAML and
+    the catalog, so every shape the walks read has columns to land on. Edges between a model and its parents
+    by column name, with every role, a filter or a join key from one parent column into every column of a
+    model, a cycle, a column reading itself, a column from a table no node owns, one edge that names a node the
+    manifest lacks, roots (`[]` among them, a column spelled in two cases), expressions at 32 steps and cut,
+    gaps of every reason, rules, and a report with notes. Written after the manifest, so it is not behind it.
+    Returns {"edges": [...], "kinds": [...]} for what the walk compares and the page opens."""
+    rng = random.Random(seed)
+    target = project / "target"
+    manifest = json.loads((target / "manifest.json").read_text())
+    pool = {**manifest["nodes"], **manifest.get("sources", {})}
+    cols = {uid: list(n.get("columns", {})) for uid, n in pool.items() if n["resource_type"] in OWNED and (n.get("config") or {}).get("enabled", True)}
+    catalog = target / "catalog.json"
+    if catalog.is_file():
+        found = json.loads(catalog.read_text())
+        for uid, entry in {**found.get("nodes", {}), **found.get("sources", {})}.items():
+            if uid in cols:
+                known = {c.lower() for c in cols[uid]}
+                cols[uid] += [c for c in entry.get("columns", {}) if c.lower() not in known]
+    cols = {uid: names for uid, names in cols.items() if names}
+    parents = {uid: [p for p in ps if p in cols] for uid, ps in manifest["parent_map"].items() if uid in cols}
+    edges, seen, into = [], set(), {}
+
+    def edge(f, fc, t, tc, kind):
+        key = (f, fc.lower(), t, tc.lower())
+        if key not in seen:
+            seen.add(key)
+            into.setdefault(t, set()).add(tc.lower())
+            edges.append({"from": f, "from_col": fc, "to": t, "to_col": tc, "kind": kind})
+
+    for child, ps in sorted(parents.items()):
+        for p in ps:
+            shared = [c for c in cols[child] if c.lower() in {x.lower() for x in cols[p]}]
+            for c in shared[:60]:
+                edge(p, c, child, c, rng.choice(KINDS))
+        loose = [c for c in cols[child] if c.lower() not in into.get(child, set())]
+        for c in loose[:20]:
+            if ps and rng.random() < 0.4:
+                p = rng.choice(ps)
+                edge(p, rng.choice(cols[p]), child, c, rng.choice(["rename", "transform", "aggregate"]))
+        # A column that decides which rows a model keeps reaches every column of it, as collin writes it.
+        if ps and rng.random() < 0.3:
+            p = rng.choice(ps)
+            pc = rng.choice(cols[p])
+            role = rng.choice(ROWS)
+            for c in cols[child][:25]:
+                edge(p, pc, child, c, role)
+    plain = [e for e in edges if e["kind"] not in ROWS]
+    for e in rng.sample(plain, min(3, len(plain))):
+        edge(e["to"], e["to_col"], e["from"], e["from_col"], "transform")              # a cycle
+    for uid in rng.sample(sorted(cols), min(2, len(cols))):
+        edge(uid, cols[uid][0], uid, cols[uid][0], "passthrough")                      # a column reading itself
+    sources = [u for u in sorted(cols) if u.startswith("source.")]
+    for i, uid in enumerate(rng.sample(sources, min(3, len(sources)))):
+        edge(f"rel:analytics.raw.table_{i}", cols[uid][0], uid, cols[uid][0], "passthrough")
+    some = sorted(cols)[0]
+    edge("model.nobody.ghost", "id", some, cols[some][0], "passthrough")
+    edge(some, cols[some][0], "model.nobody.ghost", "id", "passthrough")
+
+    models = [u for u in sorted(cols) if u.startswith("model.")]
+
+    def pick():
+        u = rng.choice(models)
+        return u, rng.choice(cols[u])
+
+    roots, expressions, partial, rules = [], [], [], []
+    for _ in range(12):
+        u, c = pick()
+        roots.append({"node": u, "column": c, "expressions": rng.choice([[], ["'a'"], ["'a'", "'b'"]])})
+    u, c = pick()
+    roots += [{"node": u, "column": c.upper(), "expressions": ["'x'"]}, {"node": u, "column": c.lower(), "expressions": ["'y'"]}]
+    for _ in range(25):
+        u, c = pick()
+        expressions.append({"node": u, "column": c, "kind": rng.choice(KINDS), "text": f"f({c})", "steps": rng.choice([1, 2, 3, 5, 32]), "cut": rng.random() < 0.2})
+    for _ in range(20):
+        u, c = pick()
+        partial.append({"node": u, "column": c, "reason": rng.choice(["name_unresolved", "relation_unknown", "steps_capped", "cte_lacks_name"]), "name": rng.choice(["", "a", "b"])})
+    for u in rng.sample(models, min(12, len(models))):
+        for k in range(rng.choice([1, 2, 3])):
+            reads = [{"node": u, "column": rng.choice(cols[u])}]
+            if parents.get(u):
+                p = rng.choice(parents[u])
+                reads.append({"node": p, "column": rng.choice(cols[p]).upper()})
+            rules.append({"node": u, "clause": rng.choice(["WHERE", "JOIN", "QUALIFY", "HAVING"]), "text": f"c{k} > 1\tand x", "cut": rng.random() < 0.2, "columns": reads})
+    cache = {"version": 1, "source": "collin", "target": "qa", "generated_at": "2030-01-02T03:04:05Z", "producer": "collin 0.12.0",
+             "edges": edges, "roots": roots, "rules": rules, "expressions": expressions, "partial": partial}
+    (target / "column_lineage.collin.json").write_text(json.dumps(cache))
+    noted = rng.sample(models, min(8, len(models)))
+    report = {"totals": {"models": len(models), "parsed": len(models)}, "models": [
+        {"unique_id": u, "provenance": rng.choice(["per_column", "parsed", "inferred"]), "parse_error": rng.choice(["", "a name collin could not read"]),
+         "sql_file": f"compiled/{u.split('.')[1]}/{u.split('.')[2]}.sql", "lost_columns": [{"column": cols[u][0].lower(), "ends": [{"reason": "x", "names": ["y"]}]}]}
+        for u in noted]}
+    (target / "collin.report.json").write_text(json.dumps(report))
+    return {"edges": edges, "kinds": sorted({e["kind"] for e in edges}), "cols": cols}
+
+
 def leaks(site, project, work):
     """What a folder must not hold: a path of this machine, or what the .env holds. The vendored
     libraries are checked for the canary alone: their own text names paths of their authors."""
@@ -239,6 +354,9 @@ def generate(binary, project, tally, name, prefix, compiled, home):
     run = subprocess.run([str(binary), str(project), "--site", "--environment", ENV], capture_output=True, text=True,
                          env=dict(os.environ, HOME=str(home)))
     tally.check(f"{name}: --site writes the folder and exits 0", run.returncode == 0, run.stderr[-500:])
+    edges = len(json.loads((project / "target" / "column_lineage.collin.json").read_text())["edges"])
+    tally.check(f"{name}: the run says the column lineage it carries, and is quiet about its age", "column lineage: " in run.stdout and "edges from collin" in run.stdout
+                and "older than the manifest" not in run.stderr and "no column lineage" not in run.stderr, run.stdout[-300:] + run.stderr[-300:])
     site = project / "target" / "edith-site"
     tally.check(f"{name}: it prints the folder it wrote", run.stdout.splitlines()[:1] == [str(site.resolve())], run.stdout[:300])
     index = (site / "data" / "index.js").read_text()
@@ -253,6 +371,8 @@ def generate(binary, project, tally, name, prefix, compiled, home):
     tally.check(f"{name}: the site holds the SQL in buckets of its own", (site / "data" / "sql" / "0000.js").is_file() and bool(data["sql_cuts"]), canon(data["sql_cuts"][:3]))
     tally.check(f"{name}: the header says the environment, dbt's version and when", meta["environment"] == ENV and meta["dbt_version"] and meta["generated_at"], canon(meta))
     tally.check(f"{name}: the origin that was set is never in the site", "git@github.com" not in index and "acme/" not in index.replace(repo, ""), "")
+    tally.check(f"{name}: the column lineage is carried, named bare, current, and its file is written", meta["cll"] is True and meta["cll_file"] == "column_lineage.collin.json" and meta["cll_tool"] == "collin"
+                and meta["cll_stale"] is False and (site / "data" / "cll.js").is_file() and meta["cll_edges"] > 0 and meta["cll_edges"] <= edges, canon(meta))
     return site, data
 
 
@@ -317,6 +437,60 @@ def compare(tally, name, page, server, ids, searches):
             bad.append(path)
     tally.check(f"{name}: {len(paths)} searches are the server's", not bad, "\n        ".join(bad[:5]))
     return len(lineage) + len(cards) + len(paths)
+
+
+def collineage_path(node, column, up, down, indirect, cap=None, cut=""):
+    path = (f"/api/collineage?id={urllib.parse.quote(node, safe='')}&column={urllib.parse.quote(column, safe='')}"
+            f"&up={up}&down={down}&indirect={indirect}")
+    if cap is not None:
+        path += f"&max={cap}"
+    if cut:
+        path += f"&cut={urllib.parse.quote(cut, safe='')}"
+    return path
+
+
+def same_as_server(page, server, paths, workers=8):
+    """The paths the page answers differently from the server, in chunks: the page's answers in one trip, the server's
+    over a few connections. Returns the paths that differ."""
+    from concurrent.futures import ThreadPoolExecutor
+    bad = []
+    with ThreadPoolExecutor(workers) as pool:
+        for i in range(0, len(paths), 200):
+            chunk = paths[i:i + 200]
+            got = batch_in_page(page, chunk)
+            want = list(pool.map(lambda p: canon(server.get(p)), chunk))
+            bad += [p for p, g, w in zip(chunk, got, want, strict=True) if g != w]
+    return bad
+
+
+def compare_columns(tally, name, page, server, ids, cache):
+    """The column lineage (0182): every column of every node, at 2+2 with the indirect edges hidden and drawn, and a sample
+    at 1+1, 20+20, with a role cut and under a cap; the chains of every node; a card with collin's note. Returns the number
+    of /api/collineage answers compared."""
+    cards = dict(zip(ids, (json.loads(t) for t in batch_in_page(page, [f"/api/node?id={urllib.parse.quote(i, safe='')}" for i in ids])), strict=True))
+    columns = [(i, c["name"]) for i in ids for c in cards[i]["columns"]]
+    tally.check(f"{name}: the cards carry collin's note, and the columns the cache named", any("collin" in c for c in cards.values())
+                and any(c.get("up") or c.get("down") for card in cards.values() for c in card["columns"]), "")
+    every = [collineage_path(i, c, 2, 2, ind) for i, c in columns for ind in (0, 1)]
+    bad = same_as_server(page, server, every)
+    tally.check(f"{name}: /api/collineage of {len(columns)} columns at 2+2, the indirect edges hidden and drawn ({len(every)} answers), is the server's", not bad, "\n        ".join(bad[:5]))
+
+    named = {(e["from"], e["from_col"].lower()) for e in cache["edges"]} | {(e["to"], e["to_col"].lower()) for e in cache["edges"]}
+    with_edges = [(i, c) for i, c in columns if (i, c.lower()) in named]
+    step = max(1, len(with_edges) // 80)
+    sample = with_edges[::step]
+    roles = [k for k in cache["kinds"] if k and k not in ROWS]
+    cut = ",".join(roles[:2])
+    more = [collineage_path(i, c, up, down, ind, cap, cuts) for i, c in sample
+            for up, down, ind, cap, cuts in ((1, 1, 0, None, ""), (20, 20, 0, None, ""), (20, 20, 1, None, ""), (3, 3, 0, None, cut),
+                                             (20, 20, 1, 5, ""), (2, 2, 1, 3, cut), (0, 4, 0, 6, "window,nonsense"))]
+    bad = same_as_server(page, server, more)
+    tally.check(f"{name}: {len(more)} answers for {len(sample)} columns at 1+1, 20+20, with a role cut and under a cap are the server's", not bad, "\n        ".join(bad[:5]))
+
+    reach = [f"/api/colreach?id={urllib.parse.quote(i, safe='')}" for i in ids]
+    bad = same_as_server(page, server, reach)
+    tally.check(f"{name}: /api/colreach of all {len(ids)} nodes is the server's", not bad, "\n        ".join(bad[:5]))
+    return len(every) + len(more) + len(reach), len(columns)
 
 
 def encode_component(text):
@@ -624,6 +798,96 @@ def smoke(tally, name, page, ids, model):
     check("an address that changes names a node, and the page follows it", True)
 
 
+def requests_of(page, suffix):
+    return [u for u in page.requests() if u.endswith(suffix)]
+
+
+def open_columns(tally, name, page, cache, ids, stale=False):
+    """A column of the site, opened as a person opens it: from the Columns tab to its canvas, with the indirect button and the
+    stop at menu, and none of what a site has no collin, Snowflake or menu for."""
+    def check(label, ok, detail=""):
+        tally.check(f"{name}: {label}", ok, detail)
+
+    owned = set(ids)
+    # A column that something reads and that reads something: a column reading itself is no lineage.
+    outs = {(e["from"], e["from_col"].lower()) for e in cache["edges"] if e["kind"] not in ROWS and (e["from"], e["from_col"].lower()) != (e["to"], e["to_col"].lower())}
+    chosen = next((e for e in cache["edges"] if e["kind"] not in ROWS and e["from"] != e["to"] and e["to"] in owned and e["to"].startswith("model.")
+                   and (e["to"], e["to_col"].lower()) in outs), None)
+    if not chosen:
+        check("a column with an edge on each side exists to open", False, "the cache has none")
+        return
+    node, column = chosen["to"], chosen["to_col"]
+    page.js(f"location.hash = {json.dumps(urllib.parse.quote(node, safe=''))}")
+    page.until(f"!!document.querySelector('#graph .nd.focus[data-id={json.dumps(node)}]')", "the model of the column")
+    page.js("document.querySelector('[data-dock=catalog]').click()")
+    page.js("[...document.querySelectorAll('#catalog .ctab')].find((t) => t.textContent.startsWith('Columns')).click()")
+    page.until("!!document.querySelector('#catalog table.cols')", "the Columns table")
+    check("no menu to pick another cache, and no Regenerate", page.js("!document.querySelector('.cllpick')")
+          and page.js("![...document.querySelectorAll('button')].some((b) => b.textContent === 'Regenerate')"))
+    hint = page.js("(() => { const h = document.querySelector('#catalog .colhint:not(.modeltests)'); return h ? [h.textContent, h.dataset.tone, h.title] : null; })()")
+    if stale:
+        check("the Columns tab says the cache is older than the manifest, in its own tone", hint and hint[1] == "stale" and "older than the manifest" in hint[0]
+              and "--run-collin" in hint[2], json.dumps(hint))
+    else:
+        check("the Columns tab says how far to trust collin's, and nothing of its age", hint and hint[1] == "alpha" and hint[0].startswith("alpha, can be wrong"), json.dumps(hint))
+    reach = page.js(f"EdithSite.get('/api/colreach?id=' + encodeURIComponent({json.dumps(node)})).then((rows) => rows.find((r) => r.name.toLowerCase() === {json.dumps(column.lower())}))")
+    page.until(f"[...document.querySelectorAll('#catalog tr.c-linked')].some((r) => r.querySelector('.c-name span').textContent.toLowerCase() === {json.dumps(column.lower())}"
+               f" && r.querySelector('.c-lin').textContent.includes('\u2190{reach['up']}') && r.querySelector('.c-lin').textContent.includes('{reach['down']}\u2192'))",
+               "the column's chain in its Lineage cell", timeout=20)
+    check("the Lineage cell says the whole chain, as /api/colreach counts it", True)
+
+    row = f"[...document.querySelectorAll('#catalog tr.c-linked')].find((r) => r.querySelector('.c-name span').textContent.toLowerCase() === {json.dumps(column.lower())})"
+    page.js(f"{row}.querySelector('.c-type').click()")
+    page.until("!!document.querySelector('#graph .nd[data-id*=\"::\"]')", "the column canvas", timeout=30)
+    up, down = page.js("[+document.querySelector('#up').value, +document.querySelector('#down').value]")
+    answer = page.js(f"EdithSite.get({json.dumps(collineage_path(node, column, up, down, 0))})")
+    status = page.js("document.querySelector('#lineage-status').textContent")
+    check("the status line names the column and what was drawn", status.startswith(answer["focus_column"] + " \u00b7 "), status)
+    title = page.js("document.querySelector('#lineage-status').title")
+    if stale:
+        check("and says the cache is older than the manifest, the whole sentence in its title", status.endswith("column lineage older than the manifest") and "may not match this commit" in title, f"{status} / {title}")
+    else:
+        check("and says nothing of the cache's age", "older than the manifest" not in status and title == "", f"{status} / {title}")
+    drawn = page.js("document.querySelectorAll('#graph .nd').length")
+    check("the canvas draws the answer's boxes", drawn == len(answer["nodes"]), f"{drawn} of {len(answer['nodes'])}")
+
+    # A second column asks for nothing more of the folder: the file is loaded once.
+    page.js("document.querySelector('[data-dock=catalog]').click()")
+    page.until("!!document.querySelector('#catalog tr.c-linked')", "the Columns table again")
+    page.js("document.querySelectorAll('#catalog tr.c-linked')[document.querySelectorAll('#catalog tr.c-linked').length - 1].querySelector('.c-type').click()")
+    page.until("document.querySelector('#lineage-status').textContent.includes(' columns') || document.querySelector('#lineage-status').textContent.includes(' column ')", "a second column")
+    check("data/cll.js is asked for once, however many columns", len(requests_of(page, "/data/cll.js")) == 1, str(requests_of(page, "/data/cll.js")))
+
+    has_rows = any(e["kind"] in ROWS for e in cache["edges"])
+    page.js("document.querySelector('[data-dock=catalog]').click()")
+    page.until("!!document.querySelector('#catalog tr.c-linked')", "the Columns table")
+    page.js(f"{row}.querySelector('.c-type').click()")
+    page.until(f"document.querySelector('#lineage-status').textContent.startsWith({json.dumps(answer['focus_column'])})", "the column again")
+    shown = page.js("(() => { const b = document.querySelector('#indirect-btn'); return !!b && !b.classList.contains('hidden'); })()")
+    check("the indirect button is in view when the cache holds indirect edges", shown == has_rows, str(shown))
+    if has_rows:
+        page.js("document.querySelector('#indirect-btn').click()")
+        page.until("document.querySelector('#indirect-btn').getAttribute('aria-pressed') === 'true'", "the indirect button pressed")
+        up, down = page.js("[+document.querySelector('#up').value, +document.querySelector('#down').value]")
+        want = page.js(f"EdithSite.get({json.dumps(collineage_path(node, column, up, down, 1))})")
+        page.until(f"document.querySelectorAll('#graph .nd').length === {len(want['nodes'])}", "the canvas with the indirect edges", timeout=20)
+        check("the indirect button draws the answer with the indirect edges", True)
+        page.js("document.querySelector('#indirect-btn').click()")
+        page.until("document.querySelector('#indirect-btn').getAttribute('aria-pressed') === 'false'", "the indirect button back")
+
+    page.js("document.querySelector('#stop-at').click()")
+    page.until("!!document.querySelector('[aria-label=\"Roles the column walk stops at\"]')", "the stop at menu")
+    roles = page.js("[...document.querySelectorAll('[aria-label=\"Roles the column walk stops at\"] [role=menuitemcheckbox] .lbl')].map((b) => b.textContent)")
+    check("the stop at menu lists the cache's roles, never an indirect one", roles and set(roles) <= set(k for k in cache["kinds"] if k) and not set(roles) & {r.lower() for r in ROWS}, str(roles))
+    role = roles[0]
+    page.js(f"[...document.querySelectorAll('[aria-label=\"Roles the column walk stops at\"] [role=menuitemcheckbox]')].find((b) => b.querySelector('.lbl').textContent === {json.dumps(role)}).click()")
+    up, down = page.js("[+document.querySelector('#up').value, +document.querySelector('#down').value]")
+    want = page.js(f"EdithSite.get({json.dumps(collineage_path(node, column, up, down, 0, None, role))})")
+    page.until(f"document.querySelectorAll('#graph .nd').length === {len(want['nodes'])}", "the canvas stopped at the role", timeout=20)
+    check("a role ticked redraws the canvas with the walk stopped at it", True)
+    page.js("document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))")
+
+
 def end(tally, name, page, prefixes):
     """What the page did: asked for nothing outside its folder, and said nothing wrong."""
     bad = page.js("window.__bad")
@@ -644,7 +908,75 @@ class Quiet(http.server.SimpleHTTPRequestHandler):
         ASKED.append(self.path)
 
 
-def over_http(tally, name, work, site, server, ids, model):
+def stale_site(tally, binary, name, project, work, cache, ids, home):
+    """A cache older than the manifest is carried with a warning: on stderr, on the status line and in the Columns tab."""
+    target = project / "target"
+    old = (target / "manifest.json").stat().st_mtime - 3600
+    os.utime(target / "column_lineage.collin.json", (old, old))
+    folder = target / "edith-site-stale"
+    try:
+        run = subprocess.run([str(binary), str(project), "--site", str(folder), "--environment", ENV], capture_output=True, text=True, env=dict(os.environ, HOME=str(home)))
+        tally.check(f"{name}: a cache older than the manifest is carried, exit 0, and stderr says it is older", run.returncode == 0
+                    and "warning: collin's column lineage is older than the manifest: it may not match this commit; --run-collin writes it again" in run.stderr, run.stderr[-400:])
+        data = json.loads((folder / "data" / "index.js").read_text().removeprefix("window.EDITH_SITE=").rstrip().rstrip(";"))
+        tally.check(f"{name}: and the site says so", data["meta"]["cll_stale"] is True and (folder / "data" / "cll.js").is_file(), canon(data["meta"]))
+        page = new_page(work, f"chrome-stale-{name}")
+        try:
+            url = (folder / "index.html").resolve().as_uri()
+            open_site(page, url)
+            open_columns(tally, f"{name} (cache older than the manifest)", page, cache, ids, stale=True)
+            end(tally, f"{name} (cache older than the manifest)", page, [url.rsplit("/", 1)[0] + "/"])
+        finally:
+            page.close()
+    finally:
+        shutil.rmtree(folder, ignore_errors=True)
+        os.utime(target / "column_lineage.collin.json", None)
+
+
+def run_collin(tally, binary, work, project):
+    """`--site --run-collin` runs collin first, over a copy of the project, with a stand-in on the PATH, and carries what it wrote;
+    `--site` alone, with that stand-in there, never starts it."""
+    import walk_mcp as M  # its stand-in and the three edges it writes
+    name = "jaffle_shop (--run-collin)"
+    copy = work / "jaffle_run"
+    shutil.copytree(project, copy, ignore=shutil.ignore_patterns("edith-site*"))
+    target = copy / "target"
+    (target / "column_lineage.collin.json").unlink()
+    (target / "collin.report.json").unlink()
+    bin_dir = work / "collin-bin"
+    bin_dir.mkdir()
+    stand_in = bin_dir / "collin"
+    stand_in.write_text(M.STAND_IN)
+    stand_in.chmod(stand_in.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+    env = dict(os.environ, HOME=str(work / "home"), PATH=bin_dir.as_posix() + os.pathsep + os.environ.get("PATH", ""))
+    site = target / "edith-site"
+
+    def listing():
+        return sorted(p.relative_to(copy).as_posix() for p in copy.rglob("*") if p.is_file() and "edith-site" not in p.parts)
+
+    before = listing()
+    run = subprocess.run([str(binary), str(copy), "--site"], capture_output=True, text=True, env=env)
+    data = json.loads((site / "data" / "index.js").read_text().removeprefix("window.EDITH_SITE=").rstrip().rstrip(";"))
+    tally.check(f"{name}: --site alone, with a cache missing, says so, carries none and never starts collin", run.returncode == 0 and "no column lineage" in run.stderr
+                and data["meta"]["cll"] is False and not (site / "data" / "cll.js").exists() and not (bin_dir / "args").exists() and listing() == before, run.stderr[-300:])
+    run = subprocess.run([str(binary), str(copy), "--site", "--run-collin"], capture_output=True, text=True, env=env)
+    tally.check(f"{name}: --site --run-collin runs collin, writes the two files it writes, and says so", run.returncode == 0 and run.stderr.startswith("collin 0.12.0 wrote")
+                and (bin_dir / "args").is_file() and sorted(set(listing()) - set(before)) == ["target/collin.report.json", "target/column_lineage.collin.json"], run.stderr[-400:])
+    data = json.loads((site / "data" / "index.js").read_text().removeprefix("window.EDITH_SITE=").rstrip().rstrip(";"))
+    tally.check(f"{name}: the site carries what it wrote, current", data["meta"]["cll"] is True and data["meta"]["cll_edges"] == len(M.CACHE["edges"]) and data["meta"]["cll_stale"] is False
+                and f"column lineage: {len(M.CACHE['edges'])} edges from collin" in run.stdout, run.stdout[-300:] + canon(data["meta"]))
+    page = new_page(work, "chrome-run-collin")
+    try:
+        url = (site / "index.html").resolve().as_uri()
+        open_site(page, url)
+        got = page.js("EdithSite.get('/api/collineage?id=model.jaffle_shop.orders&column=amount&up=2&down=2').then((a) => a.nodes.map((n) => n.id))")
+        tally.check(f"{name}: a column of what collin wrote draws, from its upstream", "model.jaffle_shop.stg_payments::amount" in got and "model.jaffle_shop.orders::amount" in got, str(got))
+        end(tally, name, page, [url.rsplit("/", 1)[0] + "/"])
+    finally:
+        page.close()
+
+
+def over_http(tally, name, work, site, server, ids, model, cache):
     root = work / "served"
     shutil.rmtree(root, ignore_errors=True)
     shutil.copytree(site, root / "docs" / "v1")
@@ -658,6 +990,14 @@ def over_http(tally, name, work, site, server, ids, model):
         sample = ids[:40]
         compare(tally, f"{name} over http", page, server, sample, [("", "model", 5), (model, "", 3), ("order", "", None)])
         smoke(tally, f"{name} over http", page, ids, model)
+        # An edge into a node the manifest lacks names no column of the site.
+        known = set(ids)
+        edges = [e for e in cache["edges"] if e["to"] in known][:: max(1, len(cache["edges"]) // 60)]
+        bad = same_as_server(page, server, [collineage_path(e["to"], e["to_col"], 2, 2, ind) for e in edges for ind in (0, 1)] + [f"/api/colreach?id={urllib.parse.quote(e['to'], safe='')}" for e in edges])
+        tally.check(f"{name} over http: {len(edges) * 2} column answers and {len(edges)} chains are the server's", not bad, "\n        ".join(bad[:5]))
+        open_columns(tally, f"{name} over http", page, cache, ids)
+        asked = [p for p in ASKED if p.endswith("/data/cll.js")]
+        tally.check(f"{name} over http: the host was asked for data/cll.js once", len(asked) == 1, str(asked))
         outside = end(tally, f"{name} over http", page, [f"{base}/docs/v1/"])
         stray = [p for p in ASKED if not p.startswith("/docs/v1/")]
         tally.check(f"{name} over http: the host was asked for nothing outside the sub-path", stray == [] and outside == 0, str(stray[:5]))
@@ -666,8 +1006,10 @@ def over_http(tally, name, work, site, server, ids, model):
         host.shutdown()
 
 
-def walk_project(tally, binary, name, project, model, work, prefix, compiled):
+def walk_project(tally, binary, name, project, model, work, prefix, compiled, seed):
     print(f"\n--- {name} ---")
+    # Written after the manifest and before the site and the server, which both read it.
+    cache = invent_cache(project, seed)
     site, data = generate(binary, project, tally, name, prefix, compiled, work / "home")
     found = leaks(site, project, work)
     tally.check(f"{name}: the folder holds no path of this machine and no value of the .env", not found, "; ".join(found[:5]))
@@ -686,19 +1028,23 @@ def walk_project(tally, binary, name, project, model, work, prefix, compiled):
             compared = compare(tally, name, page, server, ids, searches_of(names))
             compare_tree(tally, name, page, server, project, data)
             with_code, compiled_same, source_same = compare_code(tally, name, page, server, project, data, compiled)
+            col_compared, col_count = compare_columns(tally, name, page, server, ids, cache)
             smoke(tally, name, page, ids, model)
             # The same address, written into a fresh page: the site opens on its node.
             first = next(i for i in ids if i.startswith("model."))
             page.call("Page.navigate", url=url + "#" + urllib.parse.quote(first, safe=""))
             page.until(f"!!document.querySelector('#graph .nd.focus[data-id={json.dumps(first)}]')", "the node the address names", timeout=15)
             tally.check(f"{name}: a link to a node opens on it", True)
+            open_columns(tally, name, page, cache, ids)
             end(tally, name, page, [url.rsplit("/", 1)[0] + "/"])
         finally:
             page.close()
-        over_http(tally, name, work, site, server, ids, model)
-        print(f"{name}: {len(ids)} nodes, {compared} answers compared, the compiled SQL of {compiled_same} nodes and the source of {source_same} of {with_code} with code")
+        over_http(tally, name, work, site, server, ids, model, cache)
+        print(f"{name}: {len(ids)} nodes, {compared} answers compared, the compiled SQL of {compiled_same} nodes and the source of {source_same} of {with_code} with code, "
+              f"{col_compared} column lineage answers over {col_count} columns")
     finally:
         edith.stop()
+    stale_site(tally, binary, name, project, work, cache, ids, work / "home")
 
 
 def main():
@@ -710,13 +1056,15 @@ def main():
     with tempfile.TemporaryDirectory(prefix="dbt-edith-site-") as tmp:
         work = Path(tmp)
         (work / "home").mkdir()
-        walk_project(tally, binary, "jaffle_shop", jaffle(work), "orders", work, JAFFLE_FOLDER + "/", True)
+        jaffle_project = jaffle(work)
+        walk_project(tally, binary, "jaffle_shop", jaffle_project, "orders", work, JAFFLE_FOLDER + "/", True, 1)
+        run_collin(tally, binary, work, jaffle_project)
         try:
             project = shopify(work)
         except C.Unavailable as e:
             skipped = f"Shopify: {e}"
         else:
-            walk_project(tally, binary, "shopify", project, "shopify__orders", work, "integration_tests/", False)
+            walk_project(tally, binary, "shopify", project, "shopify__orders", work, "integration_tests/", False, 2)
     if tally.failed:
         print(f"{tally.failed} check(s) failed")
         return 1
