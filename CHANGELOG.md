@@ -20,6 +20,9 @@ and bumps nothing.
 
 ## Unreleased
 
+- Mark a newer release with a badge and a halo on Edith, blue in Graphite too,
+  with the status bar's pill and the update buttons in the same colour (0181).
+
 ## 2.24.0 - 2026-11-12
 
 - Write a static documentation site from the manifest and the catalog with

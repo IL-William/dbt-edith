@@ -9,6 +9,10 @@
   --accent: #5aa9ff;
   --accent-rgb: 90, 169, 255;   /* --accent as channels, for the translucent copies of it */
   --accent-dim: #1d3757;
+  /* A newer release's colour, held in every theme so that Graphite's grey accent does not take it (0181). */
+  --update: #5aa9ff;
+  --update-dim: #1d3757;
+  --on-update: #ffffff;   /* the arrow drawn on the badge */
   --model: #4da3ff;
   --source: #e0a34b;
   --seed: #4ec78d;
@@ -472,6 +476,8 @@
   --accent: #1f6fd1;
   --accent-rgb: 31, 111, 209;
   --accent-dim: #d6e5f8;
+  --update: #1f6fd1;
+  --update-dim: #d6e5f8;
   /* States: a pictogram */
   --ok: #1e8a57;
   --warn: #b26b00;
@@ -614,6 +620,8 @@
   --accent: #ff7a1a;
   --accent-rgb: 255, 122, 26;
   --accent-dim: #7a3a0e;
+  --update: #ff7a1a;
+  --update-dim: #7a3a0e;
   /* States: a pictogram */
   --ok: #4ec78d;
   --warn: #e0a34b;
@@ -998,14 +1006,16 @@ kbd {
 #status-where .lead { color: var(--fg-mute); }
 #status-where .note, #status-where .sepa { color: var(--fg-mute); }
 #status-where .sepa { margin: 0 6px; }
-/* A newer dbt-edith (0068): outlined in the accent, quieter than an
-   environment's filled pill, since nothing is wrong with the one running. */
+/* A newer dbt-edith (0068): filled in the update colour, which every theme
+   keeps, Graphite's grey accent aside (0181), with a soft halo, so it is seen
+   across the bar although nothing is wrong with the one running. */
 .updpill {
-  font: 600 10.5px/15px var(--ui); color: var(--accent); background: transparent;
-  border: 1px solid var(--accent-dim); border-radius: 8px; padding: 0 7px; cursor: pointer;
+  font: 600 10.5px/15px var(--ui); color: var(--fg); background: var(--update-dim);
+  border: 1px solid var(--update); border-radius: 8px; padding: 0 7px; cursor: pointer;
+  box-shadow: 0 0 6px color-mix(in srgb, var(--update) 45%, transparent);
 }
-.updpill:hover { border-color: var(--accent); }
-.updpill:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.updpill:hover { background: color-mix(in srgb, var(--update) 35%, var(--bg)); }
+.updpill:focus-visible { outline: 2px solid var(--update); outline-offset: 1px; }
 /* The venv (0069): green with a check once one is active, amber with a
    triangle when one was found but is not, since a dbt typed in the terminal
    then runs whatever python comes first on the PATH. Tinted rather than
@@ -1054,16 +1064,18 @@ kbd {
 .relrow .ver { flex: 0 0 46px; font: 10.5px var(--mono); color: var(--fg-dim); }
 .relrow .lbl { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .updfoot .menunote { flex: 1; padding-bottom: 0; }
-/* The update, drawn as the app's primary button with how it goes under it,
-   and once it is installed the restart it waits for, in the colour of done. */
+/* The update, drawn as the app's primary button in the update colour (0181),
+   ringed by a still halo, with how it goes under it, and once it is installed
+   the restart it waits for, in the colour of done. */
 .envmenu button.updrun {
   display: inline-block; width: auto; margin: 4px 8px 2px; padding: 5px 12px;
-  background: var(--accent-dim); border: 1px solid var(--accent); border-radius: 5px; font-weight: 600;
+  background: var(--update-dim); border: 1px solid var(--update); color: var(--fg); border-radius: 5px; font-weight: 600;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--update) 18%, transparent), 0 0 12px color-mix(in srgb, var(--update) 30%, transparent);
 }
-.envmenu button.updrun:hover, .envmenu button.updrun:focus-visible { background: var(--accent-hover); }
-.envmenu button.updrun:focus:not(:focus-visible) { background: var(--accent-dim); }
+.envmenu button.updrun:hover, .envmenu button.updrun:focus-visible { background: color-mix(in srgb, var(--update) 40%, var(--bg)); }
+.envmenu button.updrun:focus:not(:focus-visible) { background: var(--update-dim); }
 /* The second command of a choice, drawn as the menu's other buttons are. */
-.envmenu button.updrun.alt { background: var(--bg-3); border-color: var(--line); font-weight: 500; }
+.envmenu button.updrun.alt { background: var(--bg-3); border-color: var(--line); font-weight: 500; box-shadow: none; }
 .envmenu button.updrun.alt:hover, .envmenu button.updrun.alt:focus-visible { background: var(--btn-hover); border-color: var(--line-strong); }
 .envmenu button.updrun.alt:focus:not(:focus-visible) { background: var(--bg-3); }
 .updmenu .updready { padding: 4px 8px 2px; font: 600 12px var(--ui); color: var(--ok); }
@@ -1131,14 +1143,22 @@ kbd {
   .brand.flowing .bm-pk { opacity: 0; }
   .brand.flowing .bm-arm { opacity: 1; stroke: var(--accent); }
 }
-/* A newer release is out: the Updates glyph beside the name, at the height of
-   its capitals and inside the button so the divider after it stays clear, the
-   pill in the status bar saying which. In the pill's accent, not the warning
-   colour: nothing is wrong with the one running. */
-.brand.newer { padding-right: 15px; }
+/* A newer release is out: a badge in the corner of the name, inside the button
+   so the divider after it stays clear, the pill in the status bar saying which.
+   The disc is the badge's ground, in the update colour with a ring and a glow
+   around it, and the Updates arrow on it is the shape that carries the meaning
+   (0148): white, over a disc that is blue in every theme, Graphite's grey
+   accent aside (0181). Nothing is wrong with the one running, so it is not the
+   warning colour. */
+.brand.newer { padding-right: 22px; }
+.brand.newer::before {
+  content: ''; position: absolute; top: 4px; right: 3px; width: 14px; height: 14px; border-radius: 50%;
+  background: var(--update);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--update) 25%, transparent), 0 0 10px color-mix(in srgb, var(--update) 55%, transparent);
+}
 .brand.newer::after {
-  content: ''; position: absolute; top: 6px; right: 4px; width: 9px; height: 9px;
-  background: var(--accent); -webkit-mask: var(--m-newer) center / contain no-repeat; mask: var(--m-newer) center / contain no-repeat;
+  content: ''; position: absolute; top: 7px; right: 6px; width: 8px; height: 8px;
+  background: var(--on-update); -webkit-mask: var(--m-newer) center / contain no-repeat; mask: var(--m-newer) center / contain no-repeat;
 }
 .sep { width: 1px; height: 18px; background: var(--line); }
 /* The settings' Python row (.setinner .chip, below) is built on these: the top bar's
@@ -1863,7 +1883,7 @@ kbd {
 .setglyph { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
 .setwarn { margin-left: auto; width: 10px; height: 10px; flex: 0 0 auto; background: var(--warn); -webkit-mask: var(--m-warn) center / contain no-repeat; mask: var(--m-warn) center / contain no-repeat; }
 .sethint { margin-left: auto; flex: 0 0 auto; font: 11px var(--mono); color: var(--fg-mute); }
-.sethint.new { padding: 0 6px; border-radius: 8px; line-height: 16px; color: var(--accent); background: rgba(var(--accent-rgb), .12); }
+.sethint.new { padding: 0 6px; border-radius: 8px; line-height: 16px; color: var(--update); background: color-mix(in srgb, var(--update) 12%, transparent); }
 .setview { flex: 1 1 0; min-width: 0; overflow: auto; }
 .setinner { flex: none; width: 100%; max-width: 920px; margin: 0 auto; padding: 26px 40px 48px; }
 .sethead { margin-bottom: 18px; }
@@ -1899,6 +1919,10 @@ kbd {
 .setinner .btn { display: inline-flex; align-items: center; gap: 6px; }
 .setinner .btn.primary { background: var(--accent); border-color: transparent; color: var(--on-accent); font-weight: 500; }
 .setinner .btn.primary:hover { background: var(--accent); filter: brightness(1.08); }
+/* The recommended install of a newer release, as the menu's button is (0181). */
+.setinner .btn.primary.updgo { background: var(--update-dim); border-color: var(--update); color: var(--fg);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--update) 18%, transparent), 0 0 12px color-mix(in srgb, var(--update) 30%, transparent); }
+.setinner .btn.primary.updgo:hover { background: color-mix(in srgb, var(--update) 40%, var(--bg)); filter: none; }
 .setinner .mono { font: 12px var(--mono); }
 .setinner .dim { color: var(--fg-mute); font-size: 12px; }
 .setnote { margin: 4px 0; font-size: 12px; line-height: 1.5; color: var(--fg-dim); }
@@ -1999,10 +2023,10 @@ kbd {
 /* Updates: this build beside the newest, the releases since, how to install. */
 .vcards { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 .vcard { padding: 12px 16px; border: 1px solid var(--line); border-radius: 9px; background: var(--bg-2); }
-.vcard.new { border-color: rgba(var(--accent-rgb), .45); }
+.vcard.new { border-color: color-mix(in srgb, var(--update) 45%, transparent); }
 .vk { font-size: 11px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--fg-dim); }
 .setinner .vv { margin-top: 2px; font: 600 20px var(--mono); }
-.vcard.new .vv { color: var(--accent); }
+.vcard.new .vv { color: var(--update); }
 /* Words, where there is no version to show: the text size, quietly. */
 .setinner .vv.words { margin-top: 2px; font: 13px/1.45 var(--ui); color: var(--fg-dim); }
 .vs { font-size: 12px; color: var(--fg-mute); }
