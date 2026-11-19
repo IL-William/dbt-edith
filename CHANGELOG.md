@@ -20,6 +20,11 @@ and bumps nothing.
 
 ## Unreleased
 
+## 2.27.1 - 2026-11-23
+
+- Draw the arrow on Edith's update badge thicker, so it reads at its size
+  (0181).
+
 ## 2.27.0 - 2026-11-19
 
 - Carry collin's column lineage in the static site, with the Columns tab, the
