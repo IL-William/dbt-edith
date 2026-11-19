@@ -2107,7 +2107,25 @@ Edith's mark in the top bar (1.77.2). The mark sits before her name, which
 takes the mark's square on its i; the button is still labelled Edith and opens
 the same menu. While a request that waits on something outside the server is out
 past 400 ms, a packet runs along each arm and lights the box it reaches, and the
-mark fades to rest over 300 ms once the last one answers. Which requests count
+mark fades back to its rest loop over 300 ms once the last one answers. At rest
+it is not still: one packet at a time crosses an arm (each arm has 1.8 s of a
+5.4 s turn, the packet crossing in 1.2 s) and the box it reaches glows softly
+in the accent. These live on elements of their own (`.bm-idle`) that nothing
+restarts, so neither pace makes a packet jump; the two groups cross-fade, and
+the rest loop is held still while the working one runs. They are HTML elements
+over the SVG, moved by `transform` and faded by `opacity`, which Chrome runs on
+the compositor with no work for the page per frame: about 1 ms of main-thread
+work a second, against 0.6 for the still mark, measured at 1x, 2x and 1.25x.
+The same two properties on SVG children are composited only at an effective
+zoom of 1, so on a screen at 2x or a page zoomed to 125% they cost the page
+about 30 ms a second for ever, as the dash that was tried first did at any zoom;
+`scripts/walk_menu.py` traces a page of the mark alone at 2x and fails on a
+single main-thread frame. The compositor's own frames still cost a few percent
+of a core while the window is in view (about 5 points of one core, headless
+with software compositing, over the still mark). The dot cannot slide under the
+boxes as the working dash does, so it is invisible while in the source box and
+as it reaches the target. Under reduced motion the rest loop is not shown and
+its animations are stopped, not only hidden. Which requests count
 is a list (`WORK_ROUTES`): the manifest read again, a column's lineage from
 collin and the comparison of two collin versions, anything read from Snowflake,
 git's push, pull and fetch, and the release check. Requests are counted, so two
@@ -2117,7 +2135,8 @@ or a click is followed through its state (`followCollinWork`). Under reduced
 motion the arms turn to the accent instead of moving; with the Halloween look
 the ghost moves with the name to stay behind the E. Checked with
 `web/tests/working.js` and `web/tests/halloween.js`. The shot of every feature
-page is retaken, each showing the top bar.
+page is retaken, each showing the top bar; `scripts/take_shots.py` hides the
+rest loop so the pictures keep the still mark.
 
 Every environment on the Compiled and Run tabs (0147, 1.78.0), amending 0139
 and 0142. The top of both tabs offers one button per environment, in the order

@@ -20,8 +20,13 @@ and bumps nothing.
 
 ## Unreleased
 
+## 2.25.0 - 2026-11-19
+
 - Mark a newer release with a badge and a halo on Edith, blue in Graphite too,
   with the status bar's pill and the update buttons in the same colour (0181).
+- Keep Edith's mark moving at rest, faster while she works: at rest one packet at a
+  time crosses an arm and the box it reaches glows softly, and under reduced
+  motion it stays still as it was.
 
 ## 2.24.0 - 2026-11-12
 

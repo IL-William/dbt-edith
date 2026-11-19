@@ -203,7 +203,9 @@ Edith's menu is driven by a real pointer, the same way: what opens it under
 the pointer, what closes it, and what a click on it holds open, where the
 theme menu sits and what its keys do, and that the manifest pill's card, held
 open, has a poll rewrite its age in place and keeps the focus on its Run button
-when a poll changes the answer (0157):
+when a poll changes the answer (0157). It also loads a page of Edith's mark alone
+at twice the pixels and requires that its rest loop asks the page for no frame
+on the main thread over two seconds, where the working loop does:
 
 ```
 /tmp/dbt/bin/python scripts/walk_menu.py
