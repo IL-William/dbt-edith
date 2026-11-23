@@ -305,6 +305,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/resolve", post(resolve))
         .route("/api/macros/resolve", post(resolve_macros))
         .route("/api/macros/search", get(search_macros))
+        .route("/api/columns/search", get(search_columns))
         .route("/api/project/resolve", post(resolve_project_keys))
         .route("/api/git", get(git_status))
         .route("/api/freshness", get(freshness_status))
@@ -730,6 +731,20 @@ struct Features {
     builds_stale_days: u32,
 }
 
+/// The column lineage tool in play: Snowflake while its script is on, else the
+/// one that wrote the cache on screen, else Collin once picked and not yet run.
+fn cll_tool_of(st: &AppState, graph: &Graph) -> &'static str {
+    if st.sidecar.enabled() {
+        return "snowflake";
+    }
+    match collin::tool_of(&graph.meta.cll_source) {
+        // Collin picked before its first run: its file is chosen and not
+        // written yet, and the menu names it rather than "none".
+        "" if st.cll() == collin::path_for(&st.target_dir, "collin") => "collin",
+        tool => tool,
+    }
+}
+
 /// What the page needs to paint the column lineage list and the settings. Every
 /// route that changes either answers with it, so the page never paints half of
 /// a change.
@@ -740,17 +755,7 @@ async fn meta_body(st: &Arc<AppState>) -> MetaBody {
     let snowflake = crate::settings::snowflake_features(chosen, &graph.meta.adapter);
     let cll_active = st.cll().file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
     let live = st.sidecar.enabled();
-    let collin_out = collin::path_for(&st.target_dir, "collin");
-    let cll_tool = if live {
-        "snowflake"
-    } else {
-        match collin::tool_of(&graph.meta.cll_source) {
-            // Collin picked before its first run: its file is chosen and not
-            // written yet, and the menu names it rather than "none".
-            "" if st.cll() == collin_out => "collin",
-            tool => tool,
-        }
-    };
+    let cll_tool = cll_tool_of(st, &graph);
     let collin = {
         let now = collin_now(st).await;
         let found = now.bin.is_some();
@@ -2162,6 +2167,52 @@ async fn search_macros(State(st): State<Arc<AppState>>, Query(q): Query<MacroSea
                 description: m.description.clone(),
                 args: m.args.clone(),
                 used: macros.position(&m.id).map(|at| macro_used(&graph, at)).unwrap_or_default(),
+            })
+            .collect::<Vec<_>>()
+    })
+    .await;
+    match found {
+        Ok(hits) => Json(hits).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    }
+}
+
+#[derive(Deserialize)]
+struct ColumnSearchQuery {
+    #[serde(default)]
+    q: String,
+    #[serde(default)]
+    limit: Option<usize>,
+}
+
+/// One column the palette found, with the node it belongs to.
+#[derive(serde::Serialize)]
+struct ColumnHit<'a> {
+    #[serde(flatten)]
+    node: Hit<'a>,
+    /// The column's name. A node that is not a test has none of its own in
+    /// `node`, so the two never share a key.
+    column: &'a str,
+    #[serde(skip_serializing_if = "str::is_empty")]
+    data_type: &'a str,
+}
+
+/// The columns named like the query, for the palette's Columns chip. Collin
+/// only: its cache is what brings a model's undeclared columns, and the page
+/// offers the chip for no other tool (0184). Nothing is run, the columns are
+/// the ones in memory.
+async fn search_columns(State(st): State<Arc<AppState>>, Query(q): Query<ColumnSearchQuery>) -> Response {
+    let graph = st.graph.read().await.clone();
+    if cll_tool_of(&st, &graph) != "collin" {
+        return (StatusCode::CONFLICT, "Columns are searched only with Collin picked as the column lineage tool").into_response();
+    }
+    let limit = q.limit.unwrap_or(40).min(500);
+    let found = tokio::task::spawn_blocking(move || {
+        let hits = graph.search_columns(&q.q, limit);
+        hits.iter()
+            .map(|&(i, at)| {
+                let col = &graph.nodes[i as usize].columns[at];
+                serde_json::to_value(ColumnHit { node: hit(&graph, i), column: &col.name, data_type: &col.data_type }).unwrap_or_default()
             })
             .collect::<Vec<_>>()
     })
@@ -7603,6 +7654,82 @@ b"}"#,
         let mut laid_over = over_a.clone();
         merge_cache(&mut laid_over, &b);
         assert_eq!(columns(&laid_over), ["id", "only_a", "only_b"]);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The palette's Columns chip is Collin's: any other tool is refused, and
+    /// with a Collin cache loaded the columns it added are found beside the
+    /// declared ones, with the node they belong to.
+    #[tokio::test]
+    async fn columns_are_searched_only_with_collin_picked() {
+        let root = temp_project("column-search");
+        let target = root.join("target");
+        std::fs::create_dir_all(&target).unwrap();
+        let model = |name: &str| {
+            serde_json::json!({
+                "name": name, "resource_type": "model", "package_name": "demo",
+                "original_file_path": format!("models/{name}.sql"),
+                "columns": { "id": { "name": "id", "data_type": "integer" } },
+            })
+        };
+        let manifest = serde_json::json!({
+            "metadata": { "project_name": "demo" },
+            "nodes": { "model.demo.stg": model("stg"), "model.demo.orders": model("orders") },
+        });
+        std::fs::write(target.join("manifest.json"), manifest.to_string()).unwrap();
+        let edge = serde_json::json!({ "from": "model.demo.stg", "from_col": "amount", "to": "model.demo.orders", "to_col": "amount" });
+        let cache = |source: &str| {
+            let body = serde_json::json!({ "version": 1, "source": source, "edges": [edge] });
+            std::fs::write(target.join(format!("column_lineage.{source}.json")), body.to_string()).unwrap();
+            target.join(format!("column_lineage.{source}.json"))
+        };
+        let (port, st, server) = serve(&root).await;
+        let host = format!("127.0.0.1:{port}");
+        let h = [("Host", host.as_str())];
+        let base = load_base(&root, &target.join("manifest.json"), &target.join("catalog.json")).unwrap();
+
+        // No cache at all: not Collin, so refused.
+        let none = response_of(port, get("/api/columns/search?q=id", &h)).await;
+        assert!(none.starts_with("HTTP/1.1 409"), "{none}");
+        assert!(none.contains("Collin"), "{none}");
+
+        // Another tool's cache on screen: still refused.
+        let x = cache("x");
+        st.set_cll(x.clone());
+        *st.graph.write().await = Arc::new(with_cache(&base, &x));
+        let other = response_of(port, get("/api/columns/search?q=amount", &h)).await;
+        assert!(other.starts_with("HTTP/1.1 409"), "{other}");
+
+        let collin = cache("collin");
+        st.set_cll(collin.clone());
+        *st.graph.write().await = Arc::new(with_cache(&base, &collin));
+        let found = response_of(port, get("/api/columns/search?q=amount", &h)).await;
+        assert!(found.starts_with("HTTP/1.1 200"), "{found}");
+        let hits = json_of(&found);
+        let hits = hits.as_array().unwrap();
+        assert_eq!(hits.len(), 2, "{found}");
+        assert_eq!((hits[0]["name"].as_str(), hits[0]["column"].as_str()), (Some("orders"), Some("amount")), "{found}");
+        assert_eq!(hits[0]["id"], "model.demo.orders");
+        assert_eq!(hits[0]["file"], "models/orders.sql");
+        assert_eq!(hits[1]["name"], "stg");
+        // Declared columns come with their type, a column collin adds without.
+        let typed = json_of(&response_of(port, get("/api/columns/search?q=id", &h)).await);
+        assert_eq!(typed[0]["data_type"], "integer");
+        assert!(hits[0].get("data_type").is_none());
+        let dotted = json_of(&response_of(port, get("/api/columns/search?q=stg.am", &h)).await);
+        assert_eq!(dotted.as_array().unwrap().len(), 1);
+        let capped = json_of(&response_of(port, get("/api/columns/search?q=a&limit=1", &h)).await);
+        assert_eq!(capped.as_array().unwrap().len(), 1);
+        let empty = json_of(&response_of(port, get("/api/columns/search?q=", &h)).await);
+        assert!(empty.as_array().unwrap().is_empty());
+
+        // Collin picked and not yet run: its file is chosen and not written.
+        let _ = std::fs::remove_file(&collin);
+        *st.graph.write().await = Arc::new(base.clone());
+        let picked = response_of(port, get("/api/columns/search?q=id", &h)).await;
+        assert!(picked.starts_with("HTTP/1.1 200"), "{picked}");
+
+        server.abort();
         let _ = std::fs::remove_dir_all(&root);
     }
 

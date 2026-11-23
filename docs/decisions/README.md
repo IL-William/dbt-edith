@@ -187,6 +187,7 @@ it; these files say why it is built this way, for whoever changes it next.
 | [0181](0181-a-newer-release-keeps-its-colour-in-every-theme.md) | A newer release keeps its colour in every theme | changing the colour, the badge, the pill or the buttons that say a newer release is out |
 | [0182](0182-the-site-carries-collins-column-lineage.md) | The site carries collin's column lineage | changing what `--site` reads of `target/`, whether it starts collin, how the browser answers `/api/collineage` and `/api/colreach`, or what the page says of a cache older than the manifest |
 | [0183](0183-the-site-carries-the-jobs-and-reads-git-where-a-job-source-lives.md) | The site carries the jobs, and reads git where a job source lives | changing what `--site` reads of the orchestrator's jobs, what the page says of a source that was not read, how a job file is linked, or which folder git is asked about besides the project's |
+| [0184](0184-columns-are-searched-from-the-palette-behind-a-chip-with-collin.md) | Columns are searched from the palette, behind a chip, with Collin picked | changing what `Cmd/Ctrl + K` finds, adding columns to its default answer, or letting a tool other than Collin search them |
 
 ## Keeping these honest
 

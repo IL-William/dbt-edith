@@ -7860,9 +7860,11 @@ function strokeIcon(viewBox, className, shapes) {
    the lineage or a feature answers with. */
 function applyLineage(info) {
   const was = S.sidecar && S.sidecar.state;
+  const columnsWas = palColumnsAvailable();
   S.cllSources = info.cll_sources || [];
   S.cllActive = info.cll_active || '';
   S.cllTool = info.cll_tool || '';
+  followPalColumns(columnsWas);
   const sfWas = !!(S.features && S.features.snowflake), firstLoad = S.features === null;
   S.features = info.features || null;
   S.profiles = info.profiles || null;
@@ -19725,9 +19727,14 @@ let palOpened = 0;
 /* Set by an arrow key, cleared when rows are drawn or a key is typed: the row
    it moved to was picked from what is shown, not from a list still coming. */
 let palMoved = false;
+/* The Columns chip: the box searches columns alone, behind Collin (0184). Off at
+   every opening, for a column named like a thing an `id` would find hundreds. */
+let palColumns = false;
 function openPalette() {
   palOpened++;
   closeCrumbMenu();
+  palColumns = false;
+  paintPalColumns();
   $('#palette').classList.remove('hidden');
   const input = $('#palette-input');
   input.value = ''; input.focus();
@@ -19796,9 +19803,19 @@ function nodeGroupTitle(kinds) {
    `grep` (the one that hands the letters to the Search tab) and `note` (a line
    that cannot be picked). `count` is said as the header says it: "40+" for a
    group the server cut, never a number it does not know. */
-function paletteGroups(hits, q, capped, opened) {
+function paletteGroups(hits, q, capped, opened, columns = false) {
   const word = q.trim();
   const groups = [];
+  if (columns) {
+    // One group and nothing else: every row shown, the box scrolls. Nothing
+    // here to hand to the Search tab, which reads files and not columns.
+    if (!hits.length) return groups;
+    const rows = capped.columns
+      ? hits.concat({ kind: 'note', label: `The search stops at ${PALETTE_CAP} columns: type more letters, or model.column, for the rest.` })
+      : hits;
+    groups.push({ key: 'columns', title: 'Columns', count: hits.length + (capped.columns ? '+' : ''), rows });
+    return groups;
+  }
   const add = (key, title, list, cut) => {
     if (!list.length) return;
     let rows = list;
@@ -19828,7 +19845,7 @@ function paletteGroups(hits, q, capped, opened) {
    something else. A cut group makes it a floor, "41+ results". */
 function paletteCount(hits, capped) {
   const n = hits.length;
-  const more = !!(capped.nodes || capped.macros || capped.files);
+  const more = !!(capped.nodes || capped.macros || capped.files || capped.columns);
   return `${n}${more ? '+' : ''} ${n === 1 && !more ? 'result' : 'results'}`;
 }
 
@@ -19841,6 +19858,38 @@ function paletteMarks(name, path, q) {
   return { name: inName, path: splitMatch(path, word) };
 }
 
+/* The line of an empty answer: nothing typed asks for what to type. */
+function paletteEmptyText(q, columns) {
+  if (q.trim()) return `Nothing matches \u201c${q.trim()}\u201d.`;
+  return columns ? 'Type a column\'s name, or model.column.' : 'Type to search models, sources, macros and every file in the project.';
+}
+
+/* A column row's marks: the letters after the last dot in the column's name, the
+   ones before it in the model's, which is where `orders.amo` looks. Without a
+   dot the whole query is the column's. A dot may belong to a name, so a model
+   named as the whole query (`raw.orders`, `orders.v2`) is marked whole, and so
+   is the whole query in a column's name that holds it. */
+function paletteColumnMarks(column, model, q) {
+  const word = q.trim();
+  const dot = word.lastIndexOf('.');
+  if (dot < 0) return { name: splitMatch(column, word), path: splitMatch(model, '') };
+  const whole = word.toLowerCase();
+  return {
+    name: column.toLowerCase().includes(whole) ? splitMatch(column, word) : splitMatch(column, word.slice(dot + 1)),
+    path: splitMatch(model, model.toLowerCase() === whole ? word : word.slice(0, dot)),
+  };
+}
+
+/* What a Columns answer cannot promise, said under it in the words the Columns
+   tab uses for collin: not installed, behind the manifest, running, failed. The
+   columns found are the ones in memory, and a cache behind the manifest is
+   run before the column opens (0184). Nothing when collin is up to date. */
+function paletteColumnsNote(tool, cl) {
+  if (tool !== 'collin' || !cl) return '';
+  if (cl.found && !cl.stale && !cl.outdated && cl.state !== 'running' && cl.state !== 'failed') return '';
+  return collinHint(tool, cl, []).text;
+}
+
 /* One box for everything: dbt nodes from the manifest, the macros by name, and
    every file in the project. A generic test definition or a dotfile is not a
    node, and used to be unfindable. Macros wait for a query: the empty box lists
@@ -19848,6 +19897,15 @@ function paletteMarks(name, path, q) {
    keeps, which is how it knows a group was cut. */
 async function fetchPalette(q) {
   const ask = PALETTE_CAP + 1;
+  if (palColumns && palColumnsAvailable()) {
+    // The chip as it was when the key was typed: a later toggle asks again.
+    const found = q.trim() ? await api.get(`/api/columns/search?q=${encodeURIComponent(q)}&limit=${ask}`).catch(() => []) : [];
+    return {
+      columns: true,
+      hits: found.slice(0, PALETTE_CAP).map((h) => ({ kind: 'column', node: h, column: h.column, label: h.column, sub: h.name })),
+      capped: { columns: found.length > PALETTE_CAP },
+    };
+  }
   const [nodes, macros, paths] = await Promise.all([
     api.get(`/api/search?q=${encodeURIComponent(q)}&kind=model,source,seed,snapshot,exposure&limit=${ask}`).catch(() => []),
     q.trim() ? api.get(`/api/macros/search?q=${encodeURIComponent(q)}&limit=${ask}`).catch(() => []) : [],
@@ -19872,6 +19930,44 @@ async function enterPalette() {
   if (opened === palOpened) choosePalette();
 }
 
+/* Whether the chip can be on: Collin is the column lineage tool, and this is
+   not a site, which has no server to search columns with. */
+function palColumnsAvailable() { return S.cllTool === 'collin' && !S.site; }
+
+/* The chip, the placeholder and the foot as the mode says. Greyed, with why,
+   while another tool is picked. */
+function paintPalColumns() {
+  const chip = $('#palette-cols');
+  const can = palColumnsAvailable();
+  const on = palColumns && can;
+  chip.classList.toggle('hidden', !!S.site);
+  chip.classList.toggle('off', !can);
+  chip.setAttribute('aria-disabled', String(!can));
+  chip.setAttribute('aria-pressed', String(on));
+  chip.title = can ? `Search only columns (Tab)` : 'Pick Collin in the settings to search columns';
+  $('#palette-input').placeholder = on ? 'Columns, or model.column\u2026'
+    : S.site ? 'Models and sources\u2026' : 'Models, sources, macros and every file\u2026';
+  $('#palette-tab').classList.toggle('hidden', !can);
+}
+
+/* The tool switched while the box is open: the chip greys or wakes with it, and
+   one that was pressed lets go, the list asked again so that it matches. */
+function followPalColumns(was) {
+  if ($('#palette').classList.contains('hidden') || palColumnsAvailable() === was) return;
+  const pressed = palColumns;
+  if (!palColumnsAvailable()) palColumns = false;
+  paintPalColumns();
+  if (pressed !== palColumns) runPalette($('#palette-input').value);
+}
+
+/* A click or Tab, the focus staying in the input. */
+function togglePalColumns() {
+  if (!palColumnsAvailable()) return;
+  palColumns = !palColumns;
+  paintPalColumns();
+  runPalette($('#palette-input').value);
+}
+
 const GREP_GLYPH = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 3.5h8M2 7h5M2 10.5h4"/>' +
   '<circle cx="11" cy="10" r="2.75"/><path d="M13 12l1.75 1.75"/></svg>';
 
@@ -19886,7 +19982,7 @@ function markedText(host, [before, match, after]) {
 /* One pickable row. A more row has an empty icon box, so its words line up
    with the rows above it. */
 function paletteRow(h, i, q) {
-  const row = jel('div', `pal-row t-${h.kind}` + (h.kind === 'node' && h.node.disabled ? ' off' : ''));
+  const row = jel('div', `pal-row t-${h.kind}` + ((h.kind === 'node' || h.kind === 'column') && h.node.disabled ? ' off' : ''));
   row.id = 'pal-row-' + i;
   row.setAttribute('role', 'option');
   const icon = jel('span', 'pal-ic');
@@ -19899,6 +19995,13 @@ function paletteRow(h, i, q) {
     path.textContent = 'Search tab';
   } else if (h.kind === 'more') {
     name.textContent = h.label;
+  } else if (h.kind === 'column') {
+    // The model's dot, the column and its type, the model's name where a path goes.
+    const marks = paletteColumnMarks(h.column, h.node.name, q);
+    icon.append(dot(h.node));
+    markedText(name, marks.name);
+    markedText(path, marks.path);
+    use.textContent = h.node.data_type || '';
   } else {
     const where = h.kind === 'node' ? h.node.file : h.kind === 'file' ? h.path.slice(0, Math.max(0, h.path.lastIndexOf('/'))) : h.macro.file;
     const marks = paletteMarks(h.label, where, q);
@@ -19920,7 +20023,7 @@ function paletteRow(h, i, q) {
 /* The answer on screen, from `palAnswer` and the groups asked for so far. */
 function drawPalette() {
   const { answer, q } = palAnswer;
-  const groups = paletteGroups(answer.hits, q, answer.capped, palGroupsOpen);
+  const groups = paletteGroups(answer.hits, q, answer.capped, palGroupsOpen, !!answer.columns);
   palHits = groups.flatMap((g) => g.rows).filter((r) => r.kind !== 'note');
   palIndex = Math.min(palIndex, Math.max(0, palHits.length - 1));
   $('#palette-count').textContent = paletteCount(answer.hits, answer.capped);
@@ -19928,9 +20031,12 @@ function drawPalette() {
   const box = $('#palette-results');
   const kept = box.scrollTop;
   box.textContent = '';
+  // Under the group, or alone when nothing was found: a cache not there is
+  // the likeliest reason a column is missing.
+  const behind = answer.columns && q.trim() ? paletteColumnsNote(S.cllTool, S.collin) : '';
   if (!groups.length) {
-    box.append(jel('div', 'pal-empty', q.trim() ? `Nothing matches “${q.trim()}”.`
-      : 'Type to search models, sources, macros and every file in the project.'));
+    box.append(jel('div', 'pal-empty', paletteEmptyText(q, !!answer.columns)));
+    if (behind) box.append(jel('div', 'pal-note', behind));
     $('#palette-input').removeAttribute('aria-activedescendant');
     return;
   }
@@ -19946,6 +20052,7 @@ function drawPalette() {
       i++;
     }
   }
+  if (behind) box.append(jel('div', 'pal-note', behind));
   box.scrollTop = kept;
   markPalette();
   paletteFileMarks();
@@ -20037,6 +20144,16 @@ function choosePalette(i) {
   // It records its own place to come back to.
   if (h.kind === 'macro') { openMacro(h.macro); return; }
   pushJump();
+  if (h.kind === 'column') {
+    // A model reached from here starts at the default depth, as from a node row.
+    if (h.node.id !== S.focus && !(S.colFocus && S.colFocus.id === h.node.id)) {
+      for (const el of [$('#up'), $('#down')]) el.value = el.defaultValue;
+    }
+    // The canvas stays on the column: the file opens without taking the lineage.
+    openColumn(h.node, h.column);
+    if (h.node.file) { openFile(h.node.file, { focusLineage: false, preview: true }); revealInTree(h.node.file); }
+    return;
+  }
   if (h.kind === 'file') {
     openFile(h.path, { preview: true });
     revealInTree(h.path);
@@ -21951,7 +22068,15 @@ function wireKeys() {
     if (e.key === 'ArrowDown') { e.preventDefault(); movePalette(1); }
     else if (e.key === 'ArrowUp') { e.preventDefault(); movePalette(-1); }
     else if (e.key === 'Enter') { e.preventDefault(); enterPalette(); }
+    // Tab is the chip's, where there is one: nothing else in the box takes the focus.
+    else if (e.key === 'Tab' && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      e.preventDefault();
+      togglePalColumns();
+    }
   });
+  // Not a mousedown that moves the focus off the input.
+  $('#palette-cols').addEventListener('mousedown', (e) => e.preventDefault());
+  $('#palette-cols').addEventListener('click', togglePalColumns);
   $('#palette').addEventListener('click', (e) => { if (e.target.id === 'palette') closePalette(); });
   $('#palette-btn').addEventListener('click', openPalette);
   $('#model-filter').addEventListener('input', () => {

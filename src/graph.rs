@@ -2306,6 +2306,103 @@ impl Graph {
         hits.into_iter().map(|(_, i)| i).collect()
     }
 
+    /// Ranked search over the columns of models, seeds, snapshots and sources,
+    /// as `(node, column index)`. A column's name matches exactly (0), by its
+    /// start (10) or anywhere in it (20), then the shorter name reads first, then
+    /// the model's name. Only what is in memory is scanned, every column of
+    /// those nodes once: the ones the YAML, the catalog and a loaded column
+    /// lineage cache gave them. Nothing is run and no file is read.
+    ///
+    /// A query with a dot, `orders.amo`, splits at the last one: the node's name
+    /// holds the left part and the column matches the right, which is the way
+    /// past a bare `id` matching hundreds. After the column's score, the node
+    /// whose name is the left part reads first, then one that starts with it,
+    /// then one that holds it. Nothing after the dot lists the columns of every
+    /// node the left part names, per node in the order the node holds them. A
+    /// dot can belong to a name, `raw.orders` (a source) or `orders.v2` (a
+    /// version), so a query that is a node's whole name lists that node's
+    /// columns before anything else, and a column may match on the whole query.
+    /// A column that several of these reach is listed once.
+    pub fn search_columns(&self, query: &str, limit: usize) -> Vec<(u32, usize)> {
+        let q = query.trim().to_lowercase();
+        let (model_q, col_q) = q.rsplit_once('.').unwrap_or(("", &q));
+        let dotted = q.contains('.');
+        if limit == 0 || q.is_empty() || (dotted && model_q.is_empty() && col_q.is_empty()) {
+            return Vec::new();
+        }
+        // How a name matches a query: exact 0, its start 10, anywhere in it 20.
+        let score = |name: &str, want: &str| {
+            if name == want {
+                Some(0)
+            } else if name.starts_with(want) {
+                Some(10)
+            } else if name.contains(want) {
+                Some(20)
+            } else {
+                None
+            }
+        };
+        // (whole name first, column score, node tier, column name length): lower reads first.
+        type Key = (u8, u32, u8, usize);
+        let mut hits: Vec<(Key, u32, usize)> = Vec::new();
+        let mut lowered = String::new();
+        for (i, n) in self.nodes.iter().enumerate() {
+            if !matches!(n.kind, Kind::Model | Kind::Seed | Kind::Snapshot | Kind::Source) || n.columns.is_empty() {
+                continue;
+            }
+            let name_key = n.search_key.split_once('\u{0}').map_or(n.search_key.as_str(), |(name, _)| name);
+            // Of the dot's two readings, whether this node is named by the left part and how well,
+            // and whether the whole query is its name.
+            let (tier, whole) = if dotted {
+                let tier = score(name_key, model_q).map(|s| (s / 10) as u8);
+                (tier, name_key == q)
+            } else {
+                (Some(0), false)
+            };
+            for (at, col) in n.columns.iter().enumerate() {
+                lowered.clear();
+                if col.name.is_ascii() {
+                    lowered.push_str(&col.name);
+                    lowered.make_ascii_lowercase();
+                } else {
+                    lowered.extend(col.name.chars().flat_map(char::to_lowercase));
+                }
+                let len = col.name.len().min(999);
+                let mut best: Option<Key> = None;
+                let mut offer = |key: Key| best = Some(best.map_or(key, |b| b.min(key)));
+                if whole {
+                    offer((0, 50, 0, 0));
+                }
+                if let Some(tier) = tier {
+                    // `orders.` lists the node's columns as it holds them: no length to reorder by.
+                    if dotted && col_q.is_empty() {
+                        offer((1, 50, tier, 0));
+                    } else if let Some(s) = score(&lowered, col_q) {
+                        offer((1, s, tier, len));
+                    }
+                }
+                // The whole query as a column's name, whichever node holds it.
+                if dotted {
+                    if let Some(s) = score(&lowered, &q) {
+                        offer((1, s, 3, len));
+                    }
+                }
+                if let Some(key) = best {
+                    hits.push((key, i as u32, at));
+                }
+            }
+        }
+        let order =
+            |a: &(Key, u32, usize), b: &(Key, u32, usize)| a.0.cmp(&b.0).then_with(|| self.by_name_then_id(a.1, b.1)).then(a.2.cmp(&b.2));
+        // Only the rows kept are put in order, not every column that matched.
+        if hits.len() > limit {
+            hits.select_nth_unstable_by(limit, order);
+            hits.truncate(limit);
+        }
+        hits.sort_unstable_by(order);
+        hits.into_iter().map(|(_, i, at)| (i, at)).collect()
+    }
+
     /// Finds each installed package's node file where `dbt deps` put it, as
     /// `Macros::place` finds a package macro, and files the node under that
     /// path instead of its path inside the package: `models/x.sql` in the
@@ -5055,6 +5152,152 @@ mod tests {
         .unwrap();
         let g = Graph::build(raw, std::path::Path::new("manifest.json"), 0, 0);
         assert_eq!(chips(&g, "model.shop.dim_customers"), ["nn"]);
+    }
+
+    /// The columns of a small project, as `model.column` for each hit.
+    fn column_hits(g: &Graph, query: &str, limit: usize) -> Vec<String> {
+        g.search_columns(query, limit)
+            .into_iter()
+            .map(|(i, at)| format!("{}.{}", g.nodes[i as usize].name, g.nodes[i as usize].columns[at].name))
+            .collect()
+    }
+
+    fn columns_graph() -> Graph {
+        let model = |name: &str, kind: &str, cols: &[&str]| {
+            let columns: serde_json::Map<String, serde_json::Value> =
+                cols.iter().map(|c| (c.to_string(), serde_json::json!({ "name": c, "data_type": "integer" }))).collect();
+            serde_json::json!({ "name": name, "resource_type": kind, "package_name": "shop", "columns": columns })
+        };
+        let mut versioned = model("orders", "model", &["amount", "id"]);
+        versioned["version"] = 2.into();
+        versioned["latest_version"] = 2.into();
+        let mut source = model("orders", "source", &["id", "order_id"]);
+        source["source_name"] = "raw".into();
+        let raw: RawManifest = serde_json::from_value(serde_json::json!({
+            "nodes": {
+                "model.shop.orders": model("orders", "model", &["order_id", "customer_id", "id"]),
+                "model.shop.orders.v2": versioned,
+                // Before `orders` by name, so only its tier can put `orders` first.
+                "model.shop.a_orders": model("a_orders", "model", &["order_id"]),
+                "model.shop.stg_orders": model("stg_orders", "model", &["order_id", "ID", "order_date"]),
+                "seed.shop.payments": model("payments", "seed", &["Order_Id", "reorder_level"]),
+                "snapshot.shop.snap_orders": model("snap_orders", "snapshot", &["id", "order"]),
+                // Never searched: a test's columns are its model's, an exposure has none.
+                "test.shop.t": model("t", "test", &["order_id"]),
+                "exposure.shop.dash": model("dash", "exposure", &["order_id"]),
+            },
+            "sources": { "source.shop.raw.orders": source },
+        }))
+        .unwrap();
+        Graph::build(raw, std::path::Path::new("manifest.json"), 0, 0)
+    }
+
+    #[test]
+    fn columns_rank_exact_then_prefix_then_contains_then_shorter_then_model() {
+        let g = columns_graph();
+        // Exact first, then the column named with it first, then the shorter name.
+        assert_eq!(
+            column_hits(&g, "order", 20),
+            [
+                "snap_orders.order", "a_orders.order_id", "orders.order_id", "payments.Order_Id", "raw.orders.order_id",
+                "stg_orders.order_id", "stg_orders.order_date", "payments.reorder_level"
+            ]
+        );
+        // Equal scores and lengths read by the model's name, whatever its kind.
+        assert_eq!(
+            column_hits(&g, "id", 5),
+            ["orders.id", "orders.v2.id", "raw.orders.id", "snap_orders.id", "stg_orders.ID"],
+            "an exact match, in every case, before any other"
+        );
+        assert_eq!(column_hits(&g, "id", 20).len(), 11, "then every column holding it, shorter names first");
+        assert_eq!(column_hits(&g, "  ORDER_ID ", 1), ["a_orders.order_id"], "trimmed, and case is ignored");
+    }
+
+    #[test]
+    fn a_dot_splits_the_query_into_a_model_and_a_column() {
+        let g = columns_graph();
+        assert_eq!(column_hits(&g, "snap.id", 20), ["snap_orders.id"]);
+        // The left part is held by the node's name, the right one ranks the columns.
+        assert_eq!(column_hits(&g, "stg.ord", 20), ["stg_orders.order_id", "stg_orders.order_date"]);
+        assert_eq!(column_hits(&g, "orders.customer", 20), ["orders.customer_id"]);
+        // The last dot splits, so a name with a dot in it can be the left part: a source and a version.
+        assert_eq!(
+            column_hits(&g, "raw.orders.id", 20),
+            ["raw.orders.id", "raw.orders.order_id"],
+            "exact first, then the column holding it"
+        );
+        assert_eq!(column_hits(&g, "orders.v2.amo", 20), ["orders.v2.amount"]);
+        assert!(column_hits(&g, "a.b.id", 20).is_empty());
+        assert!(column_hits(&g, ".", 20).is_empty());
+    }
+
+    #[test]
+    fn a_dotted_query_reads_the_node_named_like_it_first() {
+        let g = columns_graph();
+        // `orders` is the left part itself, the others only hold it: it leads though `a_orders` sorts first.
+        assert_eq!(
+            column_hits(&g, "orders.order_id", 20),
+            ["orders.order_id", "a_orders.order_id", "raw.orders.order_id", "stg_orders.order_id"]
+        );
+        // The column's score comes first: an exact column of a node that only holds the name leads a prefix one.
+        assert_eq!(column_hits(&g, "orders.id", 3), ["orders.id", "orders.v2.id", "raw.orders.id"]);
+    }
+
+    #[test]
+    fn a_dot_that_belongs_to_a_name_still_finds_the_node() {
+        let g = columns_graph();
+        // The whole query is a node's name: its columns, as `name.` lists them.
+        assert_eq!(column_hits(&g, "raw.orders", 20), ["raw.orders.id", "raw.orders.order_id"]);
+        assert_eq!(column_hits(&g, "Orders.V2", 20), ["orders.v2.amount", "orders.v2.id"]);
+        for q in ["raw.orders", "orders.v2", "orders.", "orders.id"] {
+            let hits = g.search_columns(q, 100);
+            let mut once = hits.clone();
+            once.sort_unstable();
+            once.dedup();
+            assert_eq!(once.len(), hits.len(), "{q}: a column is listed once");
+        }
+        // The whole query may also be a column's name, whichever node holds it.
+        let raw: RawManifest = serde_json::from_value(serde_json::json!({
+            "nodes": { "model.shop.m": { "name": "m", "resource_type": "model", "package_name": "shop",
+                "columns": { "a.b": { "name": "a.b" } } } },
+        }))
+        .unwrap();
+        let dotted = Graph::build(raw, std::path::Path::new("manifest.json"), 0, 0);
+        assert_eq!(column_hits(&dotted, "a.b", 10), ["m.a.b"]);
+    }
+
+    #[test]
+    fn nothing_after_the_dot_lists_each_node_in_the_order_it_holds_its_columns() {
+        let g = columns_graph();
+        assert_eq!(column_hits(&g, "stg_orders.", 20), ["stg_orders.ID", "stg_orders.order_date", "stg_orders.order_id"]);
+        let held: Vec<String> = g.nodes[g.index["model.shop.stg_orders"] as usize].columns.iter().map(|c| c.name.clone()).collect();
+        assert_eq!(held, ["ID", "order_date", "order_id"], "the order the node holds them in");
+        // Node by node, the named one first, then those starting with it, then those holding it by name.
+        assert_eq!(
+            column_hits(&g, "orders.", 20),
+            [
+                "orders.customer_id", "orders.id", "orders.order_id", "orders.v2.amount", "orders.v2.id", "a_orders.order_id",
+                "raw.orders.id", "raw.orders.order_id", "snap_orders.id", "snap_orders.order", "stg_orders.ID", "stg_orders.order_date",
+                "stg_orders.order_id"
+            ]
+        );
+    }
+
+    #[test]
+    fn columns_leave_out_tests_and_exposures_and_obey_a_limit() {
+        let g = columns_graph();
+        let all = g.search_columns("order_id", 100);
+        assert_eq!(all.len(), 5, "not the test, not the exposure");
+        assert!(all.iter().all(|&(i, _)| !matches!(g.nodes[i as usize].kind, Kind::Test | Kind::Exposure)));
+        assert_eq!(g.search_columns("order_id", 2).len(), 2);
+        // The rows kept are the first of the whole answer, in its order.
+        for limit in 1..12 {
+            assert_eq!(column_hits(&g, "id", limit), column_hits(&g, "id", 100)[..limit.min(11)], "limit {limit}");
+        }
+        assert_eq!(g.search_columns("order_id", 0).len(), 0);
+        assert!(g.search_columns("", 10).is_empty());
+        assert!(g.search_columns("   ", 10).is_empty());
+        assert!(g.search_columns("zzz", 10).is_empty());
     }
 
     /// A hub with twelve children, each with two tests declared beside it in
