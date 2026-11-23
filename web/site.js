@@ -1,6 +1,6 @@
 /* The static site's server: the answers /api/lineage, /api/node, /api/search, /api/site/code,
-   /api/collineage and /api/colreach give, worked out in the browser from the data `dbt-edith --site`
-   wrote (0177, 0180, 0182).
+   /api/collineage, /api/colreach, /api/jobs and /api/jobs/node give, worked out in the browser from the
+   data `dbt-edith --site` wrote (0177, 0180, 0182, 0183).
 
    Each walk below is a port of the Rust one, line by line, and the golden fixture
    tests/fixtures/site_case.js holds Rust's answers for web/tests/site.js to compare
@@ -16,6 +16,7 @@ const EdithSite = (() => {
   const BUCKET_URL = (k) => 'data/cards/' + String(k).padStart(4, '0') + '.js';
   const SQL_URL = (k) => 'data/sql/' + String(k).padStart(4, '0') + '.js';
   const CLL_URL = 'data/cll.js';
+  const JOBS_URL = 'data/jobs.js';
   const NO_ROUTE = 'not in this site';
   const LOOK_KEY = 'dbt-edith-site-look';
   const LOOK_DEFAULT = { theme: 'night', follow: false, apparitions: true, boxes: 'tombstone' };
@@ -104,6 +105,22 @@ const EdithSite = (() => {
     const parts = file.split('/');
     if (parts.some((p) => p === '' || p === '.' || p === '..')) return '';
     return base + parts.map(encodeURIComponent).join('/');
+  }
+
+  /* The address of a line of a job file in its repository, at the commit the site names for its source (0183):
+     the base Rust wrote, the file's path with each segment escaped as `fileUrl` does, and the host's anchor for
+     a line. The source is told by its name, the one the answers carry; two sources of one name are no link, since
+     it cannot be told which was meant. '' for none: no repository, a host with no file address, a path that is
+     not plain. */
+  function jobFileUrl(meta, sourceName, file, line) {
+    const found = ((meta && meta.jobs && meta.jobs.sources) || []).filter((s) => s.name === sourceName);
+    if (found.length !== 1 || !file) return '';
+    const { base, anchor } = found[0];
+    if (!base || !/^https:\/\//.test(base)) return '';
+    const parts = file.split('/');
+    if (parts.some((p) => p === '' || p === '.' || p === '..')) return '';
+    const at = line > 0 && anchor ? '#' + anchor + line : '';
+    return base + parts.map(encodeURIComponent).join('/') + at;
   }
 
   function make(data, loadBucket) {
@@ -399,6 +416,90 @@ const EdithSite = (() => {
         load.catch(() => { if (cllLoad === load) cllLoad = null; });
       }
       return cllLoad;
+    }
+
+    /* ---- the jobs (0183): `/api/jobs` as it was when the site was written, and `/api/jobs/node` for each node,
+       laid out by Rust as steps with the nodes each runs, in runs, and put back here, node by node, to the shape the server answers in. One file, loaded
+       whole the first time the Jobs tab or a card's Jobs line asks, one load for a hover and the click after it, a
+       load that fails forgotten so the next ask tries again. */
+    let jobsData = null;          // what the file handed over, once it arrived
+    let jobsRaw = null;           // what EDITH_SITE_JOBS handed over, until it is taken
+    let jobsLoad = null;          // the one promise of a load in flight
+
+    function receivedJobs(raw) { jobsRaw = raw; }
+
+    function loadJobs() {
+      if (jobsData) return Promise.resolve(jobsData);
+      if (!jobsLoad) {
+        const load = Promise.resolve(loadBucket(null, JOBS_URL)).then(() => {
+          if (!jobsRaw) throw new Error('the jobs of ' + JOBS_URL + ' did not arrive');
+          jobsData = jobsRaw;
+          jobsRaw = null;
+          return jobsData;
+        });
+        jobsLoad = load;
+        load.catch(() => { if (jobsLoad === load) jobsLoad = null; });
+      }
+      return jobsLoad;
+    }
+
+    /* Whether node `n` is in a list of runs, `[gap, length, ...]` as Rust wrote them: decoded once into the start and end
+       of each run, then a binary search. Kept per list, by the list itself. */
+    const decodedRuns = new WeakMap();
+    function inRuns(list, n) {
+      let d = decodedRuns.get(list);
+      if (!d) {
+        const starts = [];
+        const ends = [];
+        let at = 0;
+        for (let i = 0; i < list.length; i += 2) {
+          at += list[i];
+          starts.push(at);
+          at += list[i + 1];
+          ends.push(at);
+        }
+        d = { starts, ends };
+        decodedRuns.set(list, d);
+      }
+      let lo = 0;
+      let hi = d.starts.length - 1;
+      while (lo <= hi) {
+        const mid = (lo + hi) >> 1;
+        if (n < d.starts[mid]) hi = mid - 1;
+        else if (n >= d.ends[mid]) lo = mid + 1;
+        else return true;
+      }
+      return false;
+    }
+
+    /* The step `at` as it answers for node `n`: the one shipped, with `via` when this node is reached by some of its terms
+       (the line it is told by, for a step that names a selector or none), as the server leaves it out when empty. */
+    function jobStepFor(J, at, n) {
+      const why = J.via[at];
+      const own = J.runs[at];
+      let via = [];
+      if (why && why[0] === 'f') via = why[1];
+      else if (why) via = why[1].filter((t) => inRuns(t[1] || own, n)).map((t) => t[0]);
+      return via.length ? Object.assign({}, J.steps[at], { via }) : J.steps[at];
+    }
+
+    /* A node's answer, from the steps that run it in the order they were read, grouped by job as the server groups them,
+       and what might run a node of its kind. */
+    function jobsOfNode(J, n) {
+      const groups = [];
+      let last = -1;
+      for (let at = 0; at < J.steps.length; at++) {
+        if (!J.runs[at] || !inRuns(J.runs[at], n)) continue;
+        if (J.step_job[at] !== last) {
+          groups.push({ job: J.jobs[J.step_job[at]], steps: [] });
+          last = J.step_job[at];
+        }
+        groups[groups.length - 1].steps.push(jobStepFor(J, at, n));
+      }
+      const kind = base[n].kind;
+      const answer = Object.assign({}, J.common, { kind, groups });
+      if (J.maybe[kind]) answer.maybe = J.maybe[kind].map(([job, steps]) => ({ job: J.jobs[job], steps: steps.map((at) => J.steps[at]) }));
+      return answer;
     }
 
     const colName = (C, c) => C.names[C.nm[c]];
@@ -959,6 +1060,12 @@ const EdithSite = (() => {
           resolve(collineage(params));
         } else if (name === '/api/colreach') {
           resolve(colreach(params));
+        } else if (name === '/api/jobs' && meta.jobs) {
+          // `look` asks the server to look at the job files again; the files were read once, when the site was written.
+          resolve(loadJobs().then((J) => J.summary));
+        } else if (name === '/api/jobs/node' && meta.jobs) {
+          const n = number(params.id);
+          resolve(loadJobs().then((J) => jobsOfNode(J, n)));
         } else if (name === '/api/search') {
           resolve(search(params.q || '', parseKinds(params.kind || ''),
             Math.min(unsigned(params, 'limit', limits.search, Number.MAX_SAFE_INTEGER), limits.search_max)));
@@ -987,6 +1094,7 @@ const EdithSite = (() => {
 
     return {
       get, send, received: cardBuckets.received, receivedSql: sqlBuckets.received, receivedCll, cllHeld: () => cll !== null,
+      receivedJobs, jobsHeld: () => jobsData !== null,
       meta, limits, number, treePath, lineage: lineageAnswer, search, parseKinds, levels,
     };
   }
@@ -994,7 +1102,7 @@ const EdithSite = (() => {
   /* The page's own, once the data has loaded: a bucket is a script appended to the page,
      which calls EDITH_SITE_CARDS. Absent without the data, so a harness loading this file
      alone, and the page before its data script ran, get the factory only. */
-  const out = { make, rustTrim, utf8Len, cmpCodePoints, parseQuery, parseKinds, fileUrl };
+  const out = { make, rustTrim, utf8Len, cmpCodePoints, parseQuery, parseKinds, fileUrl, jobFileUrl };
   if (typeof window !== 'undefined' && window.EDITH_SITE) {
     const loadScript = (k, url) => new Promise((resolve, reject) => {
       const el = document.createElement('script');
@@ -1007,6 +1115,7 @@ const EdithSite = (() => {
     window.EDITH_SITE_CARDS = site.received;
     window.EDITH_SITE_SQL = site.receivedSql;
     window.EDITH_SITE_CLL = site.receivedCll;
+    window.EDITH_SITE_JOBS = site.receivedJobs;
     Object.assign(out, site);
   }
   return out;

@@ -20,6 +20,14 @@ and bumps nothing.
 
 ## Unreleased
 
+## 2.28.0 - 2026-11-23
+
+- Show the orchestrator's jobs in the static site: the card's Jobs line and the
+  Jobs tab, read from the project's `.dbt-edith/jobs.yml` when the site is
+  written, each job file linked in its own repository at its commit, with
+  `--jobs-commit` and `--jobs-repo-url`, and "Jobs not read" where a source was
+  not (0183).
+
 ## 2.27.1 - 2026-11-23
 
 - Draw the arrow on Edith's update badge thicker, so it reads at its size

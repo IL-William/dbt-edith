@@ -1,6 +1,6 @@
 # 0177. A static site is written from dbt's artifacts
 
-Date: 2026-11-12 · Status: accepted, amended by 0182 · Amends 0026
+Date: 2026-11-12 · Status: accepted, amended by 0182 and 0183 · Amends 0026
 
 **Trigger:** read before changing what `--site` reads or writes, what the page
 it writes may do, or how it answers a question the server answers.

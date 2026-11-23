@@ -24,8 +24,11 @@ Nothing else:
 - no `.env` is read and no `env_var()` resolved: a location is shown as the
   manifest wrote it, and the card has no environment to pick;
 - no profile is opened and no warehouse reached;
-- no collin run unless `--run-collin` asks, no job file, no Snowflake: the jobs
-  are not in the site yet.
+- no collin run unless `--run-collin` asks, no Snowflake, and no job file but
+  the ones the project's own `.dbt-edith/jobs.yml` names
+  ([0183](../decisions/0183-the-site-carries-the-jobs-and-reads-git-where-a-job-source-lives.md)):
+  its DAGs and dbt Cloud jobs are read once, when the site is written, and the
+  settings are never read.
 
 Every environment has its own version of the code, so the site describes the
 one manifest it was given, and the header says which.
@@ -33,7 +36,7 @@ one manifest it was given, and the header says which.
 ## Writing it
 
 ```
-dbt-edith PROJECT --site [DIR] [--environment NAME] [--commit SHA] [--repo-url URL] [--run-collin [--compiled DIR]]
+dbt-edith PROJECT --site [DIR] [--environment NAME] [--commit SHA] [--repo-url URL] [--jobs-commit SHA] [--jobs-repo-url URL] [--run-collin [--compiled DIR]]
 ```
 
 - **DIR** defaults to `PROJECT/target/edith-site/`. It must be strictly inside
@@ -53,6 +56,14 @@ dbt-edith PROJECT --site [DIR] [--environment NAME] [--commit SHA] [--repo-url U
   token and an ssh port are dropped. An ssh alias such as `work.github.com` gives
   no link, and the run says to pass `--repo-url`. The origin itself is never
   printed or written.
+- **`--jobs-commit SHA`** and **`--jobs-repo-url URL`** are `--commit` and
+  `--repo-url` for the job files, and apply to every job source. Without them
+  git is asked, in the folder each source leads to, for its repository's `HEAD`
+  and origin, as for the project's own. A source whose folder is not a
+  repository of its own, and sits in one that holds the project's parent folders
+  (a dotfiles repository), is not placed in it, and no repository at the home
+  folder or above it is read, for a source or for the project: no file is linked
+  there, the commit is the flags' when both are given, and the run says why.
 - **`--run-collin`** runs collin first, over the manifest as it stands, and
   writes the cache and the report beside it, as `--column --run-collin` does, with
   `--compiled` and `--catalog` handed to it; the site then carries what it wrote.
@@ -63,13 +74,15 @@ dbt-edith PROJECT --site [DIR] [--environment NAME] [--commit SHA] [--repo-url U
   run that writes no cache, or one that cannot be read, exits 2 and writes no site.
 - **Exit codes**: 0 written; 2 for no manifest, a refused folder, a bad value or a
   collin run that wrote no cache. stdout is the folder and the counts, and
-  `column lineage: N edges from collin` when it carries any; stderr says what it
-  could not do: no catalog, no commit, no link, no file links, no compiled SQL in
-  the manifest, and the state of the column lineage.
+  `column lineage: N edges from collin` when it carries any, and `jobs: N jobs and
+  N steps from N source(s)`; stderr says what it could not do: no catalog, no
+  commit, no link, no file links, no compiled SQL in the manifest, the state of
+  the column lineage, and `warning: jobs not read: …` for a source whose folder is
+  not there or a `jobs.yml` that does not read, and `no job file links for …`.
 
 The same inputs give the same bytes: nothing written holds a path of the
 machine, a time of the run or a duration. `--site` goes with `--manifest`,
-`--catalog` and `--run-collin` alone, and over MCP it is refused.
+`--catalog`, `--run-collin` and the flags above alone, and over MCP it is refused.
 
 ## The folder
 
@@ -83,6 +96,7 @@ data/index.js            window.EDITH_SITE = {...}
 data/cards/NNNN.js       EDITH_SITE_CARDS(start, [card, ...])
 data/sql/NNNN.js         EDITH_SITE_SQL(start, [{raw, compiled?, lang?} | 0, ...])
 data/cll.js              EDITH_SITE_CLL({...}), when there is column lineage
+data/jobs.js             EDITH_SITE_JOBS({...}), when the project names job sources
 ```
 
 `data/index.js` holds the header's facts, one entry per node as the canvas draws
@@ -100,7 +114,14 @@ answers `/api/lineage`, `/api/node`, `/api/search`, `/api/collineage` and
 `/api/colreach` itself, with the walks the server makes, written again in
 `web/site.js` and held to Rust's answers by a golden file and by
 `scripts/walk_site.py`, which compares them for every node of Jaffle Shop and
-Shopify, and for every column of both over an invented cache.
+Shopify, and for every column of both over an invented cache. The jobs are one
+script, `data/jobs.js`, loaded whole when the Jobs tab or a card's Jobs line
+first asks: the summary `/api/jobs` gives, each job and each step once, and for
+each node which of them run it and by which terms of their `--select`, all worked
+out by the server's own code when the site is written. `/api/jobs` and
+`/api/jobs/node` are answered from it, and `walk_site.py` compares the latter
+for every node of Jaffle Shop with invented DAGs in a repository beside its
+project.
 
 ## The page
 
@@ -169,6 +190,22 @@ and the status bar's venv, environment, branch, shell and update.
   outside a git repository no file is linked, and the commit still is, with
   `--commit` and `--repo-url`; Azure DevOps (`dev.azure.com`,
   `visualstudio.com`) gets the commit and no file.
+- **The jobs**, when the project names job sources: a **Jobs** tab, and a Jobs
+  line on the Catalog's card, as on the server's page. The line has a chip for
+  each step that runs the node, and a click on it opens the tab on that node, at
+  that step; the tab has a card for each DAG or dbt Cloud job that runs it, with
+  its schedule in words, its steps, the terms of their selection that reach the
+  node and the steps that could not be resolved and might run it. The header says
+  the jobs were read when the site was written, names each source's commit as a
+  link, and a job file's line is a link to the file in the jobs' repository at
+  that commit (`#L<n>`; `#lines-<n>` on Bitbucket), where there is a base, and
+  keeps copying `file:line` where there is none. There is no Sources…, no `dbt ls`
+  button and no Coverage: Reports is not in a site.
+- **A source that was not read** (its folder was not cloned beside the project,
+  its walk stopped at its bound, or `.dbt-edith/jobs.yml` does not read) is said:
+  "Jobs not read: …", with the reason, on the card and in the tab, and the run
+  warns on stderr. The page never says that no job runs a node when it did not
+  open the file that would say.
 - **The address** names the node on screen, `index.html#model.shop.orders`, so a
   link to it opens on it.
 - **The theme** is kept in the browser, per browser.
@@ -176,7 +213,7 @@ and the status bar's venv, environment, branch, shell and update.
 ## What is not in it
 
 Each is a deferred entry in [state.md](../state.md): sources and the tree's other
-files (macros, analyses); the column lineage of another tool than collin; the jobs; dbt selector expressions;
+files (macros, analyses); the column lineage of another tool than collin; Reports' coverage, job order and builds by job; one pair of flags per jobs repository; a jobs source whose repository git cannot name; dbt selector expressions;
 writing outside the project; a mark for a dirty working tree; a `--repo-path` for
 a checkout git cannot place; Azure's file links; and a Python mode for the Code
 tab. Firefox is not verified: `script-src 'self'` is expected to allow a

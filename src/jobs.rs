@@ -217,6 +217,18 @@ pub fn check_real(root: &Path, source: &JobSource) -> Option<String> {
     resolve_real(root, source, home_dir().as_deref()).err()
 }
 
+/// The folder a source of the project's file was really walked in, which a link along its path leads
+/// to, or the folder that holds the one job file it names: what git is asked about for a link to a job
+/// file (0183). None when nothing is there, or the place is one `check_real` refuses.
+pub(crate) fn walked_folder(root: &Path, source: &JobSource) -> Option<PathBuf> {
+    let real = resolve_real(root, source, home_dir().as_deref()).ok()??;
+    if real.is_dir() {
+        Some(real)
+    } else {
+        real.parent().map(Path::to_path_buf)
+    }
+}
+
 /// Hidden by the system and not by a dot: macOS' `UF_HIDDEN` (a user's
 /// `Library` has it) and Windows' hidden and system attributes (`AppData`).
 /// Elsewhere there is only the dot.
@@ -245,7 +257,7 @@ fn is_hidden(name: &str, meta: &std::fs::Metadata) -> bool {
 }
 
 /// The user's home folder, where the system says it is, or None.
-fn home_dir() -> Option<PathBuf> {
+pub(crate) fn home_dir() -> Option<PathBuf> {
     let var = if cfg!(windows) { "USERPROFILE" } else { "HOME" };
     std::env::var_os(var).filter(|v| !v.is_empty()).map(PathBuf::from)
 }
@@ -1616,7 +1628,7 @@ pub struct NodeJobs {
     pub not_read_names: Vec<String>,
 }
 
-fn source_name(read: &Read, si: usize) -> String {
+pub(crate) fn source_name(read: &Read, si: usize) -> String {
     let s = &read.sources[si];
     if s.label.is_empty() {
         s.path.clone()
@@ -1690,7 +1702,58 @@ fn fed_by(read: &Read, outlets: &[String]) -> Vec<String> {
     read.jobs.iter().filter(|o| o.assets.iter().any(|a| outlets.contains(a))).map(|o| o.name.clone()).collect()
 }
 
-fn step_view(graph: &Graph, read: &Read, si: usize, node: Option<u32>) -> StepView {
+/// What says why a step's selection reaches a node: a fixed line for a step that names a selector or selects
+/// nothing in particular, or each term of its `--select` with the nodes it reaches on its own, ascending. A
+/// term that does not parse or resolve reaches nothing, as `via` has always counted it.
+pub(crate) enum ViaOf {
+    Fixed(Vec<String>),
+    Terms(Vec<(String, Arc<Vec<u32>>)>),
+}
+
+/// What each term reaches, kept by the term and the indirect selection it was resolved under: jobs repeat their
+/// terms (`tag:daily` in a hundred steps), and a term is resolved once however many steps name it.
+pub(crate) type TermMemo = HashMap<String, Arc<Vec<u32>>>;
+
+pub(crate) fn via_of(graph: &Graph, inv: &Invocation, memo: &mut TermMemo) -> ViaOf {
+    if let Some(name) = &inv.selector {
+        return ViaOf::Fixed(vec![format!("--selector {name}")]);
+    }
+    if inv.select.is_empty() {
+        let default = graph.selectors.list().iter().find(|n| n.default).map(|n| format!("--selector {} (default)", n.name));
+        return ViaOf::Fixed(vec![default.unwrap_or_else(|| "no --select: everything".into())]);
+    }
+    ViaOf::Terms(
+        inv.select
+            .iter()
+            .map(|t| {
+                let nodes = memo.entry(format!("{:?}|{t}", inv.indirect)).or_insert_with(|| {
+                    Arc::new(match Expr::from_terms(std::slice::from_ref(t), &[]) {
+                        Ok(expr) => {
+                            let spec = expr.spec_with(inv.indirect.unwrap_or(Indirect::Eager));
+                            select::resolve_spec(graph, &spec, Tests::Eager, &no_selectors).map(|r| r.nodes).unwrap_or_default()
+                        }
+                        Err(_) => Vec::new(),
+                    })
+                });
+                (t.clone(), Arc::clone(nodes))
+            })
+            .collect(),
+    )
+}
+
+/// `via_of` kept per step, for a caller that asks about many nodes: resolving a term once per node and step
+/// would be the product of the two.
+#[derive(Default)]
+pub(crate) struct Reach {
+    steps: HashMap<usize, ViaOf>,
+    memo: TermMemo,
+}
+
+pub(crate) fn step_view(graph: &Graph, read: &Read, si: usize, node: Option<u32>) -> StepView {
+    step_view_with(graph, read, si, node, &mut Reach::default())
+}
+
+fn step_view_with(graph: &Graph, read: &Read, si: usize, node: Option<u32>, reach: &mut Reach) -> StepView {
     let s = &read.steps[si];
     let job = &read.jobs[s.job];
     let mut view = StepView {
@@ -1719,32 +1782,20 @@ fn step_view(graph: &Graph, read: &Read, si: usize, node: Option<u32>) -> StepVi
         view.feeds = fed_by(read, &s.outlets);
     }
     if let (Some(node), Some(inv)) = (node, &s.inv) {
-        view.via = via(graph, inv, node);
+        view.via = via(graph, inv, node, si, reach);
     }
     view
 }
 
 /// The terms of a step's selection that reach `node` on their own.
-fn via(graph: &Graph, inv: &Invocation, node: u32) -> Vec<String> {
-    if let Some(name) = &inv.selector {
-        return vec![format!("--selector {name}")];
+fn via(graph: &Graph, inv: &Invocation, node: u32, si: usize, reach: &mut Reach) -> Vec<String> {
+    match reach.steps.entry(si).or_insert_with(|| via_of(graph, inv, &mut reach.memo)) {
+        ViaOf::Fixed(line) => line.clone(),
+        ViaOf::Terms(terms) => terms.iter().filter(|(_, nodes)| nodes.binary_search(&node).is_ok()).map(|(t, _)| t.clone()).collect(),
     }
-    if inv.select.is_empty() {
-        let default = graph.selectors.list().iter().find(|n| n.default).map(|n| format!("--selector {} (default)", n.name));
-        return vec![default.unwrap_or_else(|| "no --select: everything".into())];
-    }
-    inv.select
-        .iter()
-        .filter(|t| {
-            let Ok(expr) = Expr::from_terms(std::slice::from_ref(*t), &[]) else { return false };
-            let spec = expr.spec_with(inv.indirect.unwrap_or(Indirect::Eager));
-            select::resolve_spec(graph, &spec, Tests::Eager, &no_selectors).is_ok_and(|r| r.nodes.binary_search(&node).is_ok())
-        })
-        .cloned()
-        .collect()
 }
 
-fn grouped(graph: &Graph, read: &Read, hits: &[usize], node: Option<u32>) -> Vec<Group> {
+fn grouped(graph: &Graph, read: &Read, hits: &[usize], node: Option<u32>, reach: &mut Reach) -> Vec<Group> {
     let mut groups: Vec<Group> = Vec::new();
     let mut last: Option<usize> = None;
     for &si in hits {
@@ -1754,7 +1805,7 @@ fn grouped(graph: &Graph, read: &Read, hits: &[usize], node: Option<u32>) -> Vec
             last = Some(ji);
         }
         if let Some(g) = groups.last_mut() {
-            g.steps.push(step_view(graph, read, si, node));
+            g.steps.push(step_view_with(graph, read, si, node, reach));
         }
     }
     groups
@@ -1765,6 +1816,11 @@ fn grouped(graph: &Graph, read: &Read, hits: &[usize], node: Option<u32>) -> Vec
 /// job under every node; the steps that only compile, clone, list or preview
 /// are left out, as coverage leaves them out.
 pub fn for_node(graph: &Graph, read: &Read, node: u32) -> NodeJobs {
+    for_node_with(graph, read, node, &mut Reach::default())
+}
+
+/// `for_node`, resolving each step's terms once across the calls that share `reach`.
+pub(crate) fn for_node_with(graph: &Graph, read: &Read, node: u32, reach: &mut Reach) -> NodeJobs {
     let kind = graph.nodes[node as usize].kind;
     let hits: Vec<usize> =
         (0..read.steps.len()).filter(|&i| read.steps[i].executes() && read.steps[i].nodes.binary_search(&node).is_ok()).collect();
@@ -1778,8 +1834,8 @@ pub fn for_node(graph: &Graph, read: &Read, node: u32) -> NodeJobs {
     NodeJobs {
         configured: !read.sources.is_empty(),
         kind: kind.as_str().to_string(),
-        groups: grouped(graph, read, &hits, Some(node)),
-        maybe: grouped(graph, read, &maybe, None),
+        groups: grouped(graph, read, &hits, Some(node), reach),
+        maybe: grouped(graph, read, &maybe, None, reach),
         refused: read.sources.iter().map(|s| s.refused.len()).sum(),
         sources: (0..read.sources.len()).filter(|&si| source_was_read(&read.sources[si])).map(|si| source_name(read, si)).collect(),
         not_read: unread(read),
@@ -2031,7 +2087,7 @@ impl Unread {
 }
 
 /// A source whose folder or file was walked to its end: the test `unread` makes.
-fn source_was_read(s: &SourceRead) -> bool {
+pub(crate) fn source_was_read(s: &SourceRead) -> bool {
     s.error.is_empty() && !s.capped
 }
 
@@ -3215,6 +3271,42 @@ jobs:
         assert_eq!(found.sources, [plain.path.clone(), "cloud".to_string()], "a label wins over its path, the order is the one read");
         let (none, _) = build(&g, &d, &[]);
         assert!(for_node(&g, &none, g.index["model.shop.orders"]).sources.is_empty());
+    }
+
+    #[test]
+    fn asking_every_node_with_one_reach_gives_what_asking_each_alone_does() {
+        // The site asks every node; a step's terms are resolved once across them, and no answer moves.
+        let d = dir("node-reach");
+        write(&d, "daily.yml", DAG);
+        write(&d, "cloud/jobs.yml", CLOUD);
+        let g = graph();
+        let (read, _) = build(&g, &d, &[source(AIRFLOW, &d, &[]), source(DBT_CLOUD, &d.join("cloud"), &[])]);
+        let mut reach = Reach::default();
+        let mut with_via = 0;
+        for i in 0..g.nodes.len() as u32 {
+            let shared = serde_json::to_string(&for_node_with(&g, &read, i, &mut reach)).unwrap();
+            assert_eq!(shared, serde_json::to_string(&for_node(&g, &read, i)).unwrap(), "{}", g.nodes[i as usize].id);
+            with_via += shared.matches("\"via\"").count();
+        }
+        assert!(with_via > 0, "the fixture reaches a node through a term");
+    }
+
+    #[test]
+    fn a_source_of_the_file_is_walked_where_its_path_really_leads() {
+        let d = dir("walked-folder");
+        write(&d, "dags/daily.yml", DAG);
+        let project = d.join("shop");
+        std::fs::create_dir_all(&project).unwrap();
+        let mut folder = source(AIRFLOW, Path::new("../dags"), &[]);
+        folder.path = "../dags".into();
+        let real = d.join("dags").canonicalize().unwrap();
+        assert_eq!(walked_folder(&project, &folder).map(files::plain), Some(files::plain(real.clone())));
+        // A single job file is walked in the folder that holds it; nothing there is no folder.
+        let mut file = folder.clone();
+        file.path = "../dags/daily.yml".into();
+        assert_eq!(walked_folder(&project, &file).map(files::plain), Some(files::plain(real)));
+        file.path = "../nothing".into();
+        assert_eq!(walked_folder(&project, &file), None);
     }
 
     #[test]

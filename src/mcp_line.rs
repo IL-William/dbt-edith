@@ -62,7 +62,7 @@ const ALLOWED: [&str; 23] = [
 
 /// The flags that are refused on purpose, with why. `project` has a sentence
 /// of its own, since it names the server's root.
-const REFUSED: [(&str, &str); 17] = [
+const REFUSED: [(&str, &str); 19] = [
     ("project", ""),
     ("manifest", "named when the server starts, in its own arguments"),
     ("catalog", "named when the server starts, in its own arguments"),
@@ -79,6 +79,8 @@ const REFUSED: [(&str, &str); 17] = [
     ("environment", "goes with --site, which writes a folder"),
     ("commit", "goes with --site, which writes a folder"),
     ("repo_url", "goes with --site, which writes a folder"),
+    ("jobs_commit", "goes with --site, which writes a folder"),
+    ("jobs_repo_url", "goes with --site, which writes a folder"),
     ("skill", "for a terminal, where it prints the skill (`dbt-edith --skill mcp` there, for a client that defers tools); `help` is the tool's reference"),
 ];
 
@@ -546,7 +548,7 @@ mod tests {
     /// One line per clap argument id that exercises it. A flag added to `Args`
     /// has no line here, and the test below fails until someone decides
     /// whether a line may carry it.
-    const SAMPLES: [(&str, &str); 40] = [
+    const SAMPLES: [(&str, &str); 42] = [
         ("project", "--overview /work/other"),
         ("port", "--overview --port 4321"),
         ("manifest", "--overview --manifest m.json"),
@@ -586,6 +588,8 @@ mod tests {
         ("environment", "--site --environment prod"),
         ("commit", "--site --commit abcdef1"),
         ("repo_url", "--site --repo-url https://github.com/acme/shop"),
+        ("jobs_commit", "--site --jobs-commit abcdef1"),
+        ("jobs_repo_url", "--site --jobs-repo-url https://github.com/acme/airflow"),
         ("skill", "--skill"),
     ];
 

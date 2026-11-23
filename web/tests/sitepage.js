@@ -66,3 +66,32 @@ check('the sentence names what writes it again', siteStaleSaid().includes('--run
 check('the status line says it in a few words, after a stale cache only', [siteStaleTail(fresh), siteStaleTail({}), siteStaleTail(null), siteStaleTail(Object.assign({}, fresh, { cll_stale: true }))],
   ['', '', '', ' \u00b7 column lineage older than the manifest']);
 check('no column lineage in the meta, however stale it says', siteStaleTail({ cll: false, cll_stale: true }), '');
+
+// The jobs a site carries (0183): the tab and the card's line are there when the index says so, and say what was not read.
+var S = { site: true, meta: { jobs: { sources: [] } } };
+check('a site with jobs has the tab and the line', siteJobs(), true);
+S = { site: true, meta: { project: 'shop' } };
+check('a site with none has neither', siteJobs(), false);
+S = { site: false, meta: { jobs: {} } };
+check('a page that is not a site is not a site with jobs', siteJobs(), false);
+S = { site: true, meta: null };
+check('with no meta yet there are none', siteJobs(), false);
+
+check('every source read says nothing', [siteJobsUnread({ groups: [] }), siteJobsUnread(null), siteJobsUnread({ not_read_names: [] })], ['', '', '']);
+check('a source that is not there is said, with why, and never as no job', siteJobsUnread({ not_read: { sources: 1, of: 1, reason: 'nothing at this path' }, not_read_names: ['orchestration'] }),
+  'Jobs not read: orchestration (nothing at this path).');
+check('two of them are listed once each', siteJobsUnread({ not_read: { sources: 2, of: 3, reason: 'nothing at this path, a symlink, which this tool does not follow' }, not_read_names: ['a', 'b', 'a'] }),
+  'Jobs not read: a, b (nothing at this path, a symlink, which this tool does not follow).');
+check('a source with no reason still says it was not read', siteJobsUnread({ not_read_names: ['a'] }), 'Jobs not read: a.');
+check('a file that does not read says which and why', siteJobsUnread({ configured: false, sources_refused: 'line 2: a source with no kind or no path' }),
+  'Jobs not read: .dbt-edith/jobs.yml is not read (line 2: a source with no kind or no path).');
+check('and it is said instead of any source', siteJobsUnread({ sources_refused: 'x', not_read_names: ['a'] }), 'Jobs not read: .dbt-edith/jobs.yml is not read (x).');
+
+var sources = [{ name: 'orchestration', commit: 'abc1234', commit_url: 'https://github.com/acme/airflow/commit/abc1234def' },
+  { name: 'plain', commit: 'fed9876', commit_url: '' }, { name: 'bad', commit: '1234567', commit_url: 'javascript:alert(1)' },
+  { name: 'none', commit: '', commit_url: '' }, { name: 'gone', commit: '', commit_url: '' }];
+check('the header names the commit of each source that was read, linked when its host is known', siteJobsShas(sources, ['orchestration', 'plain', 'none']),
+  [{ name: 'orchestration', sha: 'abc1234', url: 'https://github.com/acme/airflow/commit/abc1234def' }, { name: 'plain', sha: 'fed9876', url: '' }]);
+check('a link that is not https is none', siteJobsShas(sources, ['bad']), [{ name: 'bad', sha: '1234567', url: '' }]);
+check('a source that was not read has none', siteJobsShas(sources, ['orchestration']).length, 1);
+check('no names, no commits', [siteJobsShas(sources, []).length, siteJobsShas(sources, undefined).length], [0, 0]);

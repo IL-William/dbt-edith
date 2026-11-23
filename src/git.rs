@@ -961,6 +961,19 @@ pub fn show_prefix(root: &Path) -> Option<String> {
     (!prefix.contains('\\') && (prefix.is_empty() || prefix.ends_with('/'))).then(|| prefix.to_string())
 }
 
+/// The top of the working tree git finds from `dir`, which a job source's folder is placed in
+/// (`--site`, 0183): the repository that holds it may be a larger one than its own, found by walking up
+/// with no ceiling. None outside a repository, in a bare one, with git paused there (0121) or with no
+/// answer.
+pub fn top_level(dir: &Path) -> Option<PathBuf> {
+    if !in_repository(dir) {
+        return None;
+    }
+    let out = read_auto(dir, &["rev-parse", "--show-toplevel"])?;
+    let top = out.trim_end_matches(['\n', '\r']);
+    (!top.is_empty()).then(|| PathBuf::from(top))
+}
+
 /// The address `remote.origin.url` holds, as written, for the one that links
 /// to the repository on a host it recognises. None without a repository, an
 /// origin, or an answer: git paused counts as no answer, and the site then
@@ -1370,6 +1383,21 @@ mod tests {
         write(&dir, "dbt/dbt_project.yml", "name: shop\n");
         assert_eq!(head_commit(&dir.join("dbt")), head_commit(&dir));
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn the_top_of_the_working_tree_is_where_git_finds_it_from_any_folder_below() {
+        let dir = scratch("top-level");
+        repo(&dir);
+        write(&dir, "orchestration/dags/a.yml", "dag_id: a\n");
+        let want = dir.canonicalize().unwrap();
+        for at in [dir.clone(), dir.join("orchestration/dags")] {
+            assert_eq!(top_level(&at).and_then(|t| t.canonicalize().ok()), Some(want.clone()), "{}", at.display());
+        }
+        let loose = scratch("top-level-loose");
+        assert_eq!(top_level(&loose), None);
+        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::remove_dir_all(&loose);
     }
 
     #[test]

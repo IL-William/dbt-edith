@@ -3,7 +3,7 @@
 // /api/lineage (every node one level each way, a few at every depth, with the caps of the page and a
 // small one), /api/search, /api/node and /api/site/code as the server gives them, and /api/collineage (every
 // column of two caches, an invented one and one from a seed, and the deep, capped and cut walks of the first) and
-// /api/colreach for every node; this makes the same requests of EdithSite and compares what comes back, key for key.
+// /api/colreach for every node, and the jobs: /api/jobs and /api/jobs/node for every node, over a source that was read, one that was not and a file that does not parse, and over a jobs.yml that does not read; this makes the same requests of EdithSite and compares what comes back, key for key.
 // Run from the repository root: jsc web/tests/site.js
 eval(read('tests/fixtures/site_case.js'));
 var EdithSite = new Function(read('web/site.js') + '\nreturn EdithSite;')();
@@ -23,13 +23,16 @@ function canon(v) {
 var loads = [];
 var sqlLoads = [];
 var cllLoads = [];
+var jobsLoads = [];
 var site;
 function EDITH_SITE_CARDS(start, list) { site.received(start, list); }
 function EDITH_SITE_SQL(start, list) { site.receivedSql(start, list); }
 function EDITH_SITE_CLL(raw) { site.receivedCll(raw); }
+function EDITH_SITE_JOBS(raw) { site.receivedJobs(raw); }
 /* A bucket's script, by the url the page would load it from: the cards', the SQL's or the column lineage's. */
 function loadFrom(url, k, cards) {
   if (url === 'data/cll.js') { cllLoads.push(url); eval(SITE_CASE.cll); return; }
+  if (url === 'data/jobs.js') { jobsLoads.push(url); eval(SITE_CASE.jobs); return; }
   if (url.indexOf('data/sql/') === 0) { sqlLoads.push(url); eval(SITE_CASE.sql[k]); return; }
   cards.push(url);
   eval(SITE_CASE.buckets[k]);
@@ -134,7 +137,21 @@ group('lineage, as /api/lineage answers it', SITE_CASE.lineage, function (c) { r
   .then(function () { return rejected('/api/node?id=nothing', 'unknown node'); })
   .then(function () { return rejected('/api/reports', 'not in this site'); })
   .then(function () { return rejected('/api/git', 'not in this site'); })
-  .then(function () { return rejected('/api/jobs?look=true', 'not in this site'); })
+  .then(function () {
+    // The jobs are the orchestrator's, read when the site was written. Every other route of theirs is the project's or the warehouse's.
+    return Promise.all(['/api/jobs/sources', '/api/jobs/browse', '/api/jobs/coverage', '/api/jobs/order', '/api/jobs/models', '/api/jobs/step?n=0'].map(function (p) {
+      return rejected(p, 'not in this site');
+    }));
+  })
+  .then(function () {
+    // A site that wrote no jobs has neither route.
+    var meta = Object.assign({}, SITE_CASE.site.meta);
+    delete meta.jobs;
+    var none = EdithSite.make(Object.assign({}, SITE_CASE.site, { meta: meta }), function () { return Promise.resolve(); });
+    return Promise.all(['/api/jobs', '/api/jobs?look=true', '/api/jobs/node?id=' + encodeURIComponent(ids[0])].map(function (p) {
+      return none.get(p).then(function () { check(p + ' is refused without jobs', false); }, function (e) { check(p + ' is refused without jobs', e.message === 'not in this site', e.message); });
+    }));
+  })
   .then(function () { return rejected('/ws/pty', 'not in this site'); })
   .then(function () {
     return Promise.all([site.get('/api/macros/search?q=a&limit=10'), site.get('/api/files?q=a&limit=10')]).then(function (r) {
@@ -341,6 +358,101 @@ group('lineage, as /api/lineage answers it', SITE_CASE.lineage, function (c) { r
       any(function (a) { return a.nodes.some(function (n) { return n.rules_more; }); }) && any(function (a) { return a.nodes.some(function (n) { return n.outside; }); }));
   })
   .then(function () {
+    // The jobs, as /api/jobs and /api/jobs/node answer them. The file is not loaded until the tab or a card asks.
+    check('the jobs are not loaded before they are asked for', jobsLoads.length === 0 && !site.jobsHeld());
+    return group('the jobs, as /api/jobs answers them', [SITE_CASE.jobs_summary], function (c) { return site.get(c.path); })
+      .then(function () { return site.get('/api/jobs?look=true'); })
+      .then(function (looked) {
+        check('a look is asked for in vain: the answer is the one it was', canon(looked) === canon(SITE_CASE.jobs_summary.want));
+        check('the file is loaded once, however many asks', jobsLoads.length === 1 && site.jobsHeld(), jobsLoads.join());
+        return group('the jobs of every node, as /api/jobs/node answers them', SITE_CASE.jobs_node, function (c) { return site.get(c.path); });
+      })
+      .then(function () {
+        check('still one load for them all', jobsLoads.length === 1 && jobsLoads[0] === 'data/jobs.js');
+        var by = {};
+        SITE_CASE.jobs_node.forEach(function (c) { by[c.path] = c.want; });
+        var all = SITE_CASE.jobs_node.map(function (c) { return c.want; });
+        var any = function (f) { return all.some(f); };
+        check('the cases hold a node a term reaches, one a step might run and a source that was not read', any(function (a) { return a.groups.some(function (g) { return g.steps.some(function (s) { return s.via && s.via.length; }); }); }) &&
+          any(function (a) { return a.maybe && a.maybe.length; }) && any(function (a) { return a.not_read && a.refused; }) && any(function (a) { return a.groups.length === 0; }) && any(function (a) { return a.groups.length > 1; }), 'cases');
+        // What the server leaves out when empty is left out, so a node with no job says only what the sources say.
+        var bare = all.filter(function (a) { return a.groups.length === 0 && !a.maybe; })[0];
+        check('a node no job runs has no maybe', bare === undefined || !('maybe' in bare));
+        var first = site.get(SITE_CASE.jobs_node[0].path);
+        var again = site.get(SITE_CASE.jobs_node[0].path);
+        return Promise.all([first, again]).then(function (r) {
+          check('a job is shipped once: two nodes the same job runs share it', canon(r[0]) === canon(r[1]));
+          var shared = SITE_CASE.jobs_node.filter(function (c) { return c.want.groups.length; }).slice(0, 2);
+          return Promise.all(shared.map(function (c) { return site.get(c.path); })).then(function (answers) {
+            check('the same job under two nodes is the one object', answers[0].groups[0].job === answers[1].groups[0].job);
+          });
+        });
+      });
+  })
+  .then(function () {
+    // A file that fails to load is forgotten, a script that gave nothing is not ours, and two asks on its way are one load.
+    var tries = 0;
+    var flaky = EdithSite.make(SITE_CASE.site, function () {
+      tries++;
+      if (tries === 1) return Promise.reject(new Error('cannot load the jobs'));
+      site = flaky;
+      eval(SITE_CASE.jobs);
+      site = main;
+      return Promise.resolve();
+    });
+    var c = SITE_CASE.jobs_node[0];
+    return flaky.get(c.path).then(function () { check('jobs that fail to load reject the answer', false); }, function (e) {
+      check('jobs that fail to load reject the answer', e.message === 'cannot load the jobs' && !flaky.jobsHeld(), e.message);
+      return flaky.get(c.path).then(function (a) { check('and are asked for again', tries === 2 && canon(a) === canon(c.want) && flaky.jobsHeld()); });
+    });
+  })
+  .then(function () {
+    var empty = EdithSite.make(SITE_CASE.site, function () { return Promise.resolve(); });
+    return empty.get('/api/jobs').then(function () { check('an empty jobs file is refused', false); },
+      function (e) { check('an empty jobs file is refused', /did not arrive/.test(e.message), e.message); });
+  })
+  .then(function () {
+    var asked = 0;
+    var slow = EdithSite.make(SITE_CASE.site, function () {
+      asked++;
+      return new Promise(function (resolve) { setTimeout(function () { site = slow; eval(SITE_CASE.jobs); site = main; resolve(); }, 1); });
+    });
+    return Promise.all([slow.get('/api/jobs'), slow.get(SITE_CASE.jobs_node[0].path)]).then(function (r) {
+      check('an ask while the jobs are on their way waits for the same load', asked === 1 && canon(r[0]) === canon(SITE_CASE.jobs_summary.want) && canon(r[1]) === canon(SITE_CASE.jobs_node[0].want));
+    });
+  })
+  .then(function () {
+    return rejected('/api/jobs/node?id=model.shop.nothing', 'unknown node')
+      .then(function () { return rejected('/api/jobs/node', 'unknown node'); })
+      .then(function () { return rejected('/api/jobs/node?id=', 'unknown node'); });
+  })
+  .then(function () {
+    // A jobs.yml that does not read: no source, the reason said by every answer, never a node with no job.
+    var refused = EdithSite.make(SITE_CASE.site, function () { site = refused; eval(SITE_CASE.jobs_refused.script); site = main; return Promise.resolve(); });
+    return group('a refused jobs.yml, as /api/jobs and /api/jobs/node answer it', [SITE_CASE.jobs_refused.summary, SITE_CASE.jobs_refused.node], function (c) { return refused.get(c.path); })
+      .then(function () {
+        var want = SITE_CASE.jobs_refused.node.want;
+        check('it says why, and that nothing is configured', want.configured === false && typeof want.sources_refused === 'string' && want.groups.length === 0);
+      });
+  })
+  .then(function () {
+    // The link to a line of a job file, as the page builds it: its source by name, each segment escaped, the host's anchor.
+    var link = EdithSite.jobFileUrl;
+    var meta = { jobs: { sources: [
+      { name: 'orchestration', base: 'https://github.com/acme/airflow/blob/abc1234/dags/', anchor: 'L' },
+      { name: 'bb', base: 'https://bitbucket.org/acme/airflow/src/abc1234/', anchor: 'lines-' },
+      { name: 'azure', base: null, anchor: 'L' },
+      { name: 'twin', base: 'https://h/a/', anchor: 'L' }, { name: 'twin', base: 'https://h/b/', anchor: 'L' },
+      { name: 'odd', base: 'http://h/x/', anchor: 'L' }] } };
+    check('a line is under the source\'s base, with the host\'s anchor', link(meta, 'orchestration', 'a b/c#d.yml', 12) === 'https://github.com/acme/airflow/blob/abc1234/dags/a%20b/c%23d.yml#L12');
+    check('Bitbucket says lines-', link(meta, 'bb', 'x.yml', 3) === 'https://bitbucket.org/acme/airflow/src/abc1234/x.yml#lines-3');
+    check('no line, no anchor', link(meta, 'orchestration', 'x.yml', 0) === 'https://github.com/acme/airflow/blob/abc1234/dags/x.yml');
+    check('a source with no file address is no link, nor is an unknown one or two of one name', link(meta, 'azure', 'x.yml', 1) === '' && link(meta, 'nothing', 'x.yml', 1) === '' && link(meta, 'twin', 'x.yml', 1) === '');
+    check('a base that is not https is no link', link(meta, 'odd', 'x.yml', 1) === '');
+    check('a path that goes up or is empty is no link', link(meta, 'orchestration', '../x.yml', 1) === '' && link(meta, 'orchestration', 'a//b.yml', 1) === '' && link(meta, 'orchestration', '', 1) === '');
+    check('a site with no jobs has no link', link({}, 'orchestration', 'x.yml', 1) === '' && link(null, 'orchestration', 'x.yml', 1) === '');
+  })
+  .then(function () {
     // The pieces the walks lean on.
     var r = EdithSite;
     check('Rust trims U+0085 and not U+FEFF', r.rustTrim('\u0085 a  ') === 'a' && r.rustTrim('﻿a') === '﻿a');
@@ -354,6 +466,6 @@ group('lineage, as /api/lineage answers it', SITE_CASE.lineage, function (c) { r
     check('no kind at all is every kind', r.parseKinds('').length === 0 && r.parseKinds('bogus').length === 0);
     check('the limits are Rust\'s own', SITE_CASE.site.limits.max_levels === 20 && SITE_CASE.site.limits.depth === 2 && SITE_CASE.site.limits.max === 400 &&
       SITE_CASE.site.limits.max_max === 3000 && SITE_CASE.site.limits.search === 200 && SITE_CASE.site.limits.search_max === 200000);
-    check('with no page there is the factory and the pure helpers, and nothing that needs data', typeof EdithSite.make === 'function' && typeof EdithSite.fileUrl === 'function' && typeof EdithSite.get === 'undefined' && typeof window === 'undefined');
+    check('with no page there is the factory and the pure helpers, and nothing that needs data', typeof EdithSite.make === 'function' && typeof EdithSite.fileUrl === 'function' && typeof EdithSite.jobFileUrl === 'function' && typeof EdithSite.get === 'undefined' && typeof window === 'undefined');
   })
   .catch(function (e) { print('FAIL  the harness threw ' + e + (e && e.stack ? '\n' + e.stack : '')); });
