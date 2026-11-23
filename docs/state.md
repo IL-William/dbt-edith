@@ -3519,6 +3519,10 @@ of its own, and each panel updates the tour, its page under
         would be a guess.
       - **Every job and step that a node can reach is shipped, and no other**:
         a DAG whose steps select no node is not in the site.
+      - **"Jobs not read" is said twice in the tab and quietly on the card.**
+        The Jobs tab shows it at the header's right and again in its band;
+        the card's line is plain grey text, without the warning sign the tab
+        gives it.
     - **Sources and the tree's other files.** The Project tab lists only what a
       model, a seed or a snapshot is built from. Sources live in YAML, so they
       have no file to list, and a Sources group would have to name each by its
@@ -3572,6 +3576,16 @@ of its own, and each panel updates the tour, its page under
     - The rest loop's compositor cost was measured in headless Chrome with
       software compositing only; what it costs on a real graphics card is not
       measured, and `.bm-idle { display: none }` is the one line that stops it.
+61. **What the palette's column search left (0184, 2.29.0).**
+    - A static site has no column search: the chip is hidden there.
+    - The chip's repaint when the tool changes with the palette open has no
+      test of its own (`applyLineage` is outside `palette.js`'s slices).
+    - With no collin cache at all, the note under the Columns group reuses the
+      Columns tab's wording, which speaks of a cache older than the manifest.
+    - A name with a dot (`raw.orders`, `orders.v2`) is listed whole only for a
+      dotted query; a plain word is always a column name.
+    - A column search replaced by the next keystroke is not cancelled on the
+      server; each is a short scan of what is already in memory.
 
 Left by the pull requests of 2026-10-14, each a known limit written in
 its pull request, unranked:
