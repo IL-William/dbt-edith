@@ -34,6 +34,13 @@ sub-folder of its repository, which a link to a file must say. On each:
     cache and no Regenerate, and data/cll.js is asked for once; a cache older than the manifest
     says so on the status line and in the Columns tab; and `--site --run-collin` runs a stand-in
     collin first and carries what it wrote;
+  - the jobs (0183): Jaffle Shop's project names, in its own .dbt-edith/jobs.yml, the invented DAGs of
+    tests/fixtures/jobs/airflow, which sit in a repository of their own beside the project's with its own invented
+    origin, at the two-folder limit. For every node, /api/jobs/node is the server's, and so is /api/jobs but for what
+    a site has no use for; the Jobs tab is there, a card's Jobs line and its chip lead to it, a job file's line is a
+    link to the file in the jobs' repository at its commit, there is no Sources… and no dbt ls, and data/jobs.js is
+    asked for once. A second site, whose source folder is not there, says "Jobs not read" on the card and in the tab,
+    never "no job", and writes itself all the same;
   - the page asks for nothing beyond its own folder, throws nothing, writes no
     error to the console, and the policy it carries is never violated.
 
@@ -1047,6 +1054,195 @@ def walk_project(tally, binary, name, project, model, work, prefix, compiled, se
     stale_site(tally, binary, name, project, work, cache, ids, work / "home")
 
 
+JOBS_FIXTURES = Path(__file__).resolve().parent.parent / "tests" / "fixtures" / "jobs" / "airflow"
+AIRFLOW_ORIGIN = "git@github.com:acme/airflow.git"
+JOBS_SOURCE = "../../airflow_repo/dags"
+
+
+def airflow_repo(work):
+    """The jobs' repository, cloned beside the dbt one as a pipeline does: its own git and its own invented origin, the DAGs
+    of the fixtures in a folder of it, which a link to one must say."""
+    repo = work / "airflow_repo"
+    shutil.copytree(JOBS_FIXTURES, repo / "dags")
+    git(repo, "init", "-q", "-b", "main")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "dags")
+    git(repo, "remote", "add", "origin", AIRFLOW_ORIGIN)
+    return repo
+
+
+def jobs_project(work, tag, source):
+    """A copy of the Jaffle Shop repository whose project names its jobs, as the project's own file does, from the project."""
+    repo = work / f"jaffle_jobs_{tag}"
+    shutil.copytree(work / "jaffle_repo", repo, ignore=shutil.ignore_patterns("edith-site*"))
+    project = repo / JAFFLE_FOLDER
+    (project / ".dbt-edith").mkdir()
+    (project / ".dbt-edith" / "jobs.yml").write_text(f'jobs:\n  - kind: airflow\n    path: "{source}"\n    label: "orchestration"\n')
+    return project
+
+
+def jobs_site(tally, binary, project, work, label):
+    """The site of a project that names jobs, and its index."""
+    run = subprocess.run([str(binary), str(project), "--site", "--environment", ENV], capture_output=True, text=True, env=dict(os.environ, HOME=str(work / "home")))
+    tally.check(f"{label}: --site writes the folder and exits 0", run.returncode == 0, run.stderr[-500:])
+    site = project / "target" / "edith-site"
+    data = json.loads((site / "data" / "index.js").read_text().removeprefix("window.EDITH_SITE=").rstrip().rstrip(";"))
+    return run, site, data
+
+
+def compare_jobs(tally, label, page, server, ids):
+    """/api/jobs/node for every node and /api/jobs, the server's and the page's. Returns the answers of the nodes, as the page gave
+    them, and how many differ."""
+    paths = [f"/api/jobs/node?id={urllib.parse.quote(i, safe='')}" for i in ids]
+    got = [json.loads(t) for t in batch_in_page(page, paths)]
+    bad = same_as_server(page, server, paths)
+    tally.check(f"{label}: {len(paths)} nodes' /api/jobs/node are the server's", not bad, "\n        ".join(bad[:5]))
+    want = server.get("/api/jobs")
+    # What a site has no use for: where the sources are kept and how a form saves them, and where they led on this machine.
+    for k in ("saved", "airflow_keys", "stamp"):
+        want.pop(k, None)
+    for source in want["sources"]:
+        source.pop("resolved", None)
+    for path in ("/api/jobs", "/api/jobs?look=true"):
+        have = page.js(f"EdithSite.get({json.dumps(path)})")
+        tally.check(f"{label}: {path} is the server's, but for where the sources were read", canon(have) == canon(want), canon(have)[:300] + "\n        " + canon(want)[:300])
+    return got, len(bad)
+
+
+def jobs_ui(tally, label, page, ids, answers, meta, base):
+    """The Jobs tab and the card's Jobs line, as a person reads them, on a site whose jobs were read."""
+    def check(what, ok, detail=""):
+        tally.check(f"{label}: {what}", ok, detail)
+
+    shown = page.js("(() => { const e = document.querySelector('[data-dock=jobs]'); return !!e && getComputedStyle(e).display !== 'none'; })()")
+    check("the Jobs tab is on the page", shown)
+    runs = [i for i, a in zip(ids, answers, strict=True) if i.startswith("model.") and a["groups"]]
+    check("some model is run by a job", bool(runs), f"{len(runs)} run")
+    focus = runs[0]
+    want = answers[ids.index(focus)]
+    page.js(f"location.hash = {json.dumps(urllib.parse.quote(focus, safe=''))}")
+    page.until(f"!!document.querySelector('#graph .nd.focus[data-id={json.dumps(focus)}]')", "the model a job runs")
+    page.js("document.querySelector('[data-dock=catalog]').click()")
+    page.until("document.querySelectorAll('#catalog .cat-jobs .jobchip').length > 0", "the card's Jobs line")
+    check("the card has a Jobs line with a chip for each step that runs it", page.js("document.querySelectorAll('#catalog .cat-jobs .jobchip:not(.more)').length") == sum(len(g["steps"]) for g in want["groups"]))
+    page.js("document.querySelector('#catalog .cat-jobs .jobchip').click()")
+    page.until("!document.querySelector('#dock-jobs').classList.contains('hidden') && document.querySelectorAll('#jobs-body .jobcard').length > 0", "the Jobs tab")
+    check("a chip leads to the Jobs tab, on that model's cards", page.js("document.querySelectorAll('#jobs-body .jobcard').length") == len(want["groups"])
+          and page.js("document.querySelector('#jobs-head').textContent").startswith("Jobs that run"))
+    names = page.js("[...document.querySelectorAll('#jobs-body .jobname')].map((e) => e.textContent)")
+    check("each job that runs it has a card, in the server's order of start", sorted(names) == sorted(g["job"]["name"] for g in want["groups"]), str(names))
+    head = page.js("document.querySelector('#jobs-head').textContent")
+    check("the header says where the jobs were read, and when: when the site was written", "read from orchestration" in head and "when the site was written" in head, head)
+    commit = meta["jobs"]["sources"][0]
+    sha = page.js("(() => { const a = document.querySelector('#jobs-head a.sha'); return a ? [a.textContent, a.getAttribute('href'), a.getAttribute('rel'), a.getAttribute('target')] : null; })()")
+    check("and names the commit of the jobs' repository, as a link that opens elsewhere", sha == [commit["commit"], commit["commit_url"], "noopener noreferrer", "_blank"], str(sha))
+    link = page.js("(() => { const a = document.querySelector('#jobs-body .jobhead a.jobfile'); return a ? [a.getAttribute('href'), a.getAttribute('target'), a.getAttribute('rel'), a.textContent] : null; })()")
+    job = want["groups"][0]["job"]
+    expect = f"{base}{job['file']}#L{job['line']}"
+    check("a job file's line is a link to it in the jobs' repository, at its commit, with the line", link is not None and link[0] == expect, f"{link} for {expect}")
+    check("which opens elsewhere and gives the opener nothing", link is not None and link[1] == "_blank" and link[2] == "noopener noreferrer")
+    check("there is no Sources… and no button to type a dbt ls", page.js("document.querySelectorAll('#jobs-tools button').length") == 0
+          and page.js("[...document.querySelectorAll('button')].filter((b) => b.textContent.includes('Sources') && b.offsetParent !== null).length") == 0
+          and page.js("document.querySelectorAll('#jobs-body .jobls').length") == 0)
+    check("no Coverage in Reports", not page.js("[...document.querySelectorAll('#jobs-tools *')].some((b) => b.textContent.includes('Coverage'))"))
+    other = next((i for i, a in zip(ids, answers, strict=True) if i.startswith("model.") and a.get("maybe")), None)
+    if other:
+        page.js(f"location.hash = {json.dumps(urllib.parse.quote(other, safe=''))}")
+        page.until(f"!!document.querySelector('#graph .nd.focus[data-id={json.dumps(other)}]') && document.querySelector('#jobs-head').textContent.includes({json.dumps(other.split('.')[-1])})", "the model a step might run")
+        check("a step that could not be resolved is under 'Not resolved', never among the jobs that run it", page.js("document.querySelector('#jobs-body .jobs-maybe') !== null"))
+    page.js("document.querySelector('[data-dock=lineage]').click()")
+
+
+def jobs_not_read(tally, binary, work):
+    """A site whose jobs repository was not cloned: written all the same, and saying "not read" wherever jobs show."""
+    label = "jobs not read"
+    project = jobs_project(work, "missing", "../../nowhere")
+    run, site, data = jobs_site(tally, binary, project, work, label)
+    tally.check(f"{label}: stderr says which source was not read, and why", "warning: jobs not read: orchestration (nothing at this path)" in run.stderr, run.stderr[-400:])
+    meta = data["meta"]
+    tally.check(f"{label}: the index counts it, and links nothing", meta["jobs"]["not_read"] == 1 and meta["jobs"]["present"] == 0 and meta["jobs"]["sources"][0]["base"] is None, canon(meta["jobs"]))
+    tally.check(f"{label}: the folder holds no path of this machine", not leaks(site, project, work), "; ".join(leaks(site, project, work)[:5]))
+    ids = [b["id"] for b in data["base"]]
+    home = work / f"home-{label.replace(' ', '-')}"
+    (home / "config").mkdir(parents=True)
+    (home / "home").mkdir()
+    edith = W.Edith(binary, project, home)
+    outside = 0
+    try:
+        server = Server(edith)
+        page = new_page(work, "chrome-jobs-not-read")
+        try:
+            url = (site / "index.html").resolve().as_uri()
+            open_site(page, url)
+            answers, bad = compare_jobs(tally, label, page, server, ids)
+            tally.check(f"{label}: every node says one source was not read", all(a["not_read"]["sources"] == 1 and a["not_read_names"] == ["orchestration"] and a["groups"] == [] for a in answers), canon(answers[0]))
+            model = next(i for i in ids if i.startswith("model."))
+            page.js(f"location.hash = {json.dumps(urllib.parse.quote(model, safe=''))}")
+            page.until(f"!!document.querySelector('#graph .nd.focus[data-id={json.dumps(model)}]')", "a model")
+            page.js("document.querySelector('[data-dock=catalog]').click()")
+            page.until("!!document.querySelector('#catalog .cat-jobs .muted')", "the card's Jobs line")
+            line = page.js("document.querySelector('#catalog .cat-jobs').textContent")
+            tally.check(f"{label}: the card says the jobs were not read, never that no job runs it", "Jobs not read: orchestration (nothing at this path)." in line and "No job read runs it" not in line, line)
+            page.js("document.querySelector('[data-dock=jobs]').click()")
+            page.until("!!document.querySelector('#jobs-body .jobwarn, #jobs-body .jobs-warn')", "the Jobs tab")
+            tab = page.js("document.querySelector('#jobs-body').textContent")
+            head = page.js("document.querySelector('#jobs-head').textContent")
+            tally.check(f"{label}: so does the tab, and its header", "Jobs not read: orchestration (nothing at this path)." in tab and "No step of the jobs read acts on" not in tab
+                        and "orchestration not read (nothing at this path)" in head, f"{tab} | {head}")
+            tally.check(f"{label}: no Sources… to name another", page.js("document.querySelectorAll('#jobs-tools button').length") == 0)
+            outside = end(tally, label, page, [url.rsplit("/", 1)[0] + "/"])
+        finally:
+            page.close()
+    finally:
+        edith.stop()
+    return len(ids), bad, outside
+
+
+def walk_jobs(tally, binary, work):
+    """The jobs (0183), on Jaffle Shop with invented DAGs in a repository of their own."""
+    print("\n--- jobs ---")
+    label = "jobs"
+    airflow = airflow_repo(work)
+    sha = git(airflow, "rev-parse", "HEAD")
+    project = jobs_project(work, "read", JOBS_SOURCE)
+    run, site, data = jobs_site(tally, binary, project, work, label)
+    meta = data["meta"]
+    base = f"https://github.com/acme/airflow/blob/{sha}/dags/"
+    tally.check(f"{label}: the run counts the jobs it read", "jobs: " in run.stdout and "from 1 source(s)" in run.stdout, run.stdout[-300:])
+    tally.check(f"{label}: stderr has nothing to say of the jobs", "jobs" not in run.stderr and "job file" not in run.stderr, run.stderr[-400:])
+    source = meta["jobs"]["sources"][0]
+    tally.check(f"{label}: the source's files are linked at the jobs' repository's HEAD, from its own origin, below its folder",
+                source["base"] == base and source["anchor"] == "L" and source["commit"] == sha[:7] and source["commit_url"] == f"https://github.com/acme/airflow/commit/{sha}"
+                and meta["commit"] != sha, canon(meta["jobs"]))
+    tally.check(f"{label}: nothing counts as read that was not", meta["jobs"]["present"] == 1 and meta["jobs"]["not_read"] == 0 and meta["jobs"]["refused"] == 0 and meta["jobs"]["jobs"] == 2, canon(meta["jobs"]))
+    found = leaks(site, project, work)
+    tally.check(f"{label}: the folder holds no path of this machine, the jobs' repository's included, and no value of the .env", not found, "; ".join(found[:5]))
+    tally.check(f"{label}: the origin of the jobs' repository is never in the site", "git@github.com" not in "".join(p.read_text(errors="replace") for p in (site / "data").rglob("*.js")), "")
+    ids = [b["id"] for b in data["base"]]
+    home = work / "home-jobs"
+    (home / "config").mkdir(parents=True)
+    (home / "home").mkdir()
+    edith = W.Edith(binary, project, home)
+    try:
+        server = Server(edith)
+        page = new_page(work, "chrome-jobs")
+        try:
+            url = (site / "index.html").resolve().as_uri()
+            open_site(page, url)
+            tally.check(f"{label}: data/jobs.js is not asked for before the jobs are", requests_of(page, "/data/jobs.js") == [], str(requests_of(page, "/data/jobs.js")))
+            answers, bad = compare_jobs(tally, label, page, server, ids)
+            jobs_ui(tally, label, page, ids, answers, meta, base)
+            tally.check(f"{label}: data/jobs.js was asked for once", len(requests_of(page, "/data/jobs.js")) == 1, str(requests_of(page, "/data/jobs.js")))
+            outside = end(tally, label, page, [url.rsplit("/", 1)[0] + "/"])
+        finally:
+            page.close()
+    finally:
+        edith.stop()
+    unread_nodes, unread_bad, unread_outside = jobs_not_read(tally, binary, work)
+    print(f"jobs: {len(ids)} nodes' /api/jobs/node compared with the server, {bad} mismatches, {outside} requests outside the folder; "
+          f"not-read site: {unread_nodes} nodes compared, {unread_bad} mismatches, {unread_outside} requests outside the folder")
+
+
 def main():
     os.environ.setdefault("DBT_SEND_ANONYMOUS_USAGE_STATS", "False")
     os.environ.setdefault("DO_NOT_TRACK", "1")
@@ -1059,6 +1255,7 @@ def main():
         jaffle_project = jaffle(work)
         walk_project(tally, binary, "jaffle_shop", jaffle_project, "orders", work, JAFFLE_FOLDER + "/", True, 1)
         run_collin(tally, binary, work, jaffle_project)
+        walk_jobs(tally, binary, work)
         try:
             project = shopify(work)
         except C.Unavailable as e:

@@ -51,7 +51,7 @@ itself without either; CI does not run it, having no Chrome to drive (0074).
 `scripts/walk_depth.py` drives the lineage's depth control there the same way,
 `scripts/walk_menu.py` Edith's menu under a real pointer, and
 `scripts/walk_export.py` an export of the lineage with the Halloween theme on and in Light, and the Export menu, and
-`scripts/walk_site.py` the static site, written on Jaffle Shop and Shopify and compared with the server, column lineage over an invented cache included, from `file://` and over HTTP (0177, 0182).
+`scripts/walk_site.py` the static site, written on Jaffle Shop and Shopify and compared with the server, column lineage over an invented cache and invented DAGs in a repository beside the project included, from `file://` and over HTTP (0177, 0182, 0183).
 [docs/testing.md](docs/testing.md) lists each part and how to run it alone.
 Updating a vendored library means replacing its files and changing its
 version and each file's SHA-256 in `scripts/audit_vendored.py`, and its
@@ -89,14 +89,19 @@ frontend fix does not exist in a release binary until it is rebuilt (see 0005).
   leave: resolved locations, `DBT_TARGET` (0012, 0017), and a resolved
   `env_var()` in the hover card, which passes two guards first (0019). A site
   is published, so it is built from the manifest, the catalog, collin's column
-  lineage cache and report beside them and git's `HEAD` and origin alone: no
-  `.env`, no `env_var()` resolved, no profile (0177, 0182).
+  lineage cache and report beside them, the jobs `.dbt-edith/jobs.yml` names and git's
+  `HEAD` and origin alone: no `.env`, no `env_var()` resolved, no profile (0177,
+  0182, 0183).
 - **Nothing outside the project is read or written**, except the dbt profile,
   found where dbt looks for it, through its own route (0017, 0049), and that
   route never sends its passwords, tokens or keys (0054). The clone route reads
   it too, and sends only the active target's name, database and schema (0058).
   `--site` writes one folder inside the project, and only one Edith marked or
-  found empty, never anywhere else (0178).
+  found empty, never anywhere else (0178), and reads, through the same gate, four
+  things of the repository each job source it read is in: the top of its working
+  tree, `HEAD`, origin and the folder's place in it. A repository that is an
+  ancestor of the project is refused unless it is the project's own, and none at
+  or above the home folder is read, for a job source or the project (0183).
   The job folders the user names are read as well, in the settings or in the
   project's own `.dbt-edith/jobs.yml`, which the command line and MCP read too
   and which is written on the person's click only (0115). Their `.yml` and
@@ -309,7 +314,7 @@ frontend fix does not exist in a release binary until it is rebuilt (see 0005).
 | pick up the next piece of work | [docs/state.md](docs/state.md) |
 | find out when something shipped, or in which version | [CHANGELOG.md](CHANGELOG.md) |
 | release a version, change how one is tagged and published, or choose which pull request bumps it | [0045](docs/decisions/0045-merging-a-version-bump-releases-it.md), [0175](docs/decisions/0175-a-version-gathers-a-group-of-pull-requests.md) |
-| change what `--site` reads or writes, where it writes, what the page it writes may do, or how the browser answers what the server does, or where its SQL and the links to files come from, or whether it starts collin and how it carries column lineage | [0177](docs/decisions/0177-a-static-site-is-written-from-dbts-artifacts.md), [0178](docs/decisions/0178-the-site-is-written-inside-the-project-into-a-marked-folder.md), [0180](docs/decisions/0180-the-sites-sql-is-the-manifests.md), [0182](docs/decisions/0182-the-site-carries-collins-column-lineage.md), [0026](docs/decisions/0026-the-lineage-exports-as-one-html-file.md), [0121](docs/decisions/0121-git-runs-nothing-a-repositorys-own-config-names.md) |
+| change what `--site` reads or writes, where it writes, what the page it writes may do, or how the browser answers what the server does, or where its SQL and the links to files come from, or whether it starts collin and how it carries column lineage, or how it carries the jobs and links their files | [0177](docs/decisions/0177-a-static-site-is-written-from-dbts-artifacts.md), [0178](docs/decisions/0178-the-site-is-written-inside-the-project-into-a-marked-folder.md), [0180](docs/decisions/0180-the-sites-sql-is-the-manifests.md), [0182](docs/decisions/0182-the-site-carries-collins-column-lineage.md), [0183](docs/decisions/0183-the-site-carries-the-jobs-and-reads-git-where-a-job-source-lives.md), [0026](docs/decisions/0026-the-lineage-exports-as-one-html-file.md), [0121](docs/decisions/0121-git-runs-nothing-a-repositorys-own-config-names.md) |
 | make dbt-edith reach the network on its own, or change the update offer | [0068](docs/decisions/0068-a-newer-dbt-edith-is-looked-for-once-a-day-through-git.md) |
 | change the colour or the look of what says a newer release is out: Edith's badge, the status bar's pill, the update button | [0181](docs/decisions/0181-a-newer-release-keeps-its-colour-in-every-theme.md), [0148](docs/decisions/0148-a-meaning-has-one-shape-and-no-marker-is-a-round-dot.md), [0150](docs/decisions/0150-a-theme-is-a-set-of-variables-on-the-page-and-halloween-is-one.md) |
 | change when a newer release is looked for, or what Edith's menu shows | [0079](docs/decisions/0079-an-update-is-looked-for-hourly-through-the-paris-night-and-on-demand.md), [0068](docs/decisions/0068-a-newer-dbt-edith-is-looked-for-once-a-day-through-git.md) |
@@ -351,7 +356,7 @@ src/describe.rs       --describe and --overview: a node's or macro's card and th
 src/job.rs            --job: one DAG or dbt Cloud job printed step by step, with the nodes each runs and the order its files declare, and no server
 src/job_order.rs      --job-order: the dbt dependencies between jobs' steps that no job file orders, printed, and no server
 src/job_coverage.rs   --job-coverage: the models no scheduled job runs and the steps that select nothing, printed, and no server
-src/site.rs           --site: a static documentation site written from the manifest and the catalog, into a folder of its own inside the project, and no server
+src/site.rs           --site: a static documentation site written from the manifest, the catalog, the column lineage cache and the jobs, into a folder of its own inside the project, and no server
 src/mcp.rs            --mcp: the stdio JSON-RPC loop and its one tool, over the same answers
 src/mcp_line.rs       the tool's command line: split, parsed by clap, accepted by an allow-list of flags
 src/mcp_graphs.rs     the manifest and the base graph the server keeps, reloaded when their files change
@@ -387,7 +392,7 @@ build.rs              stamps the binary with git describe, so two builds of one 
 web/                  UI: no framework, CodeMirror 5 and xterm.js are vendored
 web/app.js            the shell, including the document outline behind the breadcrumbs and the exported page
 web/lineage.js        layered graph layout and SVG renderer, model, column and selection modes, and the snapshot an export is made of
-web/site.js           the static site's server: /api/lineage, /api/node and /api/search answered in the browser from the data --site wrote, held to Rust's answers by a golden fixture
+web/site.js           the static site's server: /api/lineage, /api/node, /api/search, the column lineage and the jobs answered in the browser from the data --site wrote, held to Rust's answers by a golden fixture
 web/vendor/           CodeMirror, xterm, the merge addon and diff-match-patch
 tools/                sf_lineage.py, the only piece that talks to a warehouse
 ```

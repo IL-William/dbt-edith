@@ -216,6 +216,8 @@ dbt-edith [PROJECT]                       dbt project root, default the current 
          [--environment NAME]            with --site, the environment shown in the header and the title
          [--commit SHA]                  with --site, the commit the site is for, default HEAD
          [--repo-url URL]                with --site, the repository's https address for the commit link, default derived from origin on github.com, gitlab.com and bitbucket.org
+         [--jobs-commit SHA]             with --site, the commit the job files are linked at, default the HEAD of the repository each job source is in
+         [--jobs-repo-url URL]           with --site, the https address the job files are linked by, default derived from the origin of the repository each job source is in
          [--mcp]                         answer an MCP client over stdio, through one tool taking these flags, and exit when it closes
          [--skill [command|mcp]]         print the agent skill (a SKILL.md) matching this version, `mcp` for a client that defers MCP tools, and exit, with nothing beside it
          [-V, --version]                 print the version and the build it came from, and exit

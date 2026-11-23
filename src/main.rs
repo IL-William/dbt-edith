@@ -217,6 +217,14 @@ struct Args {
     #[arg(long, value_name = "URL")]
     repo_url: Option<String>,
 
+    /// With --site, the commit the job files are linked at, 7 to 64 hexadecimal characters, for every job source (default: HEAD of the repository each source's folder is in, read through git)
+    #[arg(long, value_name = "SHA")]
+    jobs_commit: Option<String>,
+
+    /// With --site, the https address of the repository the job files are linked by, for every job source (default: from its remote.origin.url, for github.com, gitlab.com and bitbucket.org only)
+    #[arg(long, value_name = "URL")]
+    jobs_repo_url: Option<String>,
+
     /// Count what --select or --selector matched instead of listing it, one row per value of KEY and a total
     #[arg(long, value_enum, value_name = "KEY")]
     count_by: Option<ls::CountBy>,
@@ -234,7 +242,7 @@ struct Args {
         long,
         conflicts_with_all = [
             "port", "column_lineage", "shell", "no_open", "no_update_check", "select", "exclude", "selector", "column", "up", "down",
-            "stop_at", "indirect", "rules", "casts", "column_tool", "run_collin", "compiled", "describe", "sql", "compiled_sql", "columns", "overview", "job", "job_order", "job_coverage", "count_by", "depth", "output", "skill", "against", "with", "site", "environment", "commit", "repo_url",
+            "stop_at", "indirect", "rules", "casts", "column_tool", "run_collin", "compiled", "describe", "sql", "compiled_sql", "columns", "overview", "job", "job_order", "job_coverage", "count_by", "depth", "output", "skill", "against", "with", "site", "environment", "commit", "repo_url", "jobs_commit", "jobs_repo_url",
         ]
     )]
     mcp: bool,
@@ -248,7 +256,7 @@ struct Args {
         conflicts_with_all = [
             "project", "port", "manifest", "catalog", "column_lineage", "shell", "no_open", "no_update_check", "select", "exclude", "selector",
             "column", "up", "down", "stop_at", "indirect", "rules", "casts", "column_tool", "run_collin", "compiled", "describe", "sql", "compiled_sql", "columns", "overview", "job", "job_order",
-            "job_coverage", "count_by", "depth", "output", "mcp", "against", "with", "site", "environment", "commit", "repo_url",
+            "job_coverage", "count_by", "depth", "output", "mcp", "against", "with", "site", "environment", "commit", "repo_url", "jobs_commit", "jobs_repo_url",
         ]
     )]
     skill: Option<skill::Kind>,
@@ -276,6 +284,8 @@ fn stray(args: &Args) -> Option<String> {
         (args.environment.is_some(), "--environment", "--site", args.site.is_some()),
         (args.commit.is_some(), "--commit", "--site", args.site.is_some()),
         (args.repo_url.is_some(), "--repo-url", "--site", args.site.is_some()),
+        (args.jobs_commit.is_some(), "--jobs-commit", "--site", args.site.is_some()),
+        (args.jobs_repo_url.is_some(), "--jobs-repo-url", "--site", args.site.is_some()),
         (args.up.is_some(), "--up", "--column", args.column.is_some()),
         (args.down.is_some(), "--down", "--column", args.column.is_some()),
         (!args.stop_at.is_empty(), "--stop-at", "--column", args.column.is_some()),
@@ -378,6 +388,8 @@ fn question_of(args: &Args) -> Option<Question> {
             commit: args.commit.clone(),
             repo_url: args.repo_url.clone(),
             produce: args.run_collin.then(|| ls_column::Produce { catalog: args.catalog.clone(), compiled: args.compiled.clone() }),
+            jobs_commit: args.jobs_commit.clone(),
+            jobs_repo_url: args.jobs_repo_url.clone(),
         }));
     }
     match (&args.select, &args.selector) {
@@ -835,7 +847,7 @@ mod tests {
     }
 
     #[test]
-    fn site_is_a_question_of_its_own_with_three_flags_that_go_with_it() {
+    fn site_is_a_question_of_its_own_with_five_flags_that_go_with_it() {
         let ask = |line: &str| match question_of(&asked(line)) {
             Some(Question::Site(ask)) => ask,
             _ => panic!("{line} was not read as --site"),
@@ -843,6 +855,7 @@ mod tests {
         // No folder is the default, as `--skill` takes no word and means its first.
         let bare = ask("--site");
         assert_eq!((bare.dir, bare.environment, bare.commit, bare.repo_url), (None, None, None, None));
+        assert_eq!((bare.jobs_commit, bare.jobs_repo_url), (None, None));
         assert_eq!(ask("--site docs_site").dir, Some(PathBuf::from("docs_site")));
         assert_eq!(ask("/work/shop --site docs_site").dir, Some(PathBuf::from("docs_site")));
         let all =
@@ -854,10 +867,20 @@ mod tests {
         // The project comes first: a word after `--site` is the folder.
         let args = asked("--site /work/shop");
         assert_eq!((args.project, args.site), (PathBuf::from("."), Some(PathBuf::from("/work/shop"))));
-        // The three flags are named, not dropped, without --site.
-        for (line, flag) in
-            [("--environment prod", "--environment"), ("--commit abcdef1", "--commit"), ("--repo-url https://github.com/a/b", "--repo-url")]
-        {
+        // The job files' two are the same flags for another repository (0183).
+        let jobs = ask("--site --jobs-commit fedcba9 --jobs-repo-url https://github.com/acme/airflow");
+        assert_eq!(
+            (jobs.jobs_commit.as_deref(), jobs.jobs_repo_url.as_deref(), jobs.commit.as_deref()),
+            (Some("fedcba9"), Some("https://github.com/acme/airflow"), None)
+        );
+        // The flags are named, not dropped, without --site.
+        for (line, flag) in [
+            ("--environment prod", "--environment"),
+            ("--commit abcdef1", "--commit"),
+            ("--repo-url https://github.com/a/b", "--repo-url"),
+            ("--jobs-commit abcdef1", "--jobs-commit"),
+            ("--jobs-repo-url https://github.com/a/b", "--jobs-repo-url"),
+        ] {
             assert_eq!(stray(&asked(line)), Some(format!("{flag} goes with --site")), "{line}");
         }
         assert_eq!(stray(&asked("--site --environment prod")), None);
@@ -957,6 +980,8 @@ mod tests {
             ("--environment", "--mcp --environment prod"),
             ("--commit", "--mcp --commit abcdef1"),
             ("--repo-url", "--mcp --repo-url https://github.com/acme/shop"),
+            ("--jobs-commit", "--mcp --jobs-commit abcdef1"),
+            ("--jobs-repo-url", "--mcp --jobs-repo-url https://github.com/acme/airflow"),
         ] {
             let why = match Args::try_parse_from(std::iter::once("dbt-edith").chain(line.split_whitespace())) {
                 Ok(_) => panic!("{line} was accepted"),
@@ -1010,6 +1035,8 @@ mod tests {
             "--skill --environment prod",
             "--skill --commit abcdef1",
             "--skill --repo-url https://github.com/acme/shop",
+            "--skill --jobs-commit abcdef1",
+            "--skill --jobs-repo-url https://github.com/acme/airflow",
         ] {
             let why = match Args::try_parse_from(std::iter::once("dbt-edith").chain(line.split_whitespace())) {
                 Ok(_) => panic!("{line} was accepted"),

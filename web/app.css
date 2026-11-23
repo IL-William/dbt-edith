@@ -3005,6 +3005,8 @@ kbd {
 .jobfile:hover { color: var(--accent); }
 .jobhead .jobfile { font-size: 11.5px; color: var(--fg-mute); }
 .jobhead .jobfile:hover { color: var(--accent); }
+/* A site's line of a job file is a link to its host, which the copy cursor of the button would misname. */
+a.jobfile { cursor: pointer; text-decoration: none; display: inline-block; vertical-align: bottom; }
 /* One grid per card, so its commands line up whatever the task ids. */
 .jobsteps { display: grid; grid-template-columns: fit-content(16em) minmax(0, 1fr) auto; gap: 8px 10px; align-items: center; margin-top: 8px; }
 .jobstep { display: contents; }
@@ -3931,9 +3933,11 @@ html[data-site] :is(
   #editor-pane, #gutter-dock,
   #sidebar .tabs [data-side="search"], #sidebar .tabs [data-side="git"],
   #side-git, #side-search, #open-editors, #reveal-btn,
-  #dock > .tabs [data-dock]:not([data-dock="lineage"], [data-dock="catalog"]),
+  #dock > .tabs [data-dock]:not([data-dock="lineage"], [data-dock="catalog"], [data-dock="jobs"]),
   #status-where, #status-venv, #status-env, #status-branch, #status-shell, #status-update
 ) { display: none !important; }
+/* The Jobs tab is there when the site carries jobs (0183). */
+html[data-site]:not([data-jobs]) #dock > .tabs [data-dock="jobs"] { display: none !important; }
 html[data-site] #dock { flex: 1 1 auto; height: auto; }
 .site-stamp { display: inline-flex; align-items: center; gap: 8px; min-width: 0; overflow: hidden; white-space: nowrap; font-size: 11.5px; color: var(--fg-dim); }
 .site-stamp .env { padding: 1px 7px; border-radius: 8px; background: var(--bg-3); color: var(--fg); font-weight: 600; }

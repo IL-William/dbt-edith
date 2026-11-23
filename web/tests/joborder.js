@@ -14,6 +14,8 @@ eval(app.slice(app.indexOf('function jobsClock'), app.indexOf('function jobsWhyL
 eval(app.slice(app.indexOf('function jobOrderLine'), app.indexOf('async function jobOrderSection')));
 eval(app.slice(app.indexOf('function checkFoldList'), app.indexOf('/* A macro card\'s first line')));
 eval(app.slice(app.indexOf('function jobsStepRow'), app.indexOf('function renderCoverage')));
+// The page's state: not a site, so a job file's line is a button that copies where it is (a site's is a link, 0183).
+var S = { site: false };
 // Builds by job's schedule cell, with what it asks of the page stood in for.
 function counted(n, one, many) { return n + ' ' + (n === 1 ? one : many); }
 function buildsStaleDays() { return 3; }

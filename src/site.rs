@@ -24,7 +24,7 @@
 use crate::api::{self, Assets};
 use crate::collin_run::{self, ModelNote};
 use crate::graph::{ColRef, Graph, Kind, MAX_LEVELS};
-use crate::{collin, files, git, ls, ls_column};
+use crate::{collin, files, git, jobs, ls, ls_column};
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::io::Write;
@@ -40,6 +40,10 @@ pub struct Ask {
     pub repo_url: Option<String>,
     /// `--run-collin`: collin writes the column lineage first, over the manifest as it stands (0182).
     pub produce: Option<ls_column::Produce>,
+    /// `--jobs-commit`: the commit the job files are linked at, for every jobs source, in place of the one git says (0183).
+    pub jobs_commit: Option<String>,
+    /// `--jobs-repo-url`: the address the job files' repository is linked by, for every jobs source.
+    pub jobs_repo_url: Option<String>,
 }
 
 /// Written first into a folder, and what a later run recognises it by.
@@ -80,14 +84,27 @@ pub(crate) fn generate_with(
     project: &Path, manifest: Option<&Path>, catalog: Option<&Path>, ask: &Ask, locate: impl FnOnce() -> collin_run::Located,
     out: &mut impl Write, err: &mut impl Write,
 ) -> i32 {
+    generate_at(project, manifest, catalog, ask, locate, jobs::home_dir(), out, err)
+}
+
+/// `generate_with` with the home folder named by the caller: no repository at it or above it is read (0183).
+#[allow(clippy::too_many_arguments)] // the run's inputs, each named once; a struct would only rename them
+pub(crate) fn generate_at(
+    project: &Path, manifest: Option<&Path>, catalog: Option<&Path>, ask: &Ask, locate: impl FnOnce() -> collin_run::Located,
+    home: Option<PathBuf>, out: &mut impl Write, err: &mut impl Write,
+) -> i32 {
     // What can be refused without reading anything is refused first.
     let flags = (|| -> Result<_, String> {
         let commit = ask.commit.as_deref().map(valid_commit).transpose()?;
         let repo = ask.repo_url.as_deref().map(repo_from_flag).transpose()?;
         let environment = ask.environment.as_deref().map(valid_environment).transpose()?;
-        Ok((commit, repo, environment))
+        let jobs_commit =
+            ask.jobs_commit.as_deref().map(valid_commit).transpose().map_err(|why| why.replacen("--commit", "--jobs-commit", 1))?;
+        let jobs_repo =
+            ask.jobs_repo_url.as_deref().map(repo_from_flag).transpose().map_err(|why| why.replacen("--repo-url", "--jobs-repo-url", 1))?;
+        Ok((commit, repo, environment, jobs_commit, jobs_repo))
     })();
-    let (commit_flag, repo_flag, environment) = match flags {
+    let (commit_flag, repo_flag, environment, jobs_commit_flag, jobs_repo_flag) = match flags {
         Ok(f) => f,
         Err(why) => {
             let _ = writeln!(err, "error: {why}");
@@ -128,8 +145,16 @@ pub(crate) fn generate_with(
     if !ls::catalog_path(&root, &manifest_path, catalog).is_file() {
         let _ = writeln!(err, "no catalog.json: columns keep the types the YAML declares");
     }
+    // A repository at the home folder or above it is no project's own: a dotfiles repository would give its commit and its
+    // origin as the project's, and a file link below a prefix that is the machine's own layout (0183).
+    let project_top = git::top_level(&root).and_then(|t| t.canonicalize().ok()).map(files::plain);
+    let home_repo = project_top.as_deref().is_some_and(|t| at_or_above_home(t, home.as_deref()));
+    if home_repo {
+        let _ = writeln!(err, "git is not read for the project: {HOME_REPOSITORY}; pass --commit and --repo-url for the links");
+    }
     let commit = match commit_flag {
         Some(c) => Some(c),
+        None if home_repo => None,
         None => match git::head_commit(&root) {
             Ok(c) => Some(c),
             Err(why) => {
@@ -140,6 +165,7 @@ pub(crate) fn generate_with(
     };
     let repo = match repo_flag {
         Some(r) => Some(r),
+        None if home_repo => None,
         None => match git::origin_url(&root) {
             // Never printed: an origin can carry a token, and what is derived
             // from it is all the site and this line need.
@@ -161,6 +187,7 @@ pub(crate) fn generate_with(
         _ => String::new(),
     };
     let file_base = match (&repo, &commit) {
+        (Some(_), Some(_)) if home_repo => None,
         (Some(r), Some(c)) => file_links(r, c, &root, err),
         _ => None,
     };
@@ -174,6 +201,8 @@ pub(crate) fn generate_with(
     if !code.iter().flatten().any(|s| s.compiled.is_some()) {
         let _ = writeln!(err, "no compiled SQL in the manifest: run --site after dbt build, compile or docs generate");
     }
+
+    let jobs = jobs_of(&graph, &root, project_top.as_deref(), home.as_deref(), jobs_commit_flag.as_deref(), jobs_repo_flag.as_ref(), err);
 
     let meta = json!({
         "project": graph.meta.project,
@@ -194,14 +223,21 @@ pub(crate) fn generate_with(
     });
     let mut meta = meta;
     cll_meta(&graph, cll_stale, &mut meta);
+    if let Some(j) = &jobs {
+        meta["jobs"] = j.meta.clone();
+    }
     let title = title_of(&graph.meta.project, environment.as_deref().unwrap_or(""));
-    let built = match build(&graph, meta, &title, code, notes.as_ref()) {
+    let mut built = match build(&graph, meta, &title, code, notes.as_ref()) {
         Ok(b) => b,
         Err(why) => {
             let _ = writeln!(err, "error: {why}");
             return ls::CANNOT_RUN;
         }
     };
+    let said_jobs = jobs
+        .as_ref()
+        .map(|j| (j.meta["jobs"].as_u64().unwrap_or(0), j.meta["steps"].as_u64().unwrap_or(0), j.meta["present"].as_u64().unwrap_or(0)));
+    built.jobs = jobs.map(|j| j.js);
     // The folder was judged before the data was built, which took a while: it must still be the same place.
     if site_dir(&root, ask.dir.as_deref()).as_ref() != Ok(&dir) {
         let _ = writeln!(err, "error: {} changed while the site was built: nothing was written", dir.display());
@@ -224,6 +260,9 @@ pub(crate) fn generate_with(
     );
     if cll_stale.is_some() {
         let _ = writeln!(out, "  column lineage: {} edges from {}", graph.meta.cll_edges, cll_tool(&graph));
+    }
+    if let Some((jobs, steps, sources)) = said_jobs {
+        let _ = writeln!(out, "  jobs: {jobs} jobs and {steps} steps from {sources} source(s)");
     }
     ls::ANSWERED
 }
@@ -474,6 +513,339 @@ pub(crate) fn cll_of(graph: &Graph) -> Option<Value> {
         "outside": outside,
         "rules": rules,
     }))
+}
+
+// -------------------------------------------------------------------- jobs ----
+
+/// What the jobs add to a site (0183): the entry of the index's meta, and the script `data/jobs.js`.
+pub(crate) struct JobsData {
+    pub meta: Value,
+    pub js: String,
+}
+
+/// Where the files of one job source are on its host, at a commit.
+#[derive(Default, Debug, PartialEq)]
+pub(crate) struct JobLinks {
+    /// The commit's first seven characters, "" when none is known.
+    pub commit: String,
+    pub commit_url: String,
+    /// Up to what the page appends, the job file's path in its source's folder; None when no file is linked.
+    pub base: Option<String>,
+    /// What follows `#` before a line number: GitHub and GitLab say `L`, Bitbucket `lines-`.
+    pub anchor: &'static str,
+}
+
+/// What stderr says of a repository at the home folder or above it.
+const HOME_REPOSITORY: &str = "the repository it sits in is at the home folder or above it, which is no project's own";
+
+/// Whether a repository's top is the home folder or a folder above it, where the home folder is as the system says:
+/// a dotfiles repository, which holds everything under it and is nobody's project. Not asked when the home folder
+/// is not known, as `resolve_real`'s own check is not (0115).
+fn at_or_above_home(top: &Path, home: Option<&Path>) -> bool {
+    home.and_then(|h| h.canonicalize().ok()).map(files::plain).is_some_and(|h| h.starts_with(top))
+}
+
+/// Whether the repository a source's folder was found in may be read for it. git finds one by walking up with no
+/// ceiling, so a source with no repository of its own would be placed in whatever holds the project's
+/// parents: the commit and the address of the wrong repository, linked to as if they were the jobs'. It is
+/// taken when it is the dbt project's own repository, where jobs kept in the project live, or does not hold the
+/// project at all; and never when it is at the home folder or above it, whoever's repository that is.
+pub(crate) fn repository_is_the_sources(top: &Path, project: &Path, project_top: Option<&Path>, home: Option<&Path>) -> bool {
+    !at_or_above_home(top, home) && (project_top == Some(top) || !project.starts_with(top))
+}
+
+/// The commit and the file links of one source that was read. The commit and its link come from
+/// `--jobs-commit` and `--jobs-repo-url` when they are given, whatever git says; what git is asked, through the gate
+/// (0121) at the source's real folder, is the top of its repository, its `HEAD`, its origin and the folder's place
+/// in it, and only when the repository is the sources' own. A file is linked only where that place is known: with no
+/// repository there is none, flags or not. stderr says what is missing.
+fn job_links(
+    root: &Path, project_top: Option<&Path>, home: Option<&Path>, folder: Option<&Path>, name: &str, commit: Option<&str>,
+    repo: Option<&Repo>, err: &mut impl Write,
+) -> JobLinks {
+    let mut say = |why: &str| {
+        let _ = writeln!(err, "no job file links for {name}: {why}");
+    };
+    // Whether git may be asked about this source at all, and if not, why.
+    let project = files::plain(root.canonicalize().unwrap_or_else(|_| root.to_path_buf()));
+    let asked = match folder {
+        None => Err("its folder cannot be placed".to_string()),
+        Some(f) => match git::top_level(f).and_then(|t| t.canonicalize().ok()).map(files::plain) {
+            None if git::in_repository(f) => Err("git did not say where its repository is".to_string()),
+            None => Err("not a git repository".to_string()),
+            Some(top) if !repository_is_the_sources(&top, &project, project_top, home) => Err(if at_or_above_home(&top, home) {
+                HOME_REPOSITORY.to_string()
+            } else {
+                "the repository it sits in holds the project's parent folders, not its own".to_string()
+            }),
+            Some(_) => Ok(f),
+        },
+    };
+    let git_folder = asked.as_ref().ok().copied();
+    let sha = match (commit, git_folder) {
+        (Some(c), _) => Some(c.to_string()),
+        (None, Some(f)) => match git::head_commit(f) {
+            Ok(c) => Some(c),
+            Err(why) => {
+                say(&format!("no commit: {why}"));
+                None
+            }
+        },
+        (None, None) => None,
+    };
+    let derived;
+    let repo = match (repo, git_folder) {
+        (Some(r), _) => Some(r),
+        (None, Some(f)) => {
+            derived = git::origin_url(f).and_then(|o| repo_from_origin(&o));
+            if derived.is_none() {
+                say("its origin is not on github.com, gitlab.com or bitbucket.org, pass --jobs-repo-url");
+            }
+            derived.as_ref()
+        }
+        (None, None) => None,
+    };
+    let mut links = JobLinks::default();
+    if let (Some(sha), Some(repo)) = (&sha, repo) {
+        links = JobLinks { commit: sha.chars().take(7).collect(), commit_url: commit_link(repo, sha), base: None, anchor: "L" };
+        if repo.host == Host::Bitbucket {
+            links.anchor = "lines-";
+        }
+    }
+    if let Err(why) = &asked {
+        // No folder's place is known, so no file is linked; the commit's link is the flags' when they gave both.
+        let rest = if links.commit_url.is_empty() {
+            ", pass --jobs-commit and --jobs-repo-url for the commit link"
+        } else {
+            ", the commit link is from the flags"
+        };
+        say(&format!("{why}{rest}"));
+        return links;
+    }
+    let (Some(sha), Some(repo), Some(folder)) = (sha, repo, git_folder) else { return links };
+    if repo.host == Host::Azure {
+        say("the file addresses of Azure DevOps are not written yet");
+        return links;
+    }
+    links.base = git::show_prefix(folder).and_then(|prefix| file_base(repo, &sha, &prefix));
+    if links.base.is_none() {
+        say("git did not say where its folder sits in the repository");
+    }
+    links
+}
+
+/// Reads the jobs the project's `.dbt-edith/jobs.yml` names, as the command line does (0115), and lays them
+/// out for the page: None when there is no file, so no tab. A file that cannot be read, a source that cannot
+/// be walked and a job file that does not parse are said on stderr and carried in the data, never as a job
+/// that does not exist.
+fn jobs_of(
+    graph: &Graph, root: &Path, project_top: Option<&Path>, home: Option<&Path>, commit: Option<&str>, repo: Option<&Repo>,
+    err: &mut impl Write,
+) -> Option<JobsData> {
+    let sources = jobs::sources(root, &[]);
+    let (known, _) = jobs::known_from(graph, root, &sources);
+    let refused = match &known {
+        jobs::Known::Absent => return None,
+        jobs::Known::Refused(why) => Some(why.clone()),
+        jobs::Known::Read(_) => None,
+    };
+    let empty = jobs::Read::default();
+    let read: &jobs::Read = match &known {
+        jobs::Known::Read(r) => r,
+        _ => &empty,
+    };
+    // `jobs: []` names nothing to read: a tab that offered to add a source would be the server's page, not a site's.
+    if refused.is_none() && read.sources.is_empty() {
+        return None;
+    }
+    let mut links: Vec<JobLinks> = Vec::new();
+    for (si, s) in read.sources.iter().enumerate() {
+        let name = jobs::source_name(read, si);
+        if !jobs::source_was_read(s) {
+            let _ = writeln!(
+                err,
+                "warning: jobs not read: {name} ({})",
+                if s.error.is_empty() { "stopped at its bound on files or depth" } else { &s.error }
+            );
+            links.push(JobLinks::default());
+            continue;
+        }
+        if !s.refused.is_empty() {
+            let _ = writeln!(err, "warning: {} job file(s) of {name} could not be read and may hold more", s.refused.len());
+        }
+        let folder = sources.list.get(si).and_then(|src| jobs::walked_folder(root, src));
+        links.push(job_links(root, project_top, home, folder.as_deref(), &name, commit, repo, err));
+    }
+    if let Some(why) = &refused {
+        let _ = writeln!(err, "warning: jobs not read: {} is not read: {why}", jobs::SOURCES_FILE);
+    }
+    let meta = jobs_meta(read, refused.as_deref(), &links);
+    let js = format!("EDITH_SITE_JOBS({});\n", js_json(&jobs_payload(graph, read, refused.as_deref())));
+    Some(JobsData { meta, js })
+}
+
+/// The index's entry for the jobs (`meta.jobs`): who was read, where each source's files are linked, and the counts the
+/// page says. Nothing of this machine, and no time.
+fn jobs_meta(read: &jobs::Read, refused: Option<&str>, links: &[JobLinks]) -> Value {
+    json!({
+        "sources": read.sources.iter().enumerate().map(|(si, _)| {
+            let l = &links[si];
+            json!({ "name": jobs::source_name(read, si), "commit": l.commit, "commit_url": l.commit_url, "base": l.base, "anchor": l.anchor })
+        }).collect::<Vec<_>>(),
+        "present": read.sources.iter().filter(|s| jobs::source_was_read(s)).count(),
+        "not_read": read.sources.iter().filter(|s| !jobs::source_was_read(s)).count(),
+        "refused": read.sources.iter().map(|s| s.refused.len()).sum::<usize>(),
+        "sources_refused": refused.unwrap_or_default(),
+        "jobs": read.jobs.len(),
+        "steps": read.steps.len(),
+    })
+}
+
+/// A sorted list of node numbers as runs, `[gap, length, ...]`: each run starts `gap` after the end of the one before
+/// (the first, after 0). A step that selects nearly everything is a few numbers, not one per node.
+pub(crate) fn node_runs(nodes: &[u32]) -> Vec<u32> {
+    let mut out: Vec<u32> = Vec::new();
+    let mut end = 0u32;
+    let mut i = 0;
+    while i < nodes.len() {
+        let start = nodes[i];
+        let mut len = 1;
+        while i + len < nodes.len() && nodes[i + len] == start + len as u32 {
+            len += 1;
+        }
+        out.extend([start - end, len as u32]);
+        end = start + len as u32;
+        i += len;
+    }
+    out
+}
+
+/// The argument of `EDITH_SITE_JOBS`: the summary `/api/jobs` gives, and what `/api/jobs/node` answers for every
+/// node, worked out by the server's own code and laid out so that nothing grows with the product of nodes and
+/// steps. A job and a step are in a list of their own, in the order of the files they were read from, a step
+/// as `StepView` writes it for no node in particular. A step that runs nodes says which as runs of node numbers
+/// (`runs`), and why, by node, as the terms of its selection with the nodes each reaches on its own (`via`: `["t",
+/// [[term], [term, runs]]]`, a term with no runs of its own reaching what the step does) or as one fixed line
+/// (`["f", [line]]`); `web/site.js` finds the steps of a node by looking it up in each, and the terms that reach
+/// it the same way. What a step that could not be resolved might run is by kind of node, not by node (`maybe`).
+/// What every node's answer says the same (the sources read, those that were not, the files refused) is said once.
+pub(crate) fn jobs_payload(graph: &Graph, read: &jobs::Read, refused: Option<&str>) -> Value {
+    let mut summary = serde_json::to_value(jobs::summary(read)).unwrap_or(Value::Null);
+    // Where a source led on this machine is not the site's to say: the source is as the file wrote it.
+    if let Some(list) = summary["sources"].as_array_mut() {
+        for s in list {
+            if let Some(o) = s.as_object_mut() {
+                o.remove("resolved");
+            }
+        }
+    }
+    summary["from"] = json!("project");
+    if let Some(why) = refused {
+        summary["refused"] = json!(why);
+    }
+
+    // What a node of each kind is told that the server's answer says alike for every node of that kind: the
+    // steps that might run it, and the rest of the answer, which is the same for all.
+    let mut first_of_kind: BTreeMap<&str, u32> = BTreeMap::new();
+    for (i, n) in graph.nodes.iter().enumerate() {
+        first_of_kind.entry(n.kind.as_str()).or_insert(i as u32);
+    }
+    let mut reach = jobs::Reach::default();
+    let mut common: Option<Value> = None;
+    let mut maybe: BTreeMap<String, Vec<(usize, Vec<usize>)>> = BTreeMap::new();
+    for (kind, node) in &first_of_kind {
+        let found = jobs::for_node_with(graph, read, *node, &mut reach);
+        if common.is_none() {
+            let mut shared = serde_json::to_value(&found).unwrap_or(Value::Null);
+            if let Some(o) = shared.as_object_mut() {
+                for k in ["kind", "groups", "maybe"] {
+                    o.remove(k);
+                }
+            }
+            common = Some(shared);
+        }
+        let groups: Vec<(usize, Vec<usize>)> =
+            found.maybe.iter().map(|g| (read.steps[g.steps[0].index].job, g.steps.iter().map(|s| s.index).collect())).collect();
+        if !groups.is_empty() {
+            maybe.insert((*kind).to_string(), groups);
+        }
+    }
+    let mut common = common.unwrap_or_else(|| json!({ "configured": !read.sources.is_empty() }));
+    if let Some(why) = refused {
+        common["sources_refused"] = json!(why);
+    }
+
+    // The steps that run some node, and those that might run one, each once, in the order they were read.
+    let mut shipped: Vec<usize> =
+        (0..read.steps.len()).filter(|&si| read.steps[si].executes() && !read.steps[si].nodes.is_empty()).collect();
+    shipped.extend(maybe.values().flatten().flat_map(|(_, steps)| steps.iter().copied()));
+    shipped.sort_unstable();
+    shipped.dedup();
+    let step_at: HashMap<usize, usize> = shipped.iter().enumerate().map(|(at, &si)| (si, at)).collect();
+    let job_ids: std::collections::BTreeSet<usize> = shipped.iter().map(|&si| read.steps[si].job).collect();
+    let job_at: HashMap<usize, usize> = job_ids.iter().enumerate().map(|(at, &ji)| (ji, at)).collect();
+
+    let mut runs: Vec<Value> = Vec::with_capacity(shipped.len());
+    let mut via: Vec<Value> = Vec::with_capacity(shipped.len());
+    let mut terms = jobs::TermMemo::default();
+    for &si in &shipped {
+        let step = &read.steps[si];
+        if !step.executes() || step.nodes.is_empty() {
+            runs.push(json!(0));
+            via.push(json!(0));
+            continue;
+        }
+        let own = node_runs(&step.nodes);
+        // A step of one term and no exclusion runs what that term reaches, filtered by kind: every node it runs is reached by
+        // the term, and the term is not resolved a second time.
+        let lone = step.inv.as_ref().is_some_and(|inv| inv.selector.is_none() && inv.select.len() == 1 && inv.exclude.is_empty());
+        via.push(
+            match step.inv.as_ref().map(|inv| {
+                if lone {
+                    jobs::ViaOf::Terms(vec![(inv.select[0].clone(), Default::default())])
+                } else {
+                    jobs::via_of(graph, inv, &mut terms)
+                }
+            }) {
+                Some(jobs::ViaOf::Fixed(line)) => json!(["f", line]),
+                Some(jobs::ViaOf::Terms(found)) => json!([
+                    "t",
+                    found
+                        .iter()
+                        .map(|(text, nodes)| {
+                            // A term that reaches what the step runs says only its text.
+                            if lone || node_runs(nodes) == own {
+                                json!([text])
+                            } else {
+                                json!([text, node_runs(nodes)])
+                            }
+                        })
+                        .collect::<Vec<_>>()
+                ]),
+                None => json!(0),
+            },
+        );
+        runs.push(json!(own));
+    }
+    let packed_maybe: serde_json::Map<String, Value> = maybe
+        .iter()
+        .map(|(kind, groups)| {
+            let list: Vec<Value> =
+                groups.iter().map(|(ji, steps)| json!([job_at[ji], steps.iter().map(|si| step_at[si]).collect::<Vec<_>>()])).collect();
+            (kind.clone(), json!(list))
+        })
+        .collect();
+    json!({
+        "v": 2,
+        "summary": summary,
+        "common": common,
+        "jobs": job_ids.iter().map(|&ji| serde_json::to_value(jobs::job_view(read, ji)).unwrap_or(Value::Null)).collect::<Vec<_>>(),
+        "steps": shipped.iter().map(|&si| serde_json::to_value(jobs::step_view(graph, read, si, None)).unwrap_or(Value::Null)).collect::<Vec<_>>(),
+        "step_job": shipped.iter().map(|&si| job_at[&read.steps[si].job]).collect::<Vec<_>>(),
+        "runs": runs,
+        "via": via,
+        "maybe": packed_maybe,
+    })
 }
 
 // ------------------------------------------------------------------ flags ----
@@ -973,6 +1345,8 @@ pub(crate) struct Built {
     pub sql: Vec<String>,
     /// The column lineage, one file, when a cache was merged (0182).
     pub cll: Option<String>,
+    /// The jobs, one file, when the project names job sources (0183). Set by the run, which reads them.
+    pub jobs: Option<String>,
     /// The assets the page loads, by their path in the folder.
     pub assets: Vec<(String, Vec<u8>)>,
 }
@@ -1150,7 +1524,7 @@ pub(crate) fn build(
     assets.push(("LICENSE.txt".to_string(), include_bytes!("../LICENSE").to_vec()));
     assets.push(("THIRD_PARTY_NOTICES.md".to_string(), include_bytes!("../THIRD_PARTY_NOTICES.md").to_vec()));
     let cll = cll_of(graph).map(|v| format!("EDITH_SITE_CLL({});\n", js_json(&v)));
-    Ok(Built { html, index: format!("window.EDITH_SITE={};\n", js_json(&index)), buckets, sql, cll, assets })
+    Ok(Built { html, index: format!("window.EDITH_SITE={};\n", js_json(&index)), buckets, sql, cll, jobs: None, assets })
 }
 
 /// Empties the folder and writes every file, the marker first.
@@ -1176,6 +1550,9 @@ fn write_site(dir: &Path, built: &Built) -> std::io::Result<()> {
     }
     if let Some(cll) = &built.cll {
         put("data/cll.js", cll.as_bytes())?;
+    }
+    if let Some(jobs) = &built.jobs {
+        put("data/jobs.js", jobs.as_bytes())?;
     }
     Ok(())
 }
@@ -1427,7 +1804,15 @@ mod tests {
         let project = scratch("assets");
         write_project(&project);
         let into = project.join("out");
-        let ask = Ask { dir: Some(into.clone()), environment: None, commit: None, repo_url: None, produce: None };
+        let ask = Ask {
+            dir: Some(into.clone()),
+            environment: None,
+            commit: None,
+            repo_url: None,
+            produce: None,
+            jobs_commit: None,
+            jobs_repo_url: None,
+        };
         let (mut out, mut err) = (Vec::new(), Vec::new());
         assert_eq!(generate(&project, None, None, &ask, &mut out, &mut err), ls::ANSWERED, "{}", String::from_utf8_lossy(&err));
 
@@ -1525,6 +1910,8 @@ mod tests {
             commit: Some("0123456789abcdef0123456789abcdef01234567".to_string()),
             repo_url: Some("https://github.com/acme/shop".to_string()),
             produce: None,
+            jobs_commit: None,
+            jobs_repo_url: None,
         };
         let run = |ask: &Ask| {
             let (mut out, mut err) = (Vec::new(), Vec::new());
@@ -1601,6 +1988,8 @@ mod tests {
             commit: commit.map(String::from),
             repo_url: repo.map(String::from),
             produce: None,
+            jobs_commit: None,
+            jobs_repo_url: None,
         };
         let go = |ask: &Ask| {
             let (mut out, mut err) = (Vec::new(), Vec::new());
@@ -1674,6 +2063,8 @@ mod tests {
             commit: Some("0123456789abcdef0123456789abcdef01234567".to_string()),
             repo_url: Some(repo.to_string()),
             produce: None,
+            jobs_commit: None,
+            jobs_repo_url: None,
         }
     }
 
@@ -2864,6 +3255,80 @@ echo '{"totals":{"models":3,"parsed":3},"models":[]}' > "$report""#;
         ]
     }
 
+    /// What the golden file holds of the jobs: the script, and the server's own answers to compare the page's with.
+    struct CaseJobs {
+        meta: Value,
+        script: String,
+        summary: Value,
+        nodes: Vec<Value>,
+        refused_script: String,
+        refused_summary: Value,
+        refused_node: Value,
+    }
+
+    /// Two DAGs of invented tasks over the case graph, a file that does not parse, and a source that is not there: so a node
+    /// has jobs by a term, by a step that selects it however it is reached, and by one that could run it and cannot be
+    /// resolved, and every node says one source was not read. The answers are `for_node`'s and `summary`'s, written here
+    /// by the server's own types and never by `jobs_payload`.
+    fn case_jobs(graph: &Graph) -> CaseJobs {
+        let dir = scratch("case-jobs");
+        let dags = dir.join("dags");
+        std::fs::create_dir_all(&dags).unwrap();
+        std::fs::write(
+            dags.join("acme_nightly.yml"),
+            "dag_id: acme_nightly\nschedule: \"0 3 * * *\"\ntasks:\n  - task_id: upstream_of_hub\n    command: dbt run --select +path:models/marts/hub.sql\n  - task_id: versions\n    command: dbt build --select path:models/marts/orders.sql config.materialized:view --exclude path:models/marts/dia_d.sql\n    depends_on: [upstream_of_hub]\n  - task_id: seeds\n    command: dbt seed\n  - task_id: changed\n    command: dbt run --select state:modified+\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dags.join("acme_weekly.yml"),
+            "dag_id: acme_weekly\nschedule: \"0 4 * * 1\"\ntasks:\n  - task_id: check\n    command: dbt build --select path:models/marts/hub.sql\n",
+        )
+        .unwrap();
+        std::fs::write(dags.join("acme_broken.yml"), "dag_id: [unclosed\n").unwrap();
+        let source = |path: &str, label: &str| crate::settings::JobSource {
+            kind: "airflow".into(),
+            path: path.into(),
+            label: label.into(),
+            keys: Default::default(),
+            timezone: String::new(),
+            from_file: false,
+        };
+        let (read, _) = jobs::build(graph, &dir, &[source("dags", "orchestration"), source("nowhere", "gone")]);
+        let links: Vec<JobLinks> = read.sources.iter().map(|_| JobLinks::default()).collect();
+        let summary_of = |read: &jobs::Read, refused: Option<&str>| {
+            let mut v = serde_json::to_value(jobs::summary(read)).unwrap();
+            for s in v["sources"].as_array_mut().unwrap() {
+                s.as_object_mut().unwrap().remove("resolved");
+            }
+            v["from"] = json!("project");
+            if let Some(why) = refused {
+                v["refused"] = json!(why);
+            }
+            v
+        };
+        let nodes = (0..graph.nodes.len())
+            .map(|i| {
+                let want = serde_json::to_value(jobs::for_node(graph, &read, i as u32)).unwrap();
+                json!({ "path": format!("/api/jobs/node?id={}", enc(&graph.nodes[i].id)), "want": want })
+            })
+            .collect();
+        let why = "line 2: a source with no kind or no path";
+        let empty = jobs::Read::default();
+        let mut refused_node = serde_json::to_value(jobs::for_node(graph, &empty, 0)).unwrap();
+        refused_node["sources_refused"] = json!(why);
+        let out = CaseJobs {
+            meta: jobs_meta(&read, None, &links),
+            script: format!("EDITH_SITE_JOBS({});\n", js_json(&jobs_payload(graph, &read, None))),
+            summary: json!({ "path": "/api/jobs", "want": summary_of(&read, None) }),
+            nodes,
+            refused_script: format!("EDITH_SITE_JOBS({});\n", js_json(&jobs_payload(graph, &empty, Some(why)))),
+            refused_summary: json!({ "path": "/api/jobs", "want": summary_of(&empty, Some(why)) }),
+            refused_node: json!({ "path": format!("/api/jobs/node?id={}", enc(&graph.nodes[0].id)), "want": refused_node }),
+        };
+        let _ = std::fs::remove_dir_all(&dir);
+        out
+    }
+
     /// The whole fixture, as the text of the file. What `web/site.js` is held to.
     fn case_text() -> String {
         let (graph, manifest) = case_parts();
@@ -2873,6 +3338,8 @@ echo '{"totals":{"models":3,"parsed":3},"models":[]}' > "$report""#;
         let base = "https://github.com/acme/shop/blob/0123456789abcdef0123456789abcdef01234567/analytics/";
         let mut meta = json!({ "project": "shop", "root": "shop", "environment": "qa", "commit": "", "commit_url": "", "repo_url": "", "file_base": base, "catalog": false });
         cll_meta(&graph, Some(false), &mut meta);
+        let jobs = case_jobs(&graph);
+        meta["jobs"] = jobs.meta.clone();
         let mut index = index_of(&graph, meta);
         // Small buckets, so the lookup of a card by its number is exercised, and the SQL's own cut is not the cards'.
         let (cuts, buckets) = cards_in(&graph, Some(&notes), 7, BUCKET_BYTES).unwrap();
@@ -3034,6 +3501,8 @@ echo '{"totals":{"models":3,"parsed":3},"models":[]}' > "$report""#;
 
         let case = json!({
             "site": index, "buckets": buckets, "sql": sql, "lineage": cases, "search": searches, "node": nodes, "dir": dirs, "code": codes,
+            "jobs": jobs.script, "jobs_summary": jobs.summary, "jobs_node": jobs.nodes,
+            "jobs_refused": { "script": jobs.refused_script, "summary": jobs.refused_summary, "node": jobs.refused_node },
             "cll": cll, "collineage": collineage, "colreach": colreach,
             "random": { "cll": random_cll, "collineage": random_collineage, "colreach": random_colreach },
             "plain": { "cll": plain_cll, "collineage": plain_collineage, "colreach": plain_colreach },
@@ -3166,5 +3635,517 @@ echo '{"totals":{"models":3,"parsed":3},"models":[]}' > "$report""#;
         // The byte limit closes a bucket as the count does.
         let (cuts, _) = cards_in(&graph, None, 1000, 1).unwrap();
         assert_eq!(cuts.len(), n);
+    }
+
+    // ----------------------------------------------------------------- jobs ----
+
+    const DAG_DAILY: &str = "dag_id: acme_daily\nschedule: \"0 6 * * *\"\ntasks:\n  - task_id: stage\n    command: dbt run --select stg_orders+\n  - task_id: check\n    command: dbt test --select orders\n    depends_on: [stage]\n";
+    // `state:modified` cannot be resolved from a manifest alone, so its step is one that might run a model.
+    const DAG_ODD: &str = "dag_id: acme_odd\nschedule: \"30 2 * * *\"\ntasks:\n  - task_id: everything\n    command: dbt build\n  - task_id: changed\n    command: dbt run --select state:modified+\n";
+
+    /// A shop beside an `airflow_repo`, the shape a pipeline clones: the project names the DAGs by a path that goes up one folder.
+    /// `dags` is where in the repository the DAG files sit.
+    fn jobs_project(tag: &str, dags: &str) -> (PathBuf, PathBuf, PathBuf) {
+        let parent = scratch(tag);
+        let project = parent.join("shop");
+        write_project(&project);
+        // A selection by `fqn:*`, which `dbt build` with no `--select` is, wants the manifest's fqn.
+        let path = project.join("target/manifest.json");
+        let mut manifest: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        for (_, node) in manifest["nodes"].as_object_mut().unwrap() {
+            node["fqn"] = json!(["shop", node["name"].clone()]);
+        }
+        std::fs::write(&path, serde_json::to_vec(&manifest).unwrap()).unwrap();
+        let airflow = parent.join("airflow_repo");
+        let at = airflow.join(dags);
+        std::fs::create_dir_all(&at).unwrap();
+        std::fs::write(at.join("acme_daily.yml"), DAG_DAILY).unwrap();
+        std::fs::write(at.join("acme_odd.yml"), DAG_ODD).unwrap();
+        std::fs::create_dir_all(project.join(".dbt-edith")).unwrap();
+        let named = format!("jobs:\n  - kind: airflow\n    path: \"../airflow_repo/{dags}\"\n    label: \"orchestration\"\n");
+        std::fs::write(project.join(".dbt-edith/jobs.yml"), named).unwrap();
+        (parent, project, airflow)
+    }
+
+    fn git_in(dir: &Path, args: &[&str]) -> String {
+        let out = std::process::Command::new("git")
+            .arg("-C")
+            .arg(dir)
+            .args(args)
+            .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .env("GIT_CONFIG_NOSYSTEM", "1")
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "git {args:?}: {}", String::from_utf8_lossy(&out.stderr));
+        String::from_utf8_lossy(&out.stdout).trim().to_string()
+    }
+
+    /// A repository with one commit, and the sha of it. Made with no configuration of the machine's.
+    fn commit_in(dir: &Path, origin: Option<&str>) -> String {
+        init_repository(dir);
+        if let Some(url) = origin {
+            git_in(dir, &["remote", "add", "origin", url]);
+        }
+        git_in(
+            dir,
+            &[
+                "-c", "user.name=acme", "-c", "user.email=acme@example.com", "-c", "commit.gpgsign=false", "commit", "--allow-empty", "-q",
+                "-m", "first",
+            ],
+        );
+        git_in(dir, &["rev-parse", "HEAD"])
+    }
+
+    fn read_script(dir: &Path, file: &str, call: &str) -> Value {
+        let text = std::fs::read_to_string(dir.join(file)).unwrap();
+        let inner = text.trim_end().strip_prefix(call).unwrap().trim_end_matches(';').trim_end_matches(')').to_string();
+        serde_json::from_str(&inner).unwrap()
+    }
+
+    /// Whether a node is in runs `[gap, length, ...]`, as `web/site.js` reads them.
+    fn in_runs(list: &Value, node: u64) -> bool {
+        let (mut at, a) = (0u64, list.as_array().unwrap());
+        a.chunks(2).any(|c| {
+            at += c[0].as_u64().unwrap();
+            let start = at;
+            at += c[1].as_u64().unwrap();
+            (start..at).contains(&node)
+        })
+    }
+
+    /// What `web/site.js` does with the packed jobs: a node's answer, the server's own, back.
+    fn expanded(payload: &Value, node: usize, kind: &str) -> Value {
+        let steps = payload["steps"].as_array().unwrap();
+        let mut groups: Vec<Value> = Vec::new();
+        let mut last = u64::MAX;
+        for (at, step) in steps.iter().enumerate() {
+            let own = &payload["runs"][at];
+            if own.is_null() || own == &json!(0) || !in_runs(own, node as u64) {
+                continue;
+            }
+            let why = &payload["via"][at];
+            let via: Vec<Value> = match why[0].as_str() {
+                Some("f") => why[1].as_array().unwrap().clone(),
+                Some(_) => why[1]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .filter(|t| in_runs(t.get(1).unwrap_or(own), node as u64))
+                    .map(|t| t[0].clone())
+                    .collect(),
+                None => Vec::new(),
+            };
+            let mut step = step.clone();
+            if !via.is_empty() {
+                step["via"] = json!(via);
+            }
+            let job = payload["step_job"][at].as_u64().unwrap();
+            if job != last {
+                groups.push(json!({ "job": payload["jobs"][job as usize], "steps": [] }));
+                last = job;
+            }
+            groups.last_mut().unwrap()["steps"].as_array_mut().unwrap().push(step);
+        }
+        let mut answer = payload["common"].clone();
+        answer["kind"] = json!(kind);
+        answer["groups"] = json!(groups);
+        if let Some(list) = payload["maybe"].get(kind) {
+            let list: Vec<Value> = list
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|g| {
+                    let steps: Vec<Value> =
+                        g[1].as_array().unwrap().iter().map(|at| steps[at.as_u64().unwrap() as usize].clone()).collect();
+                    json!({ "job": payload["jobs"][g[0].as_u64().unwrap() as usize], "steps": steps })
+                })
+                .collect();
+            answer["maybe"] = json!(list);
+        }
+        answer
+    }
+
+    #[test]
+    fn runs_of_nodes_are_gaps_and_lengths() {
+        assert_eq!(node_runs(&[]), Vec::<u32>::new());
+        assert_eq!(node_runs(&[0, 1, 2, 5, 7, 8]), [0, 3, 2, 1, 1, 2]);
+        assert_eq!(node_runs(&[4]), [4, 1]);
+        let all: Vec<u32> = (0..50_000).collect();
+        assert_eq!(node_runs(&all), [0, 50_000], "a step that selects everything is one run");
+    }
+
+    #[test]
+    fn a_job_and_a_step_are_shipped_once_and_every_node_gets_the_servers_own_answer() {
+        let (parent, project, _) = jobs_project("jobs-whole", "dags");
+        let (code, out, err) = run_site(&project, &ask_for("https://github.com/acme/shop"), no_collin);
+        assert_eq!(code, ls::ANSWERED, "{err}");
+        assert!(out.contains("jobs: 2 jobs and 4 steps from 1 source(s)"), "{out}");
+        let dir = project.join("target").join("edith-site");
+        let payload = read_script(&dir, "data/jobs.js", "EDITH_SITE_JOBS(");
+
+        let (root, _, graph) = ls::open_with_catalog(&project, None, None).unwrap();
+        let sources = jobs::sources(&root, &[]);
+        let (read, _) = jobs::build(&graph, &root, &sources.list);
+        let mut with_jobs = 0;
+        for (i, n) in graph.nodes.iter().enumerate() {
+            let want = serde_json::to_value(jobs::for_node(&graph, &read, i as u32)).unwrap();
+            assert_eq!(expanded(&payload, i, n.kind.as_str()), want, "{}", n.id);
+            if !want["groups"].as_array().unwrap().is_empty() {
+                with_jobs += 1;
+            }
+        }
+        assert!(with_jobs >= 2, "the fixture must reach a node: {}", payload.to_string().chars().take(1500).collect::<String>());
+        // A model that a step selects through a term says which term.
+        let stg = graph.index["model.shop.stg_orders"] as usize;
+        assert_eq!(expanded(&payload, stg, "model")["groups"][0]["steps"][0]["via"], json!(["stg_orders+"]));
+
+        // Each job and each step once, in the order of the files; no node holds a job's fields.
+        assert_eq!(payload["jobs"].as_array().unwrap().len(), 2);
+        assert_eq!(payload["jobs"][0]["name"], "acme_daily");
+        assert_eq!(payload["jobs"][1]["name"], "acme_odd");
+        assert!(payload["steps"].as_array().unwrap().iter().all(|s| s.get("via").is_none()));
+        // The unresolved step could run a model, and is said once for the kind, not once for each node.
+        assert_eq!(payload["maybe"]["model"].as_array().unwrap().len(), 1);
+        assert!(
+            payload["steps"].as_array().unwrap().len() <= 4
+                && payload["runs"].as_array().unwrap().len() == payload["steps"].as_array().unwrap().len()
+        );
+        assert!(payload.get("nodes").is_none(), "nothing grows with the number of nodes");
+
+        // What the summary says is the server's, with the places of this machine left off.
+        let want = serde_json::to_value(jobs::summary(&read)).unwrap();
+        assert_eq!(payload["summary"]["jobs"], want["jobs"]);
+        assert_eq!(payload["summary"]["steps"], want["steps"]);
+        assert_eq!(payload["summary"]["from"], "project");
+        let source = &payload["summary"]["sources"][0];
+        assert!(source.get("resolved").is_none());
+        assert_eq!((source["path"].as_str(), source["label"].as_str()), (Some("../airflow_repo/dags"), Some("orchestration")));
+
+        // Nothing of this machine: not the project, the folder above it, the temporary folder or the home.
+        let home = std::env::var("HOME").unwrap_or_default();
+        for file in ["data/jobs.js", "data/index.js"] {
+            let text = std::fs::read_to_string(dir.join(file)).unwrap();
+            for needle in
+                [parent.to_string_lossy().as_ref(), project.to_string_lossy().as_ref(), std::env::temp_dir().to_string_lossy().as_ref()]
+            {
+                assert!(!text.contains(needle), "{file} holds {needle}");
+            }
+            if !home.is_empty() && home != "/" {
+                assert!(!text.contains(&home), "{file} holds the home folder");
+            }
+        }
+        // The index says there are jobs, and counts: no time, no path.
+        let index = read_script(&dir, "data/index.js", "window.EDITH_SITE=");
+        let meta = &index["meta"]["jobs"];
+        assert_eq!(
+            (&meta["jobs"], &meta["steps"], &meta["present"], &meta["not_read"], &meta["refused"]),
+            (&json!(2), &json!(4), &json!(1), &json!(0), &json!(0))
+        );
+        assert_eq!(meta["sources_refused"], "");
+        assert_eq!(meta["sources"][0]["name"], "orchestration");
+        let _ = std::fs::remove_dir_all(&parent);
+    }
+
+    #[test]
+    fn the_same_jobs_give_the_same_bytes_twice_and_a_project_without_the_file_has_none() {
+        let (parent, project, _) = jobs_project("jobs-twice", "dags");
+        let first = {
+            assert_eq!(run_site(&project, &ask_for("https://github.com/acme/shop"), no_collin).0, ls::ANSWERED);
+            files_of(&project.join("target/edith-site"))
+        };
+        assert!(first.contains_key("data/jobs.js"));
+        assert_eq!(run_site(&project, &ask_for("https://github.com/acme/shop"), no_collin).0, ls::ANSWERED);
+        assert_eq!(files_of(&project.join("target/edith-site")), first);
+
+        // A file that lists no source names no jobs: no tab, no file.
+        std::fs::write(project.join(".dbt-edith/jobs.yml"), "jobs: []\n").unwrap();
+        assert_eq!(run_site(&project, &ask_for("https://github.com/acme/shop"), no_collin).0, ls::ANSWERED);
+        assert!(!files_of(&project.join("target/edith-site")).contains_key("data/jobs.js"));
+
+        std::fs::remove_file(project.join(".dbt-edith/jobs.yml")).unwrap();
+        let (code, out, err) = run_site(&project, &ask_for("https://github.com/acme/shop"), no_collin);
+        assert_eq!(code, ls::ANSWERED, "{err}");
+        let bare = files_of(&project.join("target/edith-site"));
+        assert!(!bare.contains_key("data/jobs.js"));
+        assert!(!out.contains("jobs:") && !err.contains("jobs"), "{out}{err}");
+        let index = read_script(&project.join("target/edith-site"), "data/index.js", "window.EDITH_SITE=");
+        assert!(index["meta"].get("jobs").is_none());
+        let _ = std::fs::remove_dir_all(&parent);
+    }
+
+    #[test]
+    fn a_source_that_is_missing_or_a_file_that_is_refused_is_carried_as_not_read_and_never_as_no_job() {
+        // The repository was not cloned beside the project.
+        let (parent, project, airflow) = jobs_project("jobs-missing", "dags");
+        std::fs::remove_dir_all(&airflow).unwrap();
+        let (code, _, err) = run_site(&project, &ask_for("https://github.com/acme/shop"), no_collin);
+        assert_eq!(code, ls::ANSWERED, "{err}");
+        assert!(err.contains("warning: jobs not read: orchestration (nothing at this path)"), "{err}");
+        let dir = project.join("target/edith-site");
+        let payload = read_script(&dir, "data/jobs.js", "EDITH_SITE_JOBS(");
+        assert_eq!(payload["summary"]["sources"][0]["error"], "nothing at this path");
+        assert_eq!(payload["common"]["configured"], true);
+        assert_eq!(payload["common"]["not_read"]["sources"], 1);
+        assert_eq!(payload["common"]["not_read"]["reason"], "nothing at this path");
+        assert_eq!(payload["common"]["not_read_names"], json!(["orchestration"]));
+        assert_eq!((payload["jobs"].as_array().unwrap().len(), payload["steps"].as_array().unwrap().len()), (0, 0));
+        let index = read_script(&dir, "data/index.js", "window.EDITH_SITE=");
+        assert_eq!((&index["meta"]["jobs"]["present"], &index["meta"]["jobs"]["not_read"]), (&json!(0), &json!(1)));
+        let _ = std::fs::remove_dir_all(&parent);
+
+        // The project's file itself does not read.
+        let (parent, project, _) = jobs_project("jobs-refused", "dags");
+        std::fs::write(project.join(".dbt-edith/jobs.yml"), "jobs:\n  - kind: airflow\n").unwrap();
+        let (code, _, err) = run_site(&project, &ask_for("https://github.com/acme/shop"), no_collin);
+        assert_eq!(code, ls::ANSWERED, "{err}");
+        assert!(err.contains("warning: jobs not read: .dbt-edith/jobs.yml is not read: line 2: a source with no kind or no path"), "{err}");
+        let dir = project.join("target/edith-site");
+        let payload = read_script(&dir, "data/jobs.js", "EDITH_SITE_JOBS(");
+        assert_eq!(payload["common"]["configured"], false);
+        assert_eq!(payload["common"]["sources_refused"], "line 2: a source with no kind or no path");
+        assert_eq!(payload["summary"]["refused"], "line 2: a source with no kind or no path");
+        let index = read_script(&dir, "data/index.js", "window.EDITH_SITE=");
+        assert_eq!(index["meta"]["jobs"]["sources_refused"], "line 2: a source with no kind or no path");
+        let _ = std::fs::remove_dir_all(&parent);
+
+        // One DAG file that does not parse inside a source that was read: counted, the other jobs kept.
+        let (parent, project, airflow) = jobs_project("jobs-file", "dags");
+        std::fs::write(airflow.join("dags/acme_broken.yml"), "dag_id: [unclosed\n").unwrap();
+        let (code, _, err) = run_site(&project, &ask_for("https://github.com/acme/shop"), no_collin);
+        assert_eq!(code, ls::ANSWERED, "{err}");
+        assert!(err.contains("1 job file(s) of orchestration could not be read"), "{err}");
+        let payload = read_script(&project.join("target/edith-site"), "data/jobs.js", "EDITH_SITE_JOBS(");
+        assert_eq!(payload["common"]["refused"], 1);
+        assert_eq!(payload["jobs"].as_array().unwrap().len(), 2);
+        let _ = std::fs::remove_dir_all(&parent);
+    }
+
+    #[test]
+    fn the_jobs_flags_are_checked_like_the_commit_and_the_repository() {
+        let (parent, project, _) = jobs_project("jobs-flags", "dags");
+        let go = |commit: Option<&str>, repo: Option<&str>| {
+            let ask = Ask {
+                jobs_commit: commit.map(String::from),
+                jobs_repo_url: repo.map(String::from),
+                ..ask_for("https://github.com/acme/shop")
+            };
+            run_site(&project, &ask, no_collin)
+        };
+        let (code, _, err) = go(Some("zzz"), None);
+        assert_eq!((code, err.contains("--jobs-commit wants 7 to 64")), (2, true), "{err}");
+        let (code, _, err) = go(None, Some("http://github.com/acme/airflow"));
+        assert_eq!((code, err.contains("--jobs-repo-url wants an https address")), (2, true), "{err}");
+        assert!(!project.join("target/edith-site").exists(), "a flag refused is a folder untouched");
+        assert_eq!(go(Some("ABCDEF1"), Some("https://github.com/acme/airflow")).0, ls::ANSWERED);
+        let _ = std::fs::remove_dir_all(&parent);
+    }
+
+    #[test]
+    fn a_job_file_is_linked_at_the_commit_of_its_repository_below_the_folder_it_sits_in() {
+        let (parent, project, airflow) = jobs_project("jobs-links", "orchestration/dags");
+        let sha = commit_in(&airflow, Some("git@github.com:acme/airflow.git"));
+        let source = |asked: &Ask| {
+            let (index, err) = written(&project, asked);
+            (index["meta"]["jobs"]["sources"][0].clone(), err)
+        };
+        // From git alone: HEAD of the jobs repository and its origin, not the project's (which gives no link here).
+        let (s, err) = source(&Ask { repo_url: None, commit: None, ..ask_for("") });
+        assert_eq!(s["base"], format!("https://github.com/acme/airflow/blob/{sha}/orchestration/dags/"), "{err}");
+        assert_eq!((s["anchor"].clone(), s["commit"].clone()), (json!("L"), json!(&sha[..7])));
+        assert_eq!(s["commit_url"], format!("https://github.com/acme/airflow/commit/{sha}"));
+        // The flags win, for every source, and an address names its host's pattern and its line anchor.
+        for (url, base, anchor) in [
+            (
+                "https://gitlab.com/acme/data/airflow",
+                "https://gitlab.com/acme/data/airflow/-/blob/abcdef1/orchestration/dags/".to_string(),
+                "L",
+            ),
+            (
+                "https://bitbucket.org/acme/airflow",
+                "https://bitbucket.org/acme/airflow/src/abcdef1/orchestration/dags/".to_string(),
+                "lines-",
+            ),
+            (
+                "https://git.example.com/acme/airflow",
+                "https://git.example.com/acme/airflow/blob/abcdef1/orchestration/dags/".to_string(),
+                "L",
+            ),
+        ] {
+            let (s, err) = source(&Ask {
+                jobs_commit: Some("abcdef1".into()),
+                jobs_repo_url: Some(url.into()),
+                ..ask_for("https://github.com/acme/shop")
+            });
+            assert_eq!(
+                (s["base"].as_str(), s["anchor"].as_str(), s["commit"].as_str()),
+                (Some(base.as_str()), Some(anchor), Some("abcdef1")),
+                "{url}: {err}"
+            );
+        }
+        // Azure has the commit and no file address.
+        let (s, err) = source(&Ask {
+            jobs_repo_url: Some("https://dev.azure.com/acme/data/_git/airflow".into()),
+            ..ask_for("https://github.com/acme/shop")
+        });
+        assert_eq!(s["base"], Value::Null);
+        assert!(s["commit_url"].as_str().unwrap().ends_with(&format!("/commit/{sha}")), "{s}");
+        assert!(err.contains("no job file links for orchestration: the file addresses of Azure DevOps"), "{err}");
+        // An origin that is only like a host's gives no link, and the run says to pass the flag.
+        git_in(&airflow, &["remote", "set-url", "origin", "git@work.github.com:acme/airflow.git"]);
+        let (s, err) = source(&Ask { repo_url: None, commit: None, ..ask_for("") });
+        assert_eq!((s["base"].clone(), s["commit"].clone()), (Value::Null, json!("")));
+        assert!(
+            err.contains(
+                "no job file links for orchestration: its origin is not on github.com, gitlab.com or bitbucket.org, pass --jobs-repo-url"
+            ),
+            "{err}"
+        );
+        // No repository: no link, and the site is written all the same.
+        std::fs::remove_dir_all(airflow.join(".git")).unwrap();
+        let (s, err) = source(&Ask { repo_url: None, commit: None, ..ask_for("") });
+        assert_eq!(s["base"], Value::Null);
+        assert!(err.contains("no job file links for orchestration: not a git repository"), "{err}");
+        let _ = std::fs::remove_dir_all(&parent);
+    }
+
+    #[test]
+    fn jobs_kept_in_the_project_are_linked_by_the_projects_own_repository() {
+        let parent = scratch("jobs-inside");
+        let project = parent.join("shop");
+        write_project(&project);
+        std::fs::create_dir_all(project.join("orchestration")).unwrap();
+        std::fs::write(project.join("orchestration/acme_daily.yml"), DAG_DAILY).unwrap();
+        std::fs::create_dir_all(project.join(".dbt-edith")).unwrap();
+        std::fs::write(project.join(".dbt-edith/jobs.yml"), "jobs:\n  - kind: airflow\n    path: orchestration\n").unwrap();
+        let sha = commit_in(&project, Some("https://github.com/acme/shop.git"));
+        let (index, err) = written(&project, &Ask { repo_url: None, commit: None, ..ask_for("") });
+        assert_eq!(index["meta"]["jobs"]["sources"][0]["base"], format!("https://github.com/acme/shop/blob/{sha}/orchestration/"), "{err}");
+        let _ = std::fs::remove_dir_all(&parent);
+    }
+
+    #[test]
+    fn a_dotfiles_repository_above_the_project_is_not_the_jobs_repository() {
+        // The home folder is a repository, the shop has its own, and the jobs were not cloned as one: git, asked from
+        // the jobs' folder, would walk up to the home and name its commit and origin as the jobs'.
+        let (parent, project, _) = jobs_project("jobs-dotfiles", "dags");
+        commit_in(&parent, Some("git@github.com:acme/dotfiles.git"));
+        commit_in(&project, Some("git@github.com:acme/shop.git"));
+        let (index, err) = written(
+            &project,
+            &Ask {
+                jobs_commit: Some("abcdef1".into()),
+                jobs_repo_url: Some("https://github.com/acme/airflow".into()),
+                ..ask_for("https://github.com/acme/shop")
+            },
+        );
+        let s = &index["meta"]["jobs"]["sources"][0];
+        // The flags still give the commit, and git is not asked: no file is linked, its place in the repository being a guess.
+        assert_eq!(
+            (s["base"].clone(), s["commit"].clone(), s["commit_url"].clone()),
+            (Value::Null, json!("abcdef1"), json!("https://github.com/acme/airflow/commit/abcdef1")),
+            "{s}"
+        );
+        assert!(
+            err.contains("no job file links for orchestration: the repository it sits in holds the project's parent folders, not its own"),
+            "{err}"
+        );
+        assert_eq!(index["meta"]["jobs"]["present"], 1, "the jobs are read all the same");
+
+        // The rule itself: the project's own repository, or one that does not hold the project.
+        let project_path = Path::new("/work/shop");
+        assert!(repository_is_the_sources(Path::new("/work/shop"), project_path, Some(Path::new("/work/shop")), None));
+        assert!(repository_is_the_sources(Path::new("/work/airflow"), project_path, Some(Path::new("/work/shop")), None));
+        assert!(repository_is_the_sources(Path::new("/work/airflow"), project_path, None, None));
+        assert!(!repository_is_the_sources(Path::new("/work"), project_path, Some(Path::new("/work/shop")), None));
+        assert!(!repository_is_the_sources(Path::new("/"), project_path, None, None));
+        let _ = std::fs::remove_dir_all(&parent);
+    }
+
+    /// `run_site` with the home folder named, as the system says it is.
+    fn run_site_at(project: &Path, ask: &Ask, home: Option<&Path>) -> (i32, String, String) {
+        let (mut out, mut err) = (Vec::new(), Vec::new());
+        let code = generate_at(project, None, None, ask, no_collin, home.map(Path::to_path_buf), &mut out, &mut err);
+        (code, String::from_utf8(out).unwrap(), String::from_utf8(err).unwrap())
+    }
+
+    fn read_index(project: &Path) -> Value {
+        read_script(&project.join("target/edith-site"), "data/index.js", "window.EDITH_SITE=")
+    }
+
+    #[test]
+    fn the_jobs_flags_give_the_commit_with_no_repository_and_link_no_file() {
+        let (parent, project, _) = jobs_project("jobs-norepo", "dags");
+        let ask = |commit: Option<&str>, repo: Option<&str>| Ask {
+            jobs_commit: commit.map(String::from),
+            jobs_repo_url: repo.map(String::from),
+            ..ask_for("https://github.com/acme/shop")
+        };
+        let (code, _, err) = run_site_at(&project, &ask(Some("abcdef1"), Some("https://github.com/acme/airflow")), None);
+        assert_eq!(code, ls::ANSWERED, "{err}");
+        let s = read_index(&project)["meta"]["jobs"]["sources"][0].clone();
+        assert_eq!((s["commit"].clone(), s["base"].clone()), (json!("abcdef1"), Value::Null), "{s}");
+        assert_eq!(s["commit_url"], "https://github.com/acme/airflow/commit/abcdef1");
+        assert!(err.contains("no job file links for orchestration: not a git repository, the commit link is from the flags"), "{err}");
+        // One flag alone is not a link: the page has no address for the commit.
+        let (_, _, err) = run_site_at(&project, &ask(Some("abcdef1"), None), None);
+        let s = read_index(&project)["meta"]["jobs"]["sources"][0].clone();
+        assert_eq!((s["commit"].clone(), s["commit_url"].clone()), (json!(""), json!("")), "{s}");
+        assert!(err.contains("not a git repository, pass --jobs-commit and --jobs-repo-url for the commit link"), "{err}");
+        let _ = std::fs::remove_dir_all(&parent);
+    }
+
+    #[test]
+    fn a_repository_at_the_home_folder_or_above_it_is_neither_the_projects_nor_the_jobs() {
+        // `~` is a repository (dotfiles), the project is `~/work/shop` and the jobs are beside it, and neither has a repository of its own.
+        let (parent, project, _) = jobs_project("jobs-home", "dags");
+        let sha = commit_in(&parent, Some("git@github.com:acme/dotfiles.git"));
+        let bare = Ask { commit: None, repo_url: None, ..ask_for("") };
+
+        let (code, _, err) = run_site_at(&project, &bare, Some(&parent));
+        assert_eq!(code, ls::ANSWERED, "{err}");
+        let index = read_index(&project);
+        let meta = &index["meta"];
+        assert_eq!(
+            (meta["commit"].clone(), meta["commit_url"].clone(), meta["file_base"].clone()),
+            (json!(""), json!(""), Value::Null),
+            "{meta}"
+        );
+        assert!(err.contains("git is not read for the project: the repository it sits in is at the home folder or above it"), "{err}");
+        let s = &meta["jobs"]["sources"][0];
+        assert_eq!((s["commit"].clone(), s["base"].clone()), (json!(""), Value::Null), "{s}");
+        assert!(err.contains("no job file links for orchestration: the repository it sits in is at the home folder or above it"), "{err}");
+        // A repository above the home folder is above it as well.
+        let deeper = parent.join("work");
+        std::fs::create_dir_all(&deeper).unwrap();
+        let (_, _, err) = run_site_at(&project, &bare, Some(&deeper));
+        assert!(err.contains("git is not read for the project"), "{err}");
+
+        // The flags still give what they can, and no file is linked: the prefix would be the machine's own layout.
+        let flags = Ask {
+            jobs_commit: Some("abcdef1".into()),
+            jobs_repo_url: Some("https://github.com/acme/airflow".into()),
+            ..ask_for("https://github.com/acme/shop")
+        };
+        run_site_at(&project, &flags, Some(&parent));
+        let meta = read_index(&project)["meta"].clone();
+        assert_eq!(meta["commit_url"], "https://github.com/acme/shop/commit/0123456789abcdef0123456789abcdef01234567");
+        assert_eq!((meta["file_base"].clone(), meta["jobs"]["sources"][0]["base"].clone()), (Value::Null, Value::Null));
+
+        // With no home folder known, as `resolve_real` has none to check, the repository is the project's and the jobs' own.
+        let (_, _, err) = run_site_at(&project, &bare, None);
+        let meta = read_index(&project)["meta"].clone();
+        assert_eq!(meta["commit"], sha, "{err}");
+        assert_eq!(meta["file_base"], format!("https://github.com/acme/dotfiles/blob/{sha}/shop/"), "{err}");
+        let s = &meta["jobs"]["sources"][0];
+        assert_eq!(
+            (s["commit"].clone(), s["base"].clone()),
+            (json!(&sha[..7]), json!(format!("https://github.com/acme/dotfiles/blob/{sha}/airflow_repo/dags/")))
+        );
+        // And one elsewhere is no one's home.
+        let elsewhere = scratch("jobs-home-elsewhere");
+        let (_, _, err) = run_site_at(&project, &bare, Some(&elsewhere));
+        assert!(!err.contains("home folder"), "{err}");
+        let _ = std::fs::remove_dir_all(&parent);
+        let _ = std::fs::remove_dir_all(&elsewhere);
     }
 }

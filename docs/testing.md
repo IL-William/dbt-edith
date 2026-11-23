@@ -228,7 +228,9 @@ test from an invented graph (a diamond, a test guarding two models, a disabled
 node, a versioned model, an operation, an exposure, a chain 22 levels deep, a
 fan-out, accents and emoji, one name in two packages, a node of each kind of SQL
 and a path a link must escape), with what `/api/lineage`, `/api/search` and
-`/api/node` answer, and what `/api/site/code` gives (0180), and, over three caches
+`/api/node` answer, and what `/api/site/code` gives (0180), and what `/api/jobs` and
+`/api/jobs/node` answer for every node over invented DAGs, a source that was not
+read and a file that does not parse, and over a `jobs.yml` that does not read (0183), and, over three caches
 merged into that graph, what `/api/collineage` answers for every column at 2+2 with the indirect
 edges hidden and drawn and `/api/colreach` for every node (0182): an invented cache holding every shape a
 cache can have (roles with an empty name, in capitals and outside ASCII, a stop reached two ways, a chain
@@ -266,7 +268,13 @@ with a role cut and under a cap, `/api/colreach` of every node and the cards wit
 opens a column as a person does (the Columns tab's chain, the canvas, the indirect button, the Stop at
 menu, no menu to pick a cache, no Regenerate, `data/cll.js` asked for once); writes the site again with
 the cache older than the manifest and reads the warning on the page; runs `--site --run-collin` over a copy
-of Jaffle Shop with a stand-in collin on the PATH, and `--site` alone with none to run; and fails on a
+of Jaffle Shop with a stand-in collin on the PATH, and `--site` alone with none to run; writes the
+site of a copy of Jaffle Shop whose `.dbt-edith/jobs.yml` names the invented DAGs of
+`tests/fixtures/jobs/airflow`, in a repository of its own beside the project's with an invented origin
+(0183), compares `/api/jobs/node` for every node and `/api/jobs` with the server's, opens a card's Jobs line
+and its chip, the Jobs tab, a job file's line as a link at that repository's commit, with no Sources… and no
+`dbt ls`, `data/jobs.js` asked for once, and writes a second site whose jobs folder is not there, which says
+"Jobs not read" on the card and in the tab and never "no job"; and fails on a
 request outside the folder, an exception, a console error, a violation of the
 page's policy, an absolute path or the canary in what was written. Then it does
 the same over `http.server` under a sub-path, counting what the host was asked

@@ -11572,6 +11572,8 @@ function nameOfId(id, node) {
    the first request of a run carries it. A Catalog chip's step is taken here,
    so a run that ends early leaves none behind for a later one to light. */
 async function loadJobs({ look = false } = {}) {
+  // A site's jobs were read when it was written: there are no files to look at again.
+  if (S.site) look = false;
   const run = ++S.jobsRun;
   const body = $('#jobs-body');
   const reveal = S.jobsReveal;
@@ -11589,7 +11591,7 @@ async function loadJobs({ look = false } = {}) {
   // The proposed shape is the server's, so the example cannot drift from it.
   // With no node, whether any source is set decides what the tab offers.
   let summary = null;
-  if (!S.jobsKeys || !id) {
+  if ((!S.jobsKeys && !S.site) || !id) {
     try { summary = await ask('/api/jobs'); }
     catch (e) { if (run === S.jobsRun) toast('jobs: ' + e.message, 'err'); return; }
     if (run !== S.jobsRun) return;
@@ -11598,7 +11600,7 @@ async function loadJobs({ look = false } = {}) {
   if (!id) {
     if (summary.refused) return jobsRefusedFile(body, summary.refused);
     if (!summary.sources.length) return jobsNoSource(body);
-    body.replaceChildren(jel('div', 'compiled-empty', 'Select a model first, or open Reports for the coverage of the whole project.'));
+    body.replaceChildren(jel('div', 'compiled-empty', S.site ? 'Select a model first.' : 'Select a model first, or open Reports for the coverage of the whole project.'));
     return;
   }
   let view;
@@ -11635,6 +11637,8 @@ function paintJobsHead(view = null) {
       if (said.read) {
         const read = jel('span', 'dim jobs-read', said.read);
         if (S.jobsLooked) read.append(', ', jel('span', 'jobs-age', jobsAgeText()));
+        // A site's jobs were read once, when it was written, and each source says which commit its files are at.
+        if (S.site) read.append(', ', jel('span', 'jobs-site', 'when the site was written'), ...siteJobsCommits(view.sources));
         where.append(read);
       }
       // The dot is an item of its own: a flex item loses a space at its edge, and the gap spaces the three.
@@ -11665,6 +11669,8 @@ function jobsAgeText() {
 /* The tab's tools, in the dock's tab row where the lineage's are. */
 function paintJobsTools() {
   const out = [];
+  // A site has no Reports and no sources to name: what it read is what it shows.
+  if (S.site) return $('#jobs-tools').replaceChildren();
   if (S.reports && S.reports.jobs) {
     const coverage = jel('button', 'btn sm icobtn', 'Coverage in Reports');
     coverage.type = 'button';
@@ -11683,6 +11689,8 @@ function paintJobsTools() {
 /* No source yet: what the Jobs tab and the coverage in Reports read, and what
    they expect to find. */
 function jobsNoSource(body) {
+  // A site that names none carries no Jobs tab; this is only for a page that reaches it.
+  if (S.site) return body.replaceChildren(jel('div', 'compiled-empty', 'This site has no jobs.'));
   const box = jel('div', 'compiled-empty jobs-none');
   box.append(
     jel('p', '', 'Which jobs run a model is read from your orchestrator\'s YAML, wherever it lives, '
@@ -11709,6 +11717,7 @@ function jobsNoSource(body) {
    in place of the invitation to add one, in the Jobs tab and the coverage
    alike (0115). */
 function jobsRefusedFile(body, why) {
+  if (S.site) return body.replaceChildren(jel('div', 'jobs-warn', siteJobsUnread({ sources_refused: why })));
   const sources = jel('button', 'btn sm', 'Sources…');
   sources.addEventListener('click', openJobSources);
   body.replaceChildren(jel('div', 'jobs-warn', `.dbt-edith/jobs.yml is not read: ${why}. `
@@ -11801,7 +11810,8 @@ function jobsCard(group, { reason = false, mark = 'model', name = '' } = {}) {
     row.dataset.key = jobsStepKey(job, step);
     row.dataset.step = step.index;
     row.append(jel('span', 'steplbl', jobsStepLabel(job, step)), jel('code', 'stepcmd', step.shown));
-    if (step.ls) {
+    // A site has no terminal to type it in.
+    if (step.ls && !S.site) {
       const ls = jel('button', 'btn sm icobtn jobls');
       ls.type = 'button';
       ls.append(strokeIcon('0 0 16 16', 'jobico', ['M2.5 4l4 4-4 4M8.5 12.25h5']), 'dbt ls');
@@ -11827,10 +11837,13 @@ function renderJobs(body, view, id, reveal) {
   if (view.sources_refused) return jobsRefusedFile(body, view.sources_refused);
   if (!view.configured) return jobsNoSource(body);
   const out = [];
+  // A source that was not read is said before anything of what was: "no job" would be a claim about files nobody opened.
+  const unread = S.site ? siteJobsUnread(view) : '';
+  if (unread) out.push(jobsWarn(unread));
   if (view.refused) {
-    out.push(jobsWarn(`${view.refused} file${view.refused === 1 ? '' : 's'} could not be read and may hold more: Sources… says which.`));
+    out.push(jobsWarn(`${view.refused} file${view.refused === 1 ? '' : 's'} could not be read and may hold more${S.site ? '.' : ': Sources… says which.'}`));
   }
-  if (!view.groups.length) {
+  if (!view.groups.length && !unread) {
     out.push(jel('div', 'compiled-empty', `No step of the jobs read acts on ${nameOfId(id, S.node)}.`));
   }
   const name = nameOfId(id, S.node);
@@ -14031,6 +14044,13 @@ function jobOrderEdgeRows(edges) {
 /* Where a step is written, outside the project and so copied rather than
    opened. */
 function jobsFileButton(source, file, line, short = false) {
+  // In a site the line is a link to the file in the jobs' own repository, at the commit its source names, when there is one.
+  const url = S.site ? EdithSite.jobFileUrl(S.meta, source, file, line) : '';
+  if (url) {
+    const a = repoLink(`${file}:${line}`, url, 'jobfile');
+    a.title = (short ? `From ${source}. ` : '') + 'This job file, at the commit of its repository, on the repository\'s host';
+    return a;
+  }
   // The Jobs tab's card names the source in the tooltip, the reports in the text.
   const where = jel('button', 'jobfile', short ? `${file}:${line}` : `${source} · ${file}:${line}`);
   where.type = 'button';
@@ -17960,7 +17980,7 @@ function catalogTags(body, n) {
    per node, so drawing the Catalog again asks nothing until the jobs may have
    changed (forgetCatalogJobs). Nothing shows until a source is named. */
 function catalogJobs(body, n) {
-  if (S.site) return;
+  if (S.site && !siteJobs()) return;
   const box = jel('div', 'cat-jobs');
   box.dataset.node = n.id;
   body.appendChild(box);
@@ -18007,7 +18027,8 @@ function forgetCatalogJobs() {
 }
 
 function paintCatalogJobs(box, view) {
-  if (!view.configured) return box.replaceChildren();
+  const unread = S.site ? siteJobsUnread(view) : '';
+  if (!view.configured && !unread) return box.replaceChildren();
   const id = box.dataset.node;
   const list = jel('div', 'links');
   // A step's chip carries the Jobs tool's glyph (the clock) and its arrow in
@@ -18038,9 +18059,12 @@ function paintCatalogJobs(box, view) {
   // A refused file may run the node too, which the tab says above its cards.
   if (view.refused) {
     chip('jobchip more', `${jobsPlural(view.refused, 'file')} not read`,
-      `${jobsPlural(view.refused, 'file')} could not be read and may hold more\nclick: open the Jobs tab, whose Sources… says which`, null);
+      `${jobsPlural(view.refused, 'file')} could not be read and may hold more\nclick: open the Jobs tab, `
+        + (S.site ? 'which counts them' : 'whose Sources… says which'), null);
   }
-  if (!chips.length) list.prepend(jel('span', 'muted', 'No job read runs it.'));
+  // Said, and never "No job read runs it": a source nobody opened has not said it runs nothing.
+  if (unread) list.append(jel('span', 'muted', unread));
+  else if (!chips.length) list.prepend(jel('span', 'muted', 'No job read runs it.'));
   box.replaceChildren(h3('jobs'), list);
 }
 
@@ -20346,8 +20370,8 @@ function paintArtifactTools(which) {
    its answer lands, seconds later with Snowflake, and must not roll up a
    panel opened since. What the user asks for rolls them up itself. */
 function showDock(which, { look = true, id = '' } = {}) {
-  // Only the lineage and the Catalog are in a site: the rest read the project or run something.
-  if (S.site && which !== 'lineage' && which !== 'catalog') return null;
+  // Only the lineage, the Catalog and, when the site carries any, the Jobs are in a site: the rest read the project or run something.
+  if (S.site && which !== 'lineage' && which !== 'catalog' && !(which === 'jobs' && siteJobs())) return null;
   let loading = null;
   S.dock = which;
   $$('[data-dock]').forEach((x) => x.classList.toggle('active', x.dataset.dock === which));
@@ -22748,6 +22772,51 @@ function siteStamp(meta, fmt = (d) => d.toLocaleString()) {
   };
 }
 
+/* Whether this page is a site that carries the orchestrator's jobs (0183): the Jobs tab and the card's line are
+   there then, and nowhere else in a site. */
+function siteJobs() {
+  return !!(S.site && S.meta && S.meta.jobs);
+}
+
+/* What a site says where the jobs would show when some were not read, in place of "no job": the file that
+   would name the sources, or the sources whose folder was not there, with why. The reasons are the server's own
+   fixed sentences. '' when every source was read. Pure, for web/tests/sitepage.js. */
+function siteJobsUnread(view) {
+  if (!view) return '';
+  if (view.sources_refused) return `Jobs not read: .dbt-edith/jobs.yml is not read (${view.sources_refused}).`;
+  const names = view.not_read_names || [];
+  if (!view.not_read && !names.length) return '';
+  const why = view.not_read && view.not_read.reason ? ` (${view.not_read.reason})` : '';
+  return `Jobs not read: ${[...new Set(names)].join(', ')}${why}.`;
+}
+
+/* The commit each source that was read has its files at, for the Jobs tab's header: its short sha, linked to the
+   commit when the host's address is known. Pure, for web/tests/sitepage.js. */
+function siteJobsCommits(names) {
+  const list = (S.meta && S.meta.jobs && S.meta.jobs.sources) || [];
+  return siteJobsShas(list, names).flatMap((c) => {
+    let sha;
+    if (c.url) {
+      sha = document.createElement('a');
+      sha.textContent = c.sha;
+      sha.setAttribute('href', c.url);
+      sha.setAttribute('target', '_blank');
+      sha.setAttribute('rel', 'noopener noreferrer');
+      sha.title = `${c.name}'s commit, on the repository's host`;
+    } else {
+      sha = jel('span', '', c.sha);
+    }
+    sha.classList.add('sha');
+    return [' ', sha];
+  });
+}
+
+function siteJobsShas(sources, names) {
+  const read = names || [];
+  return sources.filter((s) => s.commit && read.includes(s.name))
+    .map((s) => ({ name: s.name, sha: s.commit, url: /^https:\/\//.test(s.commit_url || '') ? s.commit_url : '' }));
+}
+
 /* The tab's title, as the server's `title_of` words the site's own: the project, the environment
    when there is one, then the tool. */
 function siteTitle(meta) {
@@ -22854,6 +22923,8 @@ function applySiteMeta(meta) {
   S.cllActive = meta.cll ? (meta.cll_file || '') : '';
   S.cllSources = [];
   document.title = siteTitle(meta);
+  // The Jobs tab is hidden in a site unless it carries jobs: the page's stylesheet reads this.
+  document.documentElement.toggleAttribute('data-jobs', !!meta.jobs);
   $('#project').textContent = meta.project || '(no project)';
   $('#project').title = meta.project || '';
   $('#tree-title').textContent = meta.project || 'Project';

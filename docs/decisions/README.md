@@ -186,6 +186,7 @@ it; these files say why it is built this way, for whoever changes it next.
 | [0180](0180-the-sites-sql-is-the-manifests.md) | The site's SQL is the manifest's, and each file is linked at the commit | changing where the site's SQL comes from, what its Code tab says of a node dbt did not compile, or how a link to a file in the repository is made |
 | [0181](0181-a-newer-release-keeps-its-colour-in-every-theme.md) | A newer release keeps its colour in every theme | changing the colour, the badge, the pill or the buttons that say a newer release is out |
 | [0182](0182-the-site-carries-collins-column-lineage.md) | The site carries collin's column lineage | changing what `--site` reads of `target/`, whether it starts collin, how the browser answers `/api/collineage` and `/api/colreach`, or what the page says of a cache older than the manifest |
+| [0183](0183-the-site-carries-the-jobs-and-reads-git-where-a-job-source-lives.md) | The site carries the jobs, and reads git where a job source lives | changing what `--site` reads of the orchestrator's jobs, what the page says of a source that was not read, how a job file is linked, or which folder git is asked about besides the project's |
 
 ## Keeping these honest
 

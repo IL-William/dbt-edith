@@ -3368,6 +3368,10 @@ of its own, and each panel updates the tour, its page under
       step 7 once) in a full `scripts/check.sh` run, and passed when run alone;
       its `--shots` mode may take its picture of the ring 6px before the ring
       lands.
+    - `collin_run::tests::a_version_is_asked_again_only_when_the_binary_changes`
+      failed once in a full `scripts/check.sh` and passed alone. It rewrites a
+      fake script and compares file times, so it races when many git
+      processes run at once, as the static site's tests do.
 51. **The Catalog's limits (2.16.0).**
     - The Catalog's tabs say `tablist`, `tab` and `aria-selected` but move
       between them with Tab alone, as the dock's do: arrows would be a new key
@@ -3498,12 +3502,23 @@ of its own, and each panel updates the tour, its page under
     - **A note can still name a path outside the project.** It is dropped
       from `sql_file` and cut from every text, but a path collin wrote in a
       sentence of its own, with no root to cut, is carried as written.
-    - **Jobs.** They come from `.dbt-edith/jobs.yml` and the job repository the
-      pipeline clones beside the dbt repository, a path that already allows
-      `../`. The Jobs tab's reads are the server's (a YAML parse, a cron in a
-      zone) and are not pure functions of the manifest; each would move to a
-      script or be precomputed, and a job file that is not in the pipeline's
-      checkout must say so rather than show no job.
+    - ~~**Jobs.**~~ Shipped (0183): the card's Jobs line and the Jobs tab, read
+      once when the site is written, a job file linked in the jobs' repository.
+      What it left out:
+      - **Reports in a site.** The coverage (which models no job runs), the job
+        order and builds by job are not in it; the first two are pure over the
+        same read and would be one more script each.
+      - **Builds by job** reads Snowflake, which a site never does.
+      - **One flag pair for several job repositories.** `--jobs-commit` and
+        `--jobs-repo-url` apply to every source; a pipeline with two
+        repositories of jobs that differ passes none and reads git, or none of
+        them is linked at the right commit.
+      - **A source whose repository git cannot name.** A jobs folder that is
+        not a repository of its own, or sits in one that holds the project's
+        parents, has no link, even with the flags: its place in the repository
+        would be a guess.
+      - **Every job and step that a node can reach is shipped, and no other**:
+        a DAG whose steps select no node is not in the site.
     - **Sources and the tree's other files.** The Project tab lists only what a
       model, a seed or a snapshot is built from. Sources live in YAML, so they
       have no file to list, and a Sources group would have to name each by its
