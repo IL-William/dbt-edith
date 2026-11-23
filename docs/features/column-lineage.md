@@ -28,6 +28,8 @@ stands for its newest cache: any other file beside the manifest, an older one
 of a tool's or one written by something else, is listed under "other caches"
 and can still be picked. The choice is remembered per project.
 
+With Collin picked, `Cmd/Ctrl + K` finds a column by its name behind a Columns chip, and opens its lineage ([Explorer and search](explorer-and-search.md#search)).
+
 **Snowflake is the one tool that fetches.** Pick it, then click a column. The
 edges come from `tools/sf_lineage.py`; dbt-edith itself never connects to
 Snowflake: it has no HTTP client, no TLS and no credential handling, and

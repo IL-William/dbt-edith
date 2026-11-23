@@ -122,6 +122,39 @@ same('nowhere when nothing is typed', paletteMarks('stg_x', 'models', ' '),
   { name: ['stg_x', '', ''], path: ['models', '', ''] });
 same('a file at the root has no path to mark', paletteMarks('.env', '', 'zzz').path, ['', '', '']);
 
+// The Columns chip (0184): one group, every row shown, and nothing handed to the Search tab.
+function columnHit(model, column, type) {
+  return { kind: 'column', node: { id: 'model.p.' + model, name: model, kind: 'model', file: 'models/' + model + '.sql', data_type: type || '' },
+    column: column, label: column, sub: model };
+}
+var colRows = many(function (n) { return columnHit('orders', n); }, 12);
+var colGroups = paletteGroups(colRows, 'ord', none, noneOpen, true);
+same('columns are one group, titled and counted', [colGroups.length, colGroups[0].key, colGroups[0].title, colGroups[0].count], [1, 'columns', 'Columns', '12']);
+same('a lone group shows every row, with no row for the rest', [colGroups[0].rows.length, colGroups[0].rows.every(function (r) { return r.kind === 'column'; })], [12, true]);
+same('no row hands three letters to the Search tab', colGroups.some(function (g) { return g.key === 'grep'; }), false);
+same('nothing found is no group', paletteGroups([], 'zzz', { columns: false }, noneOpen, true).length, 0);
+var colsCut = paletteGroups(many(function (n) { return columnHit('orders', n); }, 40), 'id', { columns: true }, noneOpen, true)[0];
+same('a cut group says 40+', colsCut.count, '40+');
+same('and its note says how to narrow it, model.column included', [colsCut.rows.length, colsCut.rows[40].kind, colsCut.rows[40].label],
+  [41, 'note', 'The search stops at 40 columns: type more letters, or model.column, for the rest.']);
+same('the foot counts the columns', paletteCount(colRows, { columns: false }), '12 results');
+same('a cut makes it a floor', paletteCount(many(function (n) { return columnHit('o', n); }, 41), { columns: true }), '41+ results');
+same('a node answer is untouched by the flag being off', paletteGroups(many(nodeHit, 8), 'x', none, noneOpen, false)[0].rows.length, 6);
+
+same('an empty box asks for a column', paletteEmptyText('  ', true), 'Type a column\'s name, or model.column.');
+same('an empty box in the node mode says what it did', paletteEmptyText('', false), 'Type to search models, sources, macros and every file in the project.');
+same('nothing found is said with the letters', paletteEmptyText(' zz ', true), 'Nothing matches \u201czz\u201d.');
+
+same('the letters are marked in the column', paletteColumnMarks('order_id', 'orders', 'DER'), { name: ['or', 'der', '_id'], path: ['orders', '', ''] });
+same('after a dot, in the column; before it, in the model', paletteColumnMarks('amount', 'stg_orders', 'ord.amo'),
+  { name: ['', 'amo', 'unt'], path: ['stg_', 'ord', 'ers'] });
+same('the last dot splits', paletteColumnMarks('id', 'a.b', 'a.b.id'), { name: ['', 'id', ''], path: ['', 'a.b', ''] });
+same('a model named as the whole query is marked whole', paletteColumnMarks('id', 'raw.orders', 'raw.orders'),
+  { name: ['id', '', ''], path: ['', 'raw.orders', ''] });
+same('and a version, in any case', paletteColumnMarks('id', 'orders.v2', 'Orders.V2').path, ['', 'orders.v2', '']);
+same('a column holding the whole query is marked whole', paletteColumnMarks('a.b', 'm', 'a.b'), { name: ['', 'a.b', ''], path: ['m', '', ''] });
+same('nothing after the dot marks no column', paletteColumnMarks('id', 'orders', 'orders.'), { name: ['id', '', ''], path: ['', 'orders', ''] });
+
 // Answers in the order asked, whatever order the server sends them in.
 eval(src.slice(src.indexOf('function lastAsked'), src.indexOf('/* Nodes first, then macros')));
 

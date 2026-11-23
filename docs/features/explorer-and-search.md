@@ -76,7 +76,7 @@ rather than holding one
 
 ## Search
 
-![The Cmd/Ctrl + K palette on the letter s, its answers in groups of five rows with a +N more row, and the keys in its foot](../shots/search-palette.png)
+![The Cmd/Ctrl + K palette on the letter s, its answers in groups of five rows with a +N more row, the Columns chip beside Esc, and the keys in its foot](../shots/search-palette.png)
 
 The search field in the middle of the top bar opens the same palette, and
 shows its shortcut; when the window is narrow the field shrinks, then keeps its
@@ -105,6 +105,23 @@ is cut at 40: a cut group's count ends in a plus (`40+`), and once all its rows
 show it ends on a line asking for more letters, so a count is never a guess
 ([0154](../decisions/0154-the-palette-groups-its-answers-five-rows-a-group.md)).
 
+**Columns** are not in that answer, on purpose: a column called `id` is in most
+models, and it would bury the nodes and files the box is for. With Collin picked
+as the column lineage tool, the box has a `Columns` chip beside `Esc`, off every
+time the box opens, switched by a click or by `Tab`. On, the box searches columns
+and nothing else, one group listing the model's dot, the column, its type when
+known and the model's name; `orders.amo` looks for a column holding `amo` (one that starts with it
+reads first) in the models, seeds, snapshots and sources whose name holds
+`orders`, the one named `orders` first, which is the way past a common name; a
+name with a dot in it, `raw.orders` or `orders.v2`, lists that node's columns. Enter opens
+the column's lineage and the model's file. The search never runs collin: it reads
+the columns already loaded from the YAML, the catalog and collin's cache, and a
+cache that is missing or older than the manifest is said under the answer, a
+column picked from an older one running collin first, as a click in the Catalog
+does. With another tool picked the chip is greyed, its tooltip saying so, and a
+static site has none
+([0184](../decisions/0184-columns-are-searched-from-the-palette-behind-a-chip-with-collin.md)).
+
 The index is a directory walk, redone every 20 seconds, so a new file or a
 branch switch shows up without any invalidation logic. `target`, `logs`, `.git`
 and virtualenvs are skipped, since `target` alone holds more files than the rest
@@ -118,7 +135,7 @@ outranking your own code.
 
 The **Search** tab in the sidebar looks inside every indexed file, which
 `Cmd/Ctrl + K` cannot: that one matches names, so a column used in forty models
-is invisible to it. Type three letters or more and the matching lines appear
+is invisible to it, unless Collin is picked and its Columns chip is on. Type three letters or more and the matching lines appear
 grouped by file, with the match highlighted; clicking one opens the file in the
 preview tab with the cursor on that line. Each file's header stays at the top
 while its lines scroll, and carries the file's icon, its name, its folder and

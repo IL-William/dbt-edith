@@ -20,6 +20,11 @@ and bumps nothing.
 
 ## Unreleased
 
+## 2.29.0 - 2026-11-23
+
+- Search columns from `Cmd/Ctrl + K` with a Columns chip, off at every opening,
+  when Collin is the column lineage tool, with `model.column` to narrow it (0184).
+
 ## 2.28.0 - 2026-11-23
 
 - Show the orchestrator's jobs in the static site: the card's Jobs line and the
