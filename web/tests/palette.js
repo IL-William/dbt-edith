@@ -6,6 +6,7 @@ var src = read('web/app.js');
 // so `base` has to live in the same scope as `mergeHits`.
 eval(src.slice(src.indexOf('const base = (path)'), src.indexOf('const dirOf'))
    + src.slice(src.indexOf('function splitMatch'), src.indexOf('/* What the status line says'))
+   + src.slice(src.indexOf('function collinRefusedNote'), src.indexOf('/* The same, for collin while it is the tool picked'))
    + src.slice(src.indexOf('function mergeHits'), src.indexOf('/* One box for everything')));
 
 function check(label, ok) { print((ok ? 'PASS  ' : 'FAIL  ') + label); }
@@ -155,6 +156,222 @@ same('and a version, in any case', paletteColumnMarks('id', 'orders.v2', 'Orders
 same('a column holding the whole query is marked whole', paletteColumnMarks('a.b', 'm', 'a.b'), { name: ['', 'a.b', ''], path: ['m', '', ''] });
 same('nothing after the dot marks no column', paletteColumnMarks('id', 'orders', 'orders.'), { name: ['id', '', ''], path: ['', 'orders', ''] });
 
+// The greyed chip offers Collin (0185): the row per state of collin, and where it sits.
+var offerFound = paletteOfferRow({ found: true, install: 'cargo install collin-cli' });
+same('collin found: use it, then search', [offerFound.kind, offerFound.action, offerFound.label, offerFound.sub],
+  ['offer', 'use', 'Use Collin for column lineage', 'then search columns']);
+check('and the tooltip says collin runs first when its cache is missing or older than the manifest', /collin runs first when its cache is missing or older than the manifest/.test(offerFound.title));
+var offerInstall = paletteOfferRow({ found: false, install: 'cargo install collin-cli' });
+same('collin not found: install it, into the terminal', [offerInstall.action, offerInstall.label, offerInstall.sub],
+  ['install', 'Install collin', 'types the command into the terminal']);
+var refusedCollin = { found: false, refused: 'tools/collin', install: 'cargo install collin-cli' };
+var offerRefused = paletteOfferRow(refusedCollin);
+same('collin set aside: the settings, the note in the tooltip', [offerRefused.action, offerRefused.title],
+  ['settings', collinRefusedNote(refusedCollin)]);
+check('the note says why', /git tracks tools\/collin/.test(offerRefused.title));
+same('a collin found beside a refused one is used', paletteOfferRow({ found: true, refused: 'tools/collin', path: '/bin/collin' }).action, 'use');
+same('nothing to type, nothing known: the settings', [paletteOfferRow({ found: false }).action, paletteOfferRow(null).action], ['settings', 'settings']);
+
+var offerGroups = paletteGroups(many(nodeHit, 8), 'x', none, noneOpen, false, offerFound);
+same('the offer is the first group, one row, above the answer', [offerGroups[0].key, offerGroups[0].rows.length, offerGroups[1].key], ['offer', 1, 'nodes']);
+same('the answer under it is as it was', paletteGroups(many(nodeHit, 8), 'x', none, noneOpen, false, null).map(function (g) { return g.key + g.rows.length; }),
+  offerGroups.slice(1).map(function (g) { return g.key + g.rows.length; }));
+same('nothing found still shows the offer, with the hand-over to the Search tab under it', paletteGroups([], 'zzz', none, noneOpen, false, offerFound).map(function (g) { return g.key; }), ['offer', 'grep']);
+same('the foot does not count the offer', paletteCount(many(nodeHit, 8), none), '8 results');
+same('a column answer carries none', paletteGroups(colRows, 'ord', none, noneOpen, true, offerFound).map(function (g) { return g.key; }), ['columns']);
+
+// The offer reaches the screen: fetchPalette carries it, drawPalette draws it first.
+function offerScreen() {
+  var S = { site: false, cllTool: 'snowflake', collin: { found: true } };
+  var palColumns = false, palOffer = true, PALETTE_CAP = 40, asked = [];
+  var api = { get: function (u) { asked.push(u); return Promise.resolve([]); } };
+  eval(src.slice(src.indexOf('function palColumnsAvailable'), src.indexOf('/* The chip, the placeholder'))
+    + src.slice(src.indexOf('async function fetchPalette'), src.indexOf('const palAnswers')));
+  var out = {};
+  return fetchPalette('amo').then(function (a) {
+    out.on = a.offer;
+    palOffer = false;
+    return fetchPalette('amo');
+  }).then(function (a) {
+    out.off = a.offer;
+    palOffer = true; S.cllTool = 'collin';
+    return fetchPalette('amo');
+  }).then(function (a) {
+    out.available = a.offer;
+    S.cllTool = 'snowflake'; S.site = true;
+    return fetchPalette('amo');
+  }).then(function (a) {
+    out.site = a.offer;
+    S.site = false; S.cllTool = 'collin'; palColumns = true;
+    return fetchPalette('amo');
+  }).then(function (a) {
+    out.columns = a;
+    later('the answer carries the offer while the chip is pressed and greyed', function () { return !!out.on && out.on.action === 'use'; });
+    later('and none when it is not', function () { return out.off === null; });
+    later('none with the chip available, or on a site', function () { return out.available === null && out.site === null; });
+    later('a column answer has none', function () { return out.columns.columns === true && !out.columns.offer; });
+  });
+}
+
+function offerDrawn() {
+  var texts = [];
+  function jel(tag, cls, text) { var e = { cls: cls, text: text, kids: [], append: function (k) { this.kids.push(k); }, setAttribute: function () {} }; texts.push(e); return e; }
+  var box = { scrollTop: 0, kids: [], append: function (k) { this.kids.push(k); } };
+  Object.defineProperty(box, 'textContent', { set: function () { this.kids = []; } });
+  var count = { textContent: '' }, input = { removeAttribute: function () {} };
+  function $(sel) { return { '#palette-count': count, '#palette-results': box, '#palette-input': input }[sel]; }
+  var S = { site: false, cllTool: 'snowflake', collin: null };
+  var palHits = [], palIndex = 0, palGroupsOpen = new Set(), palAnswer = null;
+  function paletteRow(h, i) { return { row: h.kind }; }
+  function markPalette() {}
+  function paletteFileMarks() {}
+  eval(src.slice(src.indexOf('function drawPalette'), src.indexOf('/* A file row is drawn before')));
+  var offer = paletteOfferRow({ found: true });
+  palAnswer = { answer: { hits: many(nodeHit, 3), capped: {}, offer: offer }, q: 'x' };
+  drawPalette();
+  var withOffer = palHits.map(function (h) { return h.kind; }).join();
+  palAnswer = { answer: { hits: many(nodeHit, 3), capped: {}, offer: null }, q: 'x' };
+  drawPalette();
+  var without = palHits.map(function (h) { return h.kind; }).join();
+  palAnswer = { answer: { hits: [], capped: {}, offer: offer }, q: 'zz' };
+  texts.length = 0; drawPalette();
+  var alone = texts.filter(function (e) { return e.cls === 'pal-empty'; }).map(function (e) { return e.text; });
+  palAnswer = { answer: { hits: [], capped: {}, offer: null }, q: 'zz' };
+  texts.length = 0; drawPalette();
+  var bare = texts.filter(function (e) { return e.cls === 'pal-empty'; }).map(function (e) { return e.text; });
+  same('the first row drawn is the offer, selected first', [withOffer, palIndex], ['offer,node,node,node', 0]);
+  same('without it the first row is the answer\'s', without, 'node,node,node');
+  same('the offer alone keeps the line saying nothing matches', alone, ['Nothing matches \u201czz\u201d.']);
+  same('and that line is as it was without the offer', bare, alone);
+}
+
+// The chip, the toggle, the switch and the pick, against a page made of fakes.
+function offerFlow() {
+  function el() {
+    var cls = {};
+    return { attrs: {}, title: '', placeholder: '', focused: 0, focus: function () { this.focused++; },
+      setAttribute: function (k, v) { this.attrs[k] = v; }, removeAttribute: function (k) { delete this.attrs[k]; },
+      classList: { toggle: function (n, on) { cls[n] = !!on; }, contains: function (n) { return !!cls[n]; },
+        add: function (n) { cls[n] = true; }, remove: function (n) { cls[n] = false; } } };
+  }
+  var chip = el(), tab = el(), input = el(), pal = el();
+  input.value = 'amount';
+  var S = { site: false, cllTool: 'snowflake', collin: { found: true } };
+  var palColumns = false, palOffer = false, palOpened = 0, ran = [], did = [], toasts = [], polled = [];
+  var palSwitching = false;
+  function $(sel) { return { '#palette-cols': chip, '#palette-tab': tab, '#palette-input': input, '#palette': pal }[sel]; }
+  function runPalette(q) { ran.push(q); }
+  function closeCrumbMenu() {}
+  function followCollinWork() {}
+  function paintSourceButton() {}
+  function paintReportsButton() {}
+  function redrawLineage() { did.push('redraw'); }
+  function loadReportsIndex() {}
+  function toast(m) { toasts.push(m); }
+  function giveUpColumnWait() {}
+  function clearTimeout() {}
+  function setTimeout() { return 0; }
+  function closePalette() { did.push('close'); }
+  function installCollin(from) { did.push('install:' + from); }
+  function openSettings(section) { did.push('settings:' + section); }
+  // As applyLineage does: the tool changes, then the box is told.
+  var switchTo = 'collin';
+  var gate = null;
+  async function switchLineage(body) {
+    did.push('switch:' + body.tool);
+    if (gate) await gate;
+    if (!switchTo) return;
+    var was = palColumnsAvailable();
+    S.cllTool = switchTo;
+    followPalColumns(was);
+  }
+  eval(src.slice(src.indexOf('function palColumnsAvailable'), src.indexOf('const GREP_GLYPH'))
+    + src.slice(src.indexOf('async function pickOffer'), src.indexOf('function choosePalette'))
+    + src.slice(src.indexOf('function openPalette'), src.indexOf('function closePalette'))
+    + src.slice(src.indexOf('function paintCollin'), src.indexOf('/* What each kind of finding in collin')));
+
+  paintPalColumns();
+  same('greyed: the off look, acting, the way to use it', [chip.classList.contains('off'), 'aria-disabled' in chip.attrs, chip.title, chip.attrs['aria-pressed']],
+    [true, false, 'Columns need Collin: click or Tab to use it', 'false']);
+  same('the foot still names Tab', tab.classList.contains('hidden'), false);
+  togglePalColumns();
+  same('a press shows the offer, asks the box again, and leaves the chip off', [palOffer, palColumns, ran.join(), chip.attrs['aria-pressed']], [true, false, 'amount', 'true']);
+  togglePalColumns();
+  same('and a second hides it', [palOffer, ran.length, chip.attrs['aria-pressed']], [false, 2, 'false']);
+  S.site = true;
+  paintPalColumns(); togglePalColumns();
+  same('on a site the chip is hidden, the foot too, and a press does nothing', [chip.classList.contains('hidden'), tab.classList.contains('hidden'), palOffer, ran.length], [true, true, false, 2]);
+  S.site = false;
+  S.cllTool = 'collin';
+  paintPalColumns(); togglePalColumns();
+  same('available, the chip is as it was: awake, switching columns, no offer', [chip.classList.contains('off'), chip.title, palColumns, palOffer, chip.attrs['aria-pressed']],
+    [false, 'Search only columns (Tab)', true, false, 'true']);
+  S.cllTool = 'snowflake'; palColumns = false;
+
+  palOffer = true; palColumns = true;
+  openPalette();
+  same('opening resets the offer, as it does the chip', [palOffer, palColumns], [false, false]);
+
+  // A pick: the tool switches, the chip wakes pressed, the box is asked once.
+  async function pick(h) { await pickOffer(h); }
+  // Opening emptied the box and focused it; the key is typed after.
+  input.value = 'amount'; togglePalColumns(); input.focused = 0; ran.length = 0; did.length = 0;
+  var done = pick({ action: 'use' });
+  return done.then(function () {
+    later('using Collin switches, presses the chip, and asks the box once', function () {
+      return did.join() === 'switch:collin' && palColumns && !palOffer && ran.join() === 'amount' && chip.attrs['aria-pressed'] === 'true'; });
+    later('and the focus is back in the input', function () { return input.focused === 1; });
+    // The switch fails (it toasts and changes nothing): the offer stays.
+    S.cllTool = 'snowflake'; palColumns = false; palOffer = true; ran.length = 0; did.length = 0; input.focused = 0; switchTo = '';
+    return pick({ action: 'use' });
+  }).then(function () {
+    later('a failed switch leaves the offer, runs nothing, and gives the focus back', function () {
+      return palOffer && !palColumns && ran.length === 0 && input.focused === 1 && did.join() === 'switch:collin'; });
+    // The box was closed and opened again while the switch went on.
+    switchTo = 'collin'; did.length = 0;
+    pal.classList.add('hidden');
+    var slow = pick({ action: 'use' });
+    palOpened++;
+    return slow;
+  }).then(function () {
+    later('a box closed meanwhile is left alone', function () { return ran.length === 0 && input.focused === 1 && palOffer; });
+    // Enter twice, or a click after Enter, while the switch goes on: one request.
+    pal.classList.remove('hidden');
+    S.cllTool = 'snowflake'; palColumns = false; palOffer = true; did.length = 0; ran.length = 0;
+    var release;
+    gate = new Promise(function (resolve) { release = resolve; });
+    var first = pick({ action: 'use' }), second = pick({ action: 'use' });
+    release(); gate = null;
+    return Promise.all([first, second]);
+  }).then(function () {
+    later('a second pick while the switch goes on sends nothing', function () { return did.join() === 'switch:collin' && ran.join() === 'amount' && !palSwitching; });
+    S.cllTool = 'snowflake'; palOffer = false; did.length = 0;
+    return pick({ action: 'install' });
+  }).then(function () {
+    later('installing closes the box and types from the palette', function () { return did.join() === 'close,install:the palette'; });
+    did.length = 0;
+    return pick({ action: 'settings' });
+  }).then(function () {
+    later('a collin set aside opens the settings on the Column lineage section', function () { return did.join() === 'close,settings:columns'; });
+
+    // collin's run, started by the switch, ends while the box shows columns: ask again.
+    S.cllTool = 'collin'; palColumns = true; palOffer = false; ran.length = 0; did.length = 0;
+    S.collin = { state: 'done' }; S.node = null;
+    paintCollin('running');
+    later('the end of collin\'s run asks the box again, columns on', function () { return ran.join() === 'amount'; });
+    ran.length = 0;
+    paintCollin('idle');
+    paintCollin('done');
+    later('a state that did not end a run asks nothing', function () { return ran.length === 0; });
+    palColumns = false;
+    paintCollin('running');
+    later('a box showing nodes is not asked', function () { return ran.length === 0; });
+    palColumns = true; pal.classList.add('hidden');
+    paintCollin('running');
+    later('a box closed is not asked', function () { return ran.length === 0; });
+  });
+}
+
 // Answers in the order asked, whatever order the server sends them in.
 eval(src.slice(src.indexOf('function lastAsked'), src.indexOf('/* Nodes first, then macros')));
 
@@ -172,7 +389,7 @@ var api = { get: function (u) {
   return Promise.resolve([{ path: 'models/a.sql', kind: 'model', materialized: 'view' }, { path: 'models/b.sql' }]);
 } };
 eval(src.slice(src.indexOf('const markOf'), src.indexOf("/* A file's icon.")));
-asyncWant += 3;
+asyncWant += 3 + 16;
 var marksDone = askMarks(['models/a.sql', 'models/b.sql', 'README.md']).then(function (gained) {
   later('a path that gained a mark says so', function () { return gained === true && S.fileMarks.has('models/a.sql'); });
   later('only the folder of a file that could have one was asked, once', function () {
@@ -262,7 +479,17 @@ q = q.then(function () {
   choosePalette(0);
   later('the grep row closes the box and opens the Search tab with the query', function () {
     return did.join() === 'close,panel,side:search,grep:cents' && grepBox.value === 'cents'; });
+  did = [];
+  // The offer row decides for itself whether the box closes.
+  palHits = [{ kind: 'offer', action: 'use' }];
+  // Assigned: the real pick is evaluated further down, and has its own checks.
+  pickOffer = function (h) { did.push('offer:' + h.action); };
+  choosePalette(0);
+  later('the offer row goes to its own pick, closing nothing here', function () { return did.join() === 'offer:use'; });
 });
+
+q = q.then(offerScreen).then(offerFlow);
+offerDrawn();
 
 // Enter: in the box it was pressed in, on the row the arrows picked.
 eval(src.slice(src.indexOf('async function enterPalette'), src.indexOf('function showPalette')));

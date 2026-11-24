@@ -7204,6 +7204,7 @@ function paintCollin(was) {
   paintReportsButton();
   const now = S.collin ? S.collin.state : '';
   if (now !== was && S.node) renderCatalog(S.node);
+  if (was === 'running' && now !== 'running') followPalCollinRun();
   clearTimeout(S.collinPoll);
   if (now === 'running') {
     S.collinPoll = setTimeout(async () => {
@@ -19730,10 +19731,14 @@ let palMoved = false;
 /* The Columns chip: the box searches columns alone, behind Collin (0184). Off at
    every opening, for a column named like a thing an `id` would find hundreds. */
 let palColumns = false;
+/* The greyed chip pressed: a row on top offers Collin, until the box closes or
+   Collin is the tool (0185). Never on with the chip available. */
+let palOffer = false;
 function openPalette() {
   palOpened++;
   closeCrumbMenu();
   palColumns = false;
+  palOffer = false;
   paintPalColumns();
   $('#palette').classList.remove('hidden');
   const input = $('#palette-input');
@@ -19801,9 +19806,10 @@ function nodeGroupTitle(kinds) {
    its first five and a row that shows the rest; `opened` holds the groups
    whose rest was asked for. The rows are the hits themselves, plus `more`,
    `grep` (the one that hands the letters to the Search tab) and `note` (a line
-   that cannot be picked). `count` is said as the header says it: "40+" for a
+   that cannot be picked). `offer`, when the greyed Columns chip was pressed, is
+   one row above the rest (0185). `count` is said as the header says it: "40+" for a
    group the server cut, never a number it does not know. */
-function paletteGroups(hits, q, capped, opened, columns = false) {
+function paletteGroups(hits, q, capped, opened, columns = false, offer = null) {
   const word = q.trim();
   const groups = [];
   if (columns) {
@@ -19838,6 +19844,7 @@ function paletteGroups(hits, q, capped, opened, columns = false) {
   add('files', 'Files', hits.filter((h) => h.kind === 'file'), !!capped.files);
   // The Search tab's own minimum, so the hand-over never lands on its refusal. A site has no files to search in.
   if (word.length >= 3 && !S.site) groups.push({ key: 'grep', title: 'Inside the files', count: '', rows: [{ kind: 'grep', q: word }] });
+  if (offer) groups.unshift({ key: 'offer', title: 'Columns need Collin', count: '', rows: [offer] });
   return groups;
 }
 
@@ -19890,6 +19897,27 @@ function paletteColumnsNote(tool, cl) {
   return collinHint(tool, cl, []).text;
 }
 
+/* The row the greyed Columns chip offers, by what collin is (0185): the tool to
+   pick when it is found, its install when it is not, the settings when it was
+   found and set aside. A found collin wins over a refused one, which the menu
+   says beside it. Without an install command to type there is only the settings. */
+function paletteOfferRow(cl) {
+  if (cl && cl.found) {
+    return { kind: 'offer', action: 'use', label: 'Use Collin for column lineage', sub: 'then search columns',
+      title: 'Picks Collin as the column lineage tool. collin runs first when its cache is missing or older than the manifest.' };
+  }
+  if (cl && cl.refused) {
+    return { kind: 'offer', action: 'settings', label: 'Set up Collin in the settings', sub: 'one was found but is not run',
+      title: collinRefusedNote(cl) };
+  }
+  if (cl && cl.install) {
+    return { kind: 'offer', action: 'install', label: 'Install collin', sub: 'types the command into the terminal',
+      title: 'Types the command that installs collin into the terminal, for you to run.' };
+  }
+  return { kind: 'offer', action: 'settings', label: 'Set up Collin in the settings', sub: '',
+    title: 'The Column lineage section of the settings installs and picks Collin.' };
+}
+
 /* One box for everything: dbt nodes from the manifest, the macros by name, and
    every file in the project. A generic test definition or a dotfile is not a
    node, and used to be unfindable. Macros wait for a query: the empty box lists
@@ -19897,6 +19925,8 @@ function paletteColumnsNote(tool, cl) {
    keeps, which is how it knows a group was cut. */
 async function fetchPalette(q) {
   const ask = PALETTE_CAP + 1;
+  // The chip as it was when the key was typed, here too: a toggle asks again.
+  const offer = palOffer && !palColumnsAvailable() && !S.site ? paletteOfferRow(S.collin) : null;
   if (palColumns && palColumnsAvailable()) {
     // The chip as it was when the key was typed: a later toggle asks again.
     const found = q.trim() ? await api.get(`/api/columns/search?q=${encodeURIComponent(q)}&limit=${ask}`).catch(() => []) : [];
@@ -19915,6 +19945,7 @@ async function fetchPalette(q) {
   return {
     hits: mergeHits(nodes.slice(0, PALETTE_CAP), macros.slice(0, PALETTE_CAP), paths.slice(0, PALETTE_CAP)),
     capped,
+    offer,
   };
 }
 
@@ -19934,36 +19965,49 @@ async function enterPalette() {
    not a site, which has no server to search columns with. */
 function palColumnsAvailable() { return S.cllTool === 'collin' && !S.site; }
 
-/* The chip, the placeholder and the foot as the mode says. Greyed, with why,
-   while another tool is picked. */
+/* The chip, the placeholder and the foot as the mode says. Greyed while another
+   tool is picked, and then it offers Collin: pressed while the offer shows. */
 function paintPalColumns() {
   const chip = $('#palette-cols');
   const can = palColumnsAvailable();
   const on = palColumns && can;
   chip.classList.toggle('hidden', !!S.site);
   chip.classList.toggle('off', !can);
-  chip.setAttribute('aria-disabled', String(!can));
-  chip.setAttribute('aria-pressed', String(on));
-  chip.title = can ? `Search only columns (Tab)` : 'Pick Collin in the settings to search columns';
+  chip.setAttribute('aria-pressed', String(can ? on : palOffer));
+  chip.title = can ? `Search only columns (Tab)` : 'Columns need Collin: click or Tab to use it';
   $('#palette-input').placeholder = on ? 'Columns, or model.column\u2026'
     : S.site ? 'Models and sources\u2026' : 'Models, sources, macros and every file\u2026';
-  $('#palette-tab').classList.toggle('hidden', !can);
+  $('#palette-tab').classList.toggle('hidden', !!S.site);
 }
 
 /* The tool switched while the box is open: the chip greys or wakes with it, and
-   one that was pressed lets go, the list asked again so that it matches. */
+   one that was pressed lets go, the list asked again so that it matches. A
+   chip that woke with the offer showing is pressed, the offer taken (0185): the
+   one run here is the only one, whether the pick or another switch did it. A
+   run of collin the switch started asks again when it ends (followPalCollinRun). */
 function followPalColumns(was) {
   if ($('#palette').classList.contains('hidden') || palColumnsAvailable() === was) return;
-  const pressed = palColumns;
+  const pressed = palColumns, offered = palOffer;
   if (!palColumnsAvailable()) palColumns = false;
+  else if (offered) palColumns = true;
+  palOffer = false;
   paintPalColumns();
   if (pressed !== palColumns) runPalette($('#palette-input').value);
 }
 
-/* A click or Tab, the focus staying in the input. */
+/* collin's run ended while the box shows columns: the answer was read from a
+   cache the run has since replaced, and nothing else would ask again (0185). */
+function followPalCollinRun() {
+  if ($('#palette').classList.contains('hidden') || !palColumns || !palColumnsAvailable()) return;
+  runPalette($('#palette-input').value);
+}
+
+/* A click or Tab, the focus staying in the input. Greyed, it shows or hides the
+   offer of Collin; nothing on a site, which has no server to offer it. */
 function togglePalColumns() {
-  if (!palColumnsAvailable()) return;
-  palColumns = !palColumns;
+  if (S.site) return;
+  if (palColumnsAvailable()) palColumns = !palColumns;
+  else palOffer = !palOffer;
   paintPalColumns();
   runPalette($('#palette-input').value);
 }
@@ -19995,6 +20039,10 @@ function paletteRow(h, i, q) {
     path.textContent = 'Search tab';
   } else if (h.kind === 'more') {
     name.textContent = h.label;
+  } else if (h.kind === 'offer') {
+    name.textContent = h.label;
+    path.textContent = h.sub;
+    row.title = h.title;
   } else if (h.kind === 'column') {
     // The model's dot, the column and its type, the model's name where a path goes.
     const marks = paletteColumnMarks(h.column, h.node.name, q);
@@ -20023,7 +20071,7 @@ function paletteRow(h, i, q) {
 /* The answer on screen, from `palAnswer` and the groups asked for so far. */
 function drawPalette() {
   const { answer, q } = palAnswer;
-  const groups = paletteGroups(answer.hits, q, answer.capped, palGroupsOpen, !!answer.columns);
+  const groups = paletteGroups(answer.hits, q, answer.capped, palGroupsOpen, !!answer.columns, answer.offer);
   palHits = groups.flatMap((g) => g.rows).filter((r) => r.kind !== 'note');
   palIndex = Math.min(palIndex, Math.max(0, palHits.length - 1));
   $('#palette-count').textContent = paletteCount(answer.hits, answer.capped);
@@ -20041,6 +20089,7 @@ function drawPalette() {
     return;
   }
   let i = 0;
+  const found = groups.some((g) => g.key !== 'offer');
   for (const g of groups) {
     const head = jel('div', 'pal-head', g.title);
     head.setAttribute('role', 'presentation');
@@ -20052,6 +20101,8 @@ function drawPalette() {
       i++;
     }
   }
+  // The offer alone says nothing of what was typed: the line stays under it.
+  if (!found) box.append(jel('div', 'pal-empty', paletteEmptyText(q, !!answer.columns)));
   if (behind) box.append(jel('div', 'pal-note', behind));
   box.scrollTop = kept;
   markPalette();
@@ -20118,9 +20169,39 @@ function selectPalette(i, scroll = true) {
   if (scroll) rows[i].scrollIntoView({ block: 'nearest' });
 }
 
+/* The offer row (0185). Using Collin leaves the box open: switching the tool
+   wakes the chip and asks the box again (followPalColumns), once, so all that
+   is left here is the focus, which a click took. A switch that failed toasted
+   and left the offer where it was, and a box closed or opened anew meanwhile
+   is not this one's to touch. A second pick while the switch goes on is
+   ignored: it would send the request twice. */
+let palSwitching = false;
+async function pickOffer(h) {
+  if (h.action === 'install') {
+    closePalette();
+    installCollin('the palette');
+    return;
+  }
+  if (h.action === 'settings') {
+    closePalette();
+    openSettings('columns');
+    return;
+  }
+  if (palSwitching) return;
+  const opened = palOpened;
+  palSwitching = true;
+  try {
+    await switchLineage({ tool: 'collin' });
+  } finally {
+    palSwitching = false;
+  }
+  if (opened === palOpened) $('#palette-input').focus();
+}
+
 function choosePalette(i) {
   const h = palHits[i ?? palIndex];
   if (!h) return;
+  if (h.kind === 'offer') { pickOffer(h); return; }
   if (h.kind === 'more') {
     // Shows the rest where it is: the box stays open, the focus in the input,
     // and the selection stays on the same index.

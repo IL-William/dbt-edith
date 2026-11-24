@@ -1,6 +1,6 @@
 # 0184. Columns are searched from the palette, behind a chip, with Collin picked
 
-Date: 2026-11-23 · Status: accepted · Amends 0154
+Date: 2026-11-23 · Status: accepted, amended by 0185 · Amends 0154
 
 **Trigger:** read before changing what `Cmd/Ctrl + K` finds, adding a column to
 what the box searches by default, or letting a tool other than Collin search
