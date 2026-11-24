@@ -3270,8 +3270,10 @@ a.jobfile { cursor: pointer; text-decoration: none; display: inline-block; verti
 .stats { display: flex; flex-wrap: wrap; gap: 32px; }
 .stat .k { font-size: 11px; color: var(--fg-dim); margin-bottom: 1px; }
 .stat .v { font-size: 15px; font-weight: 600; }
-.stat .v.link { cursor: pointer; }
-.stat .v.link:hover, .stat .v.link:focus-visible { color: var(--accent); }
+/* Dotted at rest, as the key's links below are, so a value that opens something does not read as plain
+   text; the line comes from the one token every theme already sets for that. */
+.stat .v.link { cursor: pointer; text-decoration: underline dotted var(--keylink-line); text-underline-offset: 3px; }
+.stat .v.link:hover, .stat .v.link:focus-visible { color: var(--accent); text-decoration-style: solid; text-decoration-color: var(--accent); }
 .stat .v.link:focus-visible { outline: 1px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
 /* The strategy and the key: the other stats stay at the top beside a key of
    several lines. */

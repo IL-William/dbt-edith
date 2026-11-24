@@ -3593,6 +3593,12 @@ of its own, and each panel updates the tour, its page under
     - The command is covered by a Posix run against a folder and by string for
       PowerShell; it has not yet run on a Windows machine with the
       `windows-gnu` toolchain.
+63. **What the static site's address history left (Back and Forward).**
+    - Back and Forward walk the nodes visited but keep the depth the canvas has
+      then, not the one the entry was left at. The way to do it: before pushing,
+      `history.replaceState([up, down], ...)` on the entry being left, and read
+      that state back in the `popstate` handler to set the depth before
+      `focusNode`. A column is not in an entry, by choice.
 
 Left by the pull requests of 2026-10-14, each a known limit written in
 its pull request, unranked:

@@ -13,6 +13,9 @@ Preview, and a Column / Type / Description / Tests table under Columns. The
 upstream and downstream lists navigate like the graph: click moves the lineage
 and the catalog to that node, double-click also opens its file. The column count
 opens the Columns tab.
+A stat value that leads somewhere (the node a test is on, Models read, the
+Columns, Tests, Upstream and Downstream counts) is underlined with dots, solid
+and in the accent colour under the pointer.
 The head names the node with its materialization and schema beside it
 (`table · main`, as the hover card says them), the package and the file under
 it, and the two tabs as the dock's are drawn,

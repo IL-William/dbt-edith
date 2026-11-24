@@ -792,8 +792,10 @@ def smoke(tally, name, page, ids, model):
         page.js(f"(() => {{ const r = document.querySelector('#tree .row.folder[data-path={json.dumps(folder)}]'); if (!r.classList.contains('open')) r.click(); }})()")
         page.until(f"document.querySelector('#tree .row.folder[data-path={json.dumps(folder)}]').classList.contains('open')", f"{folder} open")
     page.until(f"!!document.querySelector('#tree .row.file[data-path={json.dumps(path)}]')", "the file's row")
+    before = page.js("history.length")
     page.js(f"document.querySelector('#tree .row.file[data-path={json.dumps(path)}]').click()")
     page.until(f"!!document.querySelector('#graph .nd.focus[data-id={json.dumps(target)}]')", "the lineage of the file's model")
+    check("a click on another node adds one entry to the history", page.js("history.length") == before + 1, f"{page.js('history.length')} after {before}")
     check("a click on a file's row focuses its model", page.js("decodeURIComponent(location.hash)") == "#" + target)
     check("and lights the row", page.js("document.querySelector('#tree .row.sel') && document.querySelector('#tree .row.sel').dataset.path") == path)
     check("the tree has no file a site cannot show: no test, no YAML", page.js("[...document.querySelectorAll('#tree .row.file .nm')].every((n) => /\\.(sql|py|csv)$/.test(n.textContent))"))
@@ -802,7 +804,23 @@ def smoke(tally, name, page, ids, model):
     last = next(i for i in reversed(ids) if i.startswith("model.") and i != other)
     page.js(f"location.hash = {json.dumps(urllib.parse.quote(last, safe=''))}")
     page.until(f"!!document.querySelector('#graph .nd.focus[data-id={json.dumps(last)}]')", "the node the address names")
+    after = page.js("history.length")
     check("an address that changes names a node, and the page follows it", True)
+
+    # Each node visited is an entry of the browser's history: Back returns to the one left, twice to the one before it (the
+    # palette's pick, which a page that only replaced its address would have lost), Forward to the ones after.
+    page.js("history.back()")
+    page.until(f"!!document.querySelector('#graph .nd.focus[data-id={json.dumps(target)}]')", "the node before, after Back")
+    check("Back brings the canvas and the address to the previous node", page.js("decodeURIComponent(location.hash)") == "#" + target, page.js("location.hash"))
+    page.js("history.back()")
+    page.until(f"!!document.querySelector('#graph .nd.focus[data-id={json.dumps(other)}]')", "the node before that, after a second Back")
+    check("a second Back reaches the node picked before it, the canvas and the address", page.js("decodeURIComponent(location.hash)") == "#" + other, page.js("location.hash"))
+    page.js("history.forward()")
+    page.until(f"!!document.querySelector('#graph .nd.focus[data-id={json.dumps(target)}]')", "the node after, after Forward")
+    page.js("history.forward()")
+    page.until(f"!!document.querySelector('#graph .nd.focus[data-id={json.dumps(last)}]')", "the last node, after a second Forward")
+    check("Forward twice returns to the node Back left first", page.js("decodeURIComponent(location.hash)") == "#" + last, page.js("location.hash"))
+    check("a walk that came from the address added no entry of its own", page.js("history.length") == after, f"{page.js('history.length')} for {after}")
 
 
 def requests_of(page, suffix):

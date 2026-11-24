@@ -34,6 +34,16 @@ check('no address names none', siteHashId(''), '');
 check('a bad escape names none', siteHashId('#%E0%A4%A'), '');
 check('a node is written as it is read', siteHashId(siteHash('model.shop.orders_😀')), 'model.shop.orders_😀');
 
+// Focusing a node writes the address only when that adds a place to go Back to.
+var has = function (id) { return ['model.shop.orders', 'model.shop.customers', 'model.shop.café orders'].indexOf(id) >= 0; };
+check('an address already naming the node is left alone', siteAddressStep('#model.shop.orders', 'model.shop.orders', has), 'none');
+check('an escaped address is compared by the node it names', siteAddressStep(siteHash('model.shop.café orders'), 'model.shop.café orders', has), 'none');
+check('no address is replaced, not pushed', siteAddressStep('', 'model.shop.orders', has), 'replace');
+check('a bare # is replaced too', siteAddressStep('#', 'model.shop.orders', has), 'replace');
+check('another node is pushed', siteAddressStep('#model.shop.orders', 'model.shop.customers', has), 'push');
+check('an address that cannot be read is replaced', siteAddressStep('#%E0%A4%A', 'model.shop.orders', has), 'replace');
+check('an address naming a node the site does not have is replaced', siteAddressStep('#model.shop.gone', 'model.shop.orders', has), 'replace');
+
 // The Code tab says what the manifest holds, and what it does not.
 var code = { raw: 'select * from {{ ref(\'a\') }}', compiled: 'select * from db.a', lang: 'sql', file: 'models/b.sql', url: null };
 check('the source is Jinja over SQL', siteCodeBody(code, 'source'), { text: code.raw, mode: 'dbt-sql' });
