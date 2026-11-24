@@ -267,6 +267,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/envs/select", post(select_env))
         .route("/api/vars", get(list_vars))
         .route("/api/compiled", get(compiled_sql))
+        .route("/api/yaml-sync", get(yaml_sync))
         .route("/api/lineage", get(lineage))
         .route("/api/select", get(selection))
         .route("/api/selectors", get(list_selectors))
@@ -2619,12 +2620,7 @@ async fn list_envs(State(st): State<Arc<AppState>>) -> Response {
                 let coverage = envs::coverage(&f, &referenced);
                 let auto_reason = envs::auto_hidden(&f, &coverage, &referenced);
                 let over = settings.envs.get(&f.file).cloned().unwrap_or_default();
-                // A user's explicit choice beats the automatic one in both directions.
-                let (hidden, hidden_reason) = match over.hidden {
-                    Some(true) => (true, Some("hidden by you".to_string())),
-                    Some(false) => (false, None),
-                    None => (auto_reason.is_some(), auto_reason.map(str::to_string)),
-                };
+                let (hidden, hidden_reason) = envs::hidden(auto_reason, over.hidden);
                 EnvEntry {
                     name: over.name.clone().unwrap_or_else(|| f.auto_name.clone()),
                     auto_name: f.auto_name.clone(),
@@ -3216,6 +3212,40 @@ async fn job_step(State(st): State<Arc<AppState>>, Query(q): Query<JobStepQuery>
         Ok(Some(view)) => Json(view).into_response(),
         Ok(None) => (StatusCode::NOT_FOUND, "no such step").into_response(),
         Err(e) => e,
+    }
+}
+
+#[derive(Deserialize)]
+struct YamlSyncQuery {
+    /// One model's unique_id; the whole project's models when absent.
+    node: Option<String>,
+}
+
+/// What each model's YAML would change to say what its table says, from the
+/// catalog (0188). Nothing is written here: the page applies the answer to
+/// the text of the file, and the user saves it.
+///
+/// With `node` the answer carries the model's freshness flags; without it, for
+/// the whole project, it carries none, since they cost file-system calls for
+/// each model. A batch form that does comes with the bulk update.
+async fn yaml_sync(State(st): State<Arc<AppState>>, Query(q): Query<YamlSyncQuery>) -> Response {
+    let graph = st.graph.read().await.clone();
+    let only = match q.node.as_deref() {
+        Some(id) => match graph.index.get(id) {
+            Some(&i) if graph.nodes[i as usize].kind == crate::graph::Kind::Model => Some(i),
+            _ => return (StatusCode::NOT_FOUND, "unknown model").into_response(),
+        },
+        None => None,
+    };
+    let (root, target) = (st.root.clone(), st.target_dir.clone());
+    let settings = st.settings.load();
+    match tokio::task::spawn_blocking(move || {
+        crate::yaml_sync::check(&graph, &root, &target, only, &|file: &str| settings.envs.get(file).and_then(|o| o.hidden))
+    })
+    .await
+    {
+        Ok(answer) => Json(answer).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
     }
 }
 

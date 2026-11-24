@@ -4053,6 +4053,405 @@ function varLanding(text, name, row) {
   return varDefLine(text, name) || (row ? { line: row.line - 1, ch: 0 } : null);
 }
 
+/* ------------------------------------------------ Update a model's YAML (0188)
+   What the server says a model's YAML lacks or spells wrong, applied to the
+   file's own text. The server owns every rule about a type (the base two
+   spellings fold to, the spelling written, the contract trap, the case of a
+   name): this only places what it is sent, and checks each change against the
+   text first, since the file may have been edited since the last parse. */
+
+/* A scalar as a plain YAML value, quoted only when a plain one would be read as
+   something else: an indicator first, `: ` or ` #` inside, a word YAML 1.1
+   takes for a boolean, null or number, or nothing at all. */
+function yamlScalar(s) {
+  const word = /^(true|false|yes|no|on|off|y|n|null|~)$/i.test(s) || /^[-+]?(\d[\d_,]*)?\.?\d+([eE][-+]?\d+)?$/.test(s);
+  const risky = s === '' || /^[\s\-?:,[\]{}#&*!|>'"%@`]/.test(s) || /:(\s|$)|\s#|\s$/.test(s);
+  return word || risky ? "'" + s.replace(/'/g, "''") + "'" : s;
+}
+
+/* Where the colon of `key: value` is, by the rule yamlKey applies, or -1. */
+function yamlColonAt(s) {
+  let quote = '';
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (quote) { if (c === quote) quote = ''; continue; }
+    if (c === '"' || c === "'") { quote = c; continue; }
+    if (c !== ':') continue;
+    const next = s[i + 1];
+    if (next === undefined || next === ' ' || next === '\t') return i;
+  }
+  return -1;
+}
+
+/* A line with the value of the key at `col` replaced, its trailing comment and
+   the rest of it kept. */
+function yamlSetValue(line, col, value) {
+  const at = yamlColonAt(line.slice(col));
+  const rest = line.slice(col + at + 1);
+  const start = col + at + 1 + (rest.length - rest.trimStart().length);
+  const end = start + yamlValueText(line.slice(start)).length;
+  // A key with no value yet has no space after its colon, nor before a comment.
+  const tail = line.slice(end);
+  return line.slice(0, start) + (start === col + at + 1 ? ' ' : '') + value + (tail && tail[0] !== ' ' ? ' ' : '') + tail;
+}
+
+/* Whether the key at `col` holds nothing on its line: no value, an empty
+   string, a null. What the server calls untyped for a `data_type`. */
+function yamlEmptyValue(line, col) {
+  const kv = yamlKey(line.slice(col));
+  if (!kv) return false;
+  const v = yamlValueText(kv.value);
+  return v === '' || v === '""' || v === "''" || v === '~' || /^null$/i.test(v);
+}
+
+/* Whether a block of lines holds an anchor, an alias or a merge key outside a
+   block scalar: the structure a patch placed by lines cannot follow. */
+function yamlHasAnchors(lines, from, to) {
+  let block = -1;
+  for (let i = from; i <= to; i++) {
+    const l = lines[i], t = l.trim(), ind = yamlIndent(l);
+    if (block >= 0) {
+      if (t === '' || ind > block) continue;
+      block = -1;
+    }
+    if (t === '' || t[0] === '#') continue;
+    let rest = l.slice(ind), col = ind;
+    while (rest === '-' || rest.startsWith('- ')) {
+      const trimmed = rest.slice(1).trimStart();
+      col += rest.length - trimmed.length;
+      rest = trimmed;
+    }
+    const kv = yamlKey(rest);
+    const value = yamlValueText(kv ? kv.value : rest);
+    if (kv && kv.key === '<<') return true;
+    if (/^[&*]\w/.test(value)) return true;
+    if (kv && (value[0] === '|' || value[0] === '>')) block = col;
+  }
+  return false;
+}
+
+/* The text of a properties file with what `sync` (the server's answer for one
+   model) says applied to the entry of `model`: the columns the table has and
+   the YAML lacks added after the one before them, the types written where none
+   is, the ones whose base differs replaced, the ones the table lacks removed.
+   Returns the new text and what each change was, `skipped` for the ones the
+   text no longer matches, `duplicates` for a column declared twice (never
+   merged), and `refused`, a reason, for a file it will not touch: then the text
+   is the one given. Line endings, a BOM and every byte not touched stay. */
+function yamlSyncPatch(text, model, sync) {
+  const out = { text, added: [], removed: [], retyped: [], typed: [], skipped: [], duplicates: [], refused: '', lines: [] };
+  const refuse = (why) => { out.refused = why; return out; };
+  const bom = text.charCodeAt(0) === 0xFEFF ? '﻿' : '';
+  const body = bom ? text.slice(1) : text;
+  if (/\r(?!\n)/.test(body)) return refuse('it has CR-only line breaks');
+  const raw = body.split('\n');
+  const eol = body.indexOf('\n') > 0 && body[body.indexOf('\n') - 1] === '\r' ? '\r' : '';
+  const lines = raw.map((l) => l.replace(/\r$/, ''));
+
+  let content = false, marks = 0;
+  for (const l of lines) {
+    if (/^\.\.\.(\s|$)/.test(l)) return refuse('it holds several documents');
+    if (/^---(\s|$)/.test(l)) {
+      if (content || marks++) return refuse('it holds several documents');
+      continue;
+    }
+    if (l.trim() !== '' && l.trim()[0] !== '#') content = true;
+    if (l.trim() !== '' && /^ *\t/.test(l)) return refuse('it has a tab in its indentation');
+  }
+
+  const nodes = yamlOutline(lines.join('\n'));
+  const kids = new Map();
+  nodes.forEach((n, i) => {
+    if (!kids.has(n.parent)) kids.set(n.parent, []);
+    kids.get(n.parent).push(i);
+  });
+  const under = (i) => kids.get(i) || [];
+  const key = (i, label) => (i == null ? null : under(i).find((j) => nodes[j].label === label));
+  const textOf = (j) => yamlLineValue(lines[nodes[j].line], nodes[j].col);
+  const flow = (v) => v[0] === '[' || v[0] === '{';
+  const pad = (n) => ' '.repeat(n);
+  // The last line an entry owns: the blank lines and the comments at or below
+  // its indentation that end its range are the next sibling's, and stay.
+  const lastLine = (i) => {
+    const n = nodes[i];
+    let end = n.endLine;
+    while (end > n.line) {
+      const t = lines[end].trim();
+      if (t === '' || (t[0] === '#' && yamlIndent(lines[end]) <= n.col)) end--;
+      else break;
+    }
+    return end;
+  };
+
+  const escaped = model.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const flowEntry = new RegExp('\\bname\\s*:\\s*[\'"]?' + escaped + '[\'"]?\\s*[,}]');
+  const models = under(-1).find((i) => nodes[i].label === 'models');
+  let entry = null;
+  if (models != null) {
+    if (flow(textOf(models))) return refuse('its models: is written in flow style');
+    const found = [];
+    for (const i of under(models)) {
+      const nm = key(i, 'name');
+      if (nm == null) {
+        const head = lines[nodes[i].line].slice(nodes[i].col + 1).trimStart();
+        if (head[0] === '{' && flowEntry.test(head)) return refuse('its entry is written in flow style');
+      } else if (textOf(nm) === model) found.push(i);
+    }
+    if (found.length > 1) return refuse('the model is declared twice in it');
+    entry = found.length ? found[0] : null;
+  }
+
+  const insert = new Map();     // line -> the lines put before it
+  const remove = new Set();
+  const replace = new Map();    // line -> the line it becomes
+  const put = (at, ...made) => {
+    if (!insert.has(at)) insert.set(at, []);
+    insert.get(at).push(...made);
+  };
+  const columnLines = (dash, names) => names.flatMap((m) => [
+    pad(dash) + '- name: ' + yamlScalar(m.name),
+    ...(m.data_type ? [pad(dash + 2) + 'data_type: ' + yamlScalar(m.data_type)] : []),
+  ]);
+  const missing = sync.missing || [];
+  // The end of the text, before its last line break.
+  const tail = lines[lines.length - 1] === '' ? lines.length - 1 : lines.length;
+
+  if (entry == null) {
+    // The model is not in the file: it is added with the columns the table
+    // has, and nothing else, since the file declares none of its own.
+    if (!missing.length) return out;
+    const block = (dash) => [pad(dash) + '- name: ' + yamlScalar(model), pad(dash + 2) + 'columns:', ...columnLines(dash + 4, missing)];
+    if (models != null) {
+      const first = under(models)[0];
+      const dash = first != null ? nodes[first].col : nodes[models].col + 2;
+      put(lastLine(models) + 1, ...block(dash));
+    } else {
+      put(tail, ...(content ? [''] : ['version: 2', '']), 'models:', ...block(2));
+    }
+    out.added = missing.map((m) => m.name);
+    for (const kind of ['extra', 'retype', 'untyped']) {
+      for (const c of sync[kind] || []) out.skipped.push({ op: kind, name: c.name, why: 'the model is not in the file' });
+    }
+    return finish();
+  }
+
+  const modelEnd = lastLine(entry);
+  if (key(entry, 'versions') != null) return refuse('the model has versions');
+  if (yamlHasAnchors(lines, nodes[entry].line, modelEnd)) return refuse('its entry holds an anchor, an alias or a merge key');
+  const modelKey = nodes[key(entry, 'name')].col;
+  const columns = key(entry, 'columns');
+  const items = columns == null ? [] : under(columns);
+  if (columns != null) {
+    const v = textOf(columns);
+    if (flow(v)) return refuse('its columns: is written in flow style');
+    if (v !== '') return refuse('its columns: is not a list');
+  }
+  for (const i of items) {
+    if (lines[nodes[i].line].slice(nodes[i].col + 1).trimStart()[0] === '{') return refuse('a column is written in flow style');
+    if (key(i, 'name') == null) return refuse('a column has no name');
+  }
+  const nameOf = items.map((i) => textOf(key(i, 'name')));
+  const count = new Map();
+  for (const n of nameOf) count.set(n, (count.get(n) || 0) + 1);
+  out.duplicates = [...count].filter(([, c]) => c > 1).map(([n]) => n);
+
+  // The column of a name, exact first, else the one that differs only in case.
+  const find = (name) => {
+    let at = nameOf.indexOf(name);
+    if (at < 0) {
+      const loose = nameOf.map((n, k) => (n.toLowerCase() === name.toLowerCase() ? k : -1)).filter((k) => k >= 0);
+      if (loose.length === 1) at = loose[0];
+    }
+    return at < 0 ? null : items[at];
+  };
+  const target = (op, c) => {
+    const i = find(c.name);
+    if (i == null) out.skipped.push({ op, name: c.name, why: 'it is no longer in the file' });
+    else if (out.duplicates.includes(textOf(key(i, 'name')))) out.skipped.push({ op, name: c.name, why: 'it is declared twice' });
+    else return i;
+    return null;
+  };
+
+  for (const r of sync.retype || []) {
+    const i = target('retype', r);
+    if (i == null) continue;
+    const dt = key(i, 'data_type');
+    if (dt == null) out.skipped.push({ op: 'retype', name: r.name, why: 'it has no data_type now' });
+    else if (textOf(dt) !== r.from) out.skipped.push({ op: 'retype', name: r.name, why: `its type is no longer ${r.from}` });
+    else {
+      replace.set(nodes[dt].line, yamlSetValue(lines[nodes[dt].line], nodes[dt].col, yamlScalar(r.to)));
+      out.retyped.push({ name: r.name, from: r.from, to: r.to });
+    }
+  }
+  for (const u of sync.untyped || []) {
+    const i = target('untyped', u);
+    if (i == null) continue;
+    const nm = key(i, 'name');
+    const dt = key(i, 'data_type');
+    if (dt != null && !under(dt).length && yamlEmptyValue(lines[nodes[dt].line], nodes[dt].col)) {
+      // Written with nothing after it, which is no type: the value is set where the key is.
+      replace.set(nodes[dt].line, yamlSetValue(lines[nodes[dt].line], nodes[dt].col, yamlScalar(u.to)));
+      out.typed.push({ name: u.name, to: u.to });
+    } else if (dt != null) out.skipped.push({ op: 'untyped', name: u.name, why: 'it has a type now' });
+    else {
+      put(nodes[nm].line + 1, pad(nodes[nm].col) + 'data_type: ' + yamlScalar(u.to));
+      out.typed.push({ name: u.name, to: u.to });
+    }
+  }
+  const gone = new Set();
+  for (const x of sync.extra || []) {
+    const i = target('extra', x);
+    if (i == null) continue;
+    for (let l = nodes[i].line; l <= lastLine(i); l++) remove.add(l);
+    gone.add(i);
+    out.removed.push(x.name);
+  }
+
+  // Where a column goes: the dash and the keys as the file's own columns are
+  // written, else under the model's keys.
+  const dash = items.length ? nodes[items[0]].col : (columns != null ? nodes[columns].col : modelKey) + 2;
+  const placed = new Map();     // name in lower case -> the line the next goes before
+  let here = [];
+  for (const m of missing) {
+    if (find(m.name) != null || placed.has(m.name.toLowerCase())) {
+      out.skipped.push({ op: 'add', name: m.name, why: 'it is already declared' });
+      continue;
+    }
+    here.push(m);
+  }
+  if (here.length && columns == null) {
+    // No columns: at the end of the entry, in the style its own lists use.
+    const compact = under(entry).some((j) => {
+      const first = under(j)[0];
+      return first != null && nodes[first].col === nodes[j].col && nodes[first].line > nodes[j].line;
+    });
+    put(modelEnd + 1, pad(modelKey) + 'columns:', ...columnLines(compact ? modelKey : modelKey + 2, here));
+    out.added = here.map((m) => m.name);
+  } else if (here.length) {
+    const lastItem = items.length ? lastLine(items[items.length - 1]) + 1 : nodes[columns].line + 1;
+    let top = items.length ? nodes[items[0]].line : lastItem;
+    // The comments right above the first column stay with it.
+    while (items.length && top - 1 > nodes[columns].line && lines[top - 1].trim()[0] === '#' && yamlIndent(lines[top - 1]) === dash) top--;
+    // A file that sets its columns apart with a blank line has the new ones set apart.
+    const spaced = items.length > 1 && lines[nodes[items[1]].line - 1].trim() === '' && nodes[items[1]].line - 1 > lastLine(items[0]);
+    for (const m of here) {
+      const prev = m.after ? find(m.after) : null;
+      let at = m.after ? lastItem : top;
+      if (m.after && placed.has(m.after.toLowerCase())) at = placed.get(m.after.toLowerCase());
+      else if (prev != null) at = lastLine(prev) + 1;
+      placed.set(m.name.toLowerCase(), at);
+      // At the top the blank line goes after the block, and stays after the last one put there.
+      const apart = spaced && insert.has(at) && insert.get(at)[insert.get(at).length - 1] === '';
+      if (apart) insert.get(at).pop();
+      const atTop = spaced && !m.after && items.length;
+      put(at, ...(spaced && !atTop ? [''] : []), ...columnLines(dash, [m]), ...(atTop || apart ? [''] : []));
+      out.added.push(m.name);
+    }
+  }
+  // Every column gone and none put back leaves no list to keep.
+  if (columns != null && items.length && gone.size === items.length && !out.added.length) {
+    for (let l = nodes[columns].line; l <= lastLine(columns); l++) remove.add(l);
+  }
+  return finish();
+
+  function finish() {
+    const made = [];
+    const mark = [];
+    const push = (l, own, at) => { made.push(l); if (own) mark.push(at); };
+    for (let i = 0; i <= lines.length; i++) {
+      for (const l of insert.get(i) || []) {
+        if (i === lines.length && eol && made.length && !made[made.length - 1].endsWith('\r')) made[made.length - 1] += '\r';
+        push(l + eol, true, made.length);
+      }
+      if (i === lines.length || remove.has(i)) continue;
+      if (replace.has(i)) push(replace.get(i) + (raw[i].endsWith('\r') ? '\r' : ''), true, made.length);
+      else push(raw[i], false, 0);
+    }
+    // Put after a last line that had no break, the last line put has none either.
+    if (eol && insert.has(lines.length)) made[made.length - 1] = made[made.length - 1].replace(/\r$/, '');
+    out.text = bom + made.join('\n');
+    out.lines = mark;
+    return out;
+  }
+}
+
+/* What the button says it would do: `+3 · −1 · 2 types`, each part only when
+   there is something to say, and what it cannot write when that is all. */
+function yamlSyncTip(sync) {
+  const types = (sync.retype || []).length + (sync.untyped || []).length;
+  const said = [
+    (sync.missing || []).length ? `+${sync.missing.length}` : '',
+    (sync.extra || []).length ? `−${sync.extra.length}` : '',
+    types ? `${types} type${types > 1 ? 's' : ''}` : '',
+  ].filter(Boolean).join(' · ');
+  const tip = said || ((sync.held || []).length ? `${sync.held.length} held` : '');
+  return sync.status === 'untyped' ? `${tip}, types only` : tip;
+}
+
+/* Why the columns of the catalog may not be the table's, in words, or '' when
+   nothing says so: the model ran after catalog.json was written, or its code
+   changed since it ran; or the catalog describes a deployed environment, which
+   is always said. `at` is when the catalog was written, in seconds. */
+function yamlSyncBehind(sync, at, fmt = (d) => d.toLocaleString()) {
+  if (sync.deployed) {
+    // Not the table a local run builds: the one a deployment built, from the code deployed there.
+    return [
+      `catalog.json describes the table of ${sync.catalog_env}, an environment deployed from code that may be behind this branch: `
+        + 'a column the branch added shows as a removal and one it dropped as an addition. Check each removal against the model\'s SQL.',
+      sync.code_after_catalog
+        ? `This model's code is newer than catalog.json (${fmt(new Date(at * 1000))}), so the table there may have been built from older code still: `
+          + 'trust the removals even less.' : '',
+    ].filter(Boolean).join('\n');
+  }
+  return [
+    sync.catalog_behind_run
+      ? `catalog.json was written ${fmt(new Date(at * 1000))}, before this model's last run, so its columns may be the old table's.` : '',
+    sync.table_behind_code
+      ? "This model's table is older than its code: run it first, or the columns catalog.json lists are not the ones its code builds." : '',
+  ].filter(Boolean).join('\n');
+}
+
+/* Where the properties file of a model that has none goes: beside its SQL. */
+function yamlSyncNewFile(file, model) {
+  const slash = file.lastIndexOf('/');
+  return (slash < 0 ? '' : file.slice(0, slash + 1)) + model + '.yml';
+}
+
+/* The lines of the card that follows an update: what was done, what removing
+   a column cost, what was left and why, and that the file is not saved. */
+function yamlSyncSaid(sync, patch, file) {
+  const names = (list) => list.join(', ');
+  const said = [];
+  if (patch.added.length) said.push(`Added ${patch.added.length}: ${names(patch.added)}`);
+  if (patch.removed.length) said.push(`Removed ${patch.removed.length}: ${names(patch.removed)}`);
+  const lost = patch.removed.map((name) => {
+    const x = (sync.extra || []).find((e) => e.name === name);
+    const what = x ? [x.described ? 'a description' : '', x.tests ? `${x.tests} test${x.tests > 1 ? 's' : ''}` : ''].filter(Boolean) : [];
+    return what.length ? `${name} (${what.join(' and ')})` : '';
+  }).filter(Boolean);
+  if (lost.length) said.push(`Lost with them: ${lost.join(', ')}`);
+  if (patch.retyped.length) said.push(`Retyped ${patch.retyped.length}: ` + names(patch.retyped.map((r) => `${r.name} ${r.from} to ${r.to}`)));
+  if (patch.typed.length) said.push(`Typed ${patch.typed.length}: ` + names(patch.typed.map((t) => `${t.name} ${t.to}`)));
+  // One line a reason, the columns it holds joined: a model of hundreds of columns is not hundreds of lines.
+  const grouped = (rows, by) => {
+    const groups = new Map();
+    for (const r of rows) {
+      const k = by(r);
+      if (!groups.has(k)) groups.set(k, []);
+      groups.get(k).push(r.name);
+    }
+    return groups;
+  };
+  for (const [k, list] of grouped(patch.skipped, (s) => `${s.op}\u0000${s.why}`)) {
+    const [op, why] = k.split('\u0000');
+    said.push(`Left (${op}) ${names(list)}: ${why}`);
+  }
+  for (const [reason, list] of grouped(sync.held || [], (h) => h.reason)) said.push(`Not typed, ${names(list)}: ${reason}`);
+  if (patch.duplicates.length) said.push(`Declared twice, not touched: ${names(patch.duplicates)}`);
+  said.push(file ? `${file} is changed in the editor, not saved: save it to keep it.` : 'Save it to keep it.');
+  return said;
+}
+
 /* ATX headings, and none inside a fenced block: that is what a reader navigates
    a markdown file by. */
 function mdOutline(text) {
@@ -19206,6 +19605,86 @@ function columnCountWidth(total, typed, filtering) {
   return filtering ? columnCountText(total, total, typed, true).length + 'ch' : '';
 }
 
+/* Update YAML (0188): in the Columns tab of a model the catalog says disagrees
+   with its schema YAML. The button is drawn once the answer is in, and is no
+   button at all when it fails: the page is as it was without this feature. */
+function yamlSyncButton(n) {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'btn sm ghost yamlsync';
+  b.hidden = true;
+  b.textContent = 'Update YAML';
+  api.get('/api/yaml-sync?node=' + encodeURIComponent(n.id)).then((answer) => {
+    const sync = answer.models[0];
+    if (!sync || !['disagrees', 'untyped'].includes(sync.status) || !b.isConnected) return;
+    b.hidden = false;
+    b.title = `${yamlSyncTip(sync)}\nBring the schema YAML in line with the table catalog.json describes. `
+      + 'The change is made in the editor for you to review, and nothing is saved until you save it.';
+    b.addEventListener('click', () => updateYamlFromCatalog(n));
+  }).catch(() => { /* no catalog, or no answer: no button */ });
+  return b;
+}
+
+async function updateYamlFromCatalog(n) {
+  let answer;
+  try { answer = await api.get('/api/yaml-sync?node=' + encodeURIComponent(n.id)); }
+  catch (e) { return toast('Update YAML: ' + e.message, 'err'); }
+  const sync = answer.models[0];
+  if (!sync || !['disagrees', 'untyped'].includes(sync.status)) return toast(`${n.name}: its YAML already says what catalog.json says`);
+  const behind = yamlSyncBehind(sync, answer.catalog_at);
+  if (behind) {
+    const body = document.createElement('div');
+    behind.split('\n').forEach((line) => body.append(para(line)));
+    if (await modal({ title: 'Update the YAML from this catalog?', body,
+      actions: [{ id: null, label: 'Cancel' }, { id: 'go', label: 'Update anyway', style: 'primary' }] }) !== 'go') return;
+  }
+  let path = sync.yml;
+  let exists = false;
+  if (!path) {
+    path = yamlSyncNewFile(sync.file, n.name);
+    // The file may be there already, open or on disk, for a model the manifest has not been told of
+    // yet: it is then patched like any other, never overwritten.
+    exists = S.open.has(path) || await api.get('/api/file?path=' + encodeURIComponent(path)).then(() => true, () => false);
+  }
+  if (!sync.yml && !exists) {
+    const body = document.createElement('div');
+    body.append(para(`${n.name} has no properties file. ${path} is created beside its SQL, and the columns catalog.json lists are put in it in the editor, for you to review. Nothing is kept until you save.`));
+    if (await modal({ title: `Create ${base(path)}?`, body,
+      actions: [{ id: null, label: 'Cancel' }, { id: 'go', label: 'Create it', style: 'primary' }] }) !== 'go') return;
+    // An empty stamp creates a file that is still absent, and is refused for one that appeared since.
+    try { await api.send('/api/file', 'PUT', { path, content: 'version: 2\n', stamp: '' }); }
+    catch (e) { return toast(`cannot create ${path}: ${e.message}`, 'err'); }
+  }
+  await openFile(path, { focusLineage: false });
+  const f = S.open.get(path);
+  if (!f || !f.doc || S.active !== path) return;
+  if (f.truncated) return notice({ title: `${n.name}: edit its YAML by hand`, body: `${path} is too large to be opened whole here, so it is not changed.`, sticky: true });
+  // The tab's own text, which may hold edits not saved: the patch is made on what is there.
+  const text = f.doc.getValue();
+  const patch = yamlSyncPatch(text, n.name, sync);
+  if (patch.refused) {
+    return notice({ title: `${n.name}: edit its YAML by hand`, body: `${path} is not changed: ${patch.refused}.`, sticky: true });
+  }
+  if (patch.text !== text) {
+    const span = changedSpan(text, patch.text);
+    // One change, so one undo; its origin is no `disk`, so the tab is marked edited.
+    S.cm.operation(() => f.doc.replaceRange(span.text, f.doc.posFromIndex(span.from), f.doc.posFromIndex(span.to), 'yamlsync'));
+    const marked = patch.lines.map((l) => f.doc.addLineClass(l, 'background', 'cm-synced'));
+    const clear = () => {
+      marked.forEach((h) => f.doc.removeLineClass(h, 'background', 'cm-synced'));
+      CodeMirror.off(f.doc, 'change', clear);
+    };
+    CodeMirror.on(f.doc, 'change', clear);
+    if (patch.lines.length) gotoPos(patch.lines[0], 0, false);
+  }
+  notice({ title: patch.text === text ? `${n.name}: nothing to change in ${base(path)}` : `${n.name}: ${yamlSyncTip(sync)}`,
+    body: yamlSyncSaid(sync, patch, patch.text === text ? '' : path).join('\n'), sticky: true });
+  S.notice.card.classList.add('sync');
+  // The focus is on the card, so that Escape closes it (the notice leaves Escape to the editor otherwise).
+  S.notice.card.tabIndex = -1;
+  S.notice.card.focus({ preventScroll: true });
+}
+
 function catalogColumns(body, n, inCard) {
   if (!n.columns.length) {
     if (S.colReveal === n.id && S.dock === 'catalog') S.colReveal = '';
@@ -19277,6 +19756,7 @@ function catalogColumns(body, n, inCard) {
     again.addEventListener('click', () => regenerateCollin());
     tools.appendChild(again);
   }
+  if (!S.site && n.kind === 'model' && !n.version) tools.appendChild(yamlSyncButton(n));
   // Each column of a key, by the key's letter and its place in the key,
   // expressions included; a column named twice in a key keeps its first place.
   const keys = n.keys || [];

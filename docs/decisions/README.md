@@ -191,6 +191,7 @@ it; these files say why it is built this way, for whoever changes it next.
 | [0185](0185-the-greyed-columns-chip-offers-collin.md) | The greyed Columns chip offers Collin | changing what the chip does while Collin is not picked, or what the box offers beside its answer |
 | [0186](0186-collin-is-downloaded-on-windows-where-cargo-cannot-build-it.md) | collin is downloaded on Windows, where cargo cannot build it | changing what the install and update entries type for collin, what a collin release carries for Windows, or how a download's hash is checked |
 | [0187](0187-a-column-opens-at-its-line-in-its-properties-file.md) | A column opens at its line in its properties file | changing where a column's YAML glyph lands, or opening a package's YAML from the Catalog |
+| [0188](0188-a-schema-yaml-is-brought-in-line-with-the-warehouse-by-a-patch-you-review.md) | A schema YAML is brought in line with the warehouse by a patch you review | changing what Update YAML writes, where a type is decided, how a properties file is edited, or writing a file without showing the change first |
 
 ## Keeping these honest
 

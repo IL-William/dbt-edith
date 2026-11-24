@@ -642,6 +642,28 @@ pub fn auto_hidden(file: &EnvFile, coverage: &Coverage, referenced: &[RefVar]) -
         .or_else(|| (!referenced.is_empty() && coverage.defined == 0).then_some("defines none of the variables your config reads"))
 }
 
+/// Whether a file is hidden from the environment menu, and why. A user's
+/// explicit choice beats the automatic reason in both directions. The one rule,
+/// for the menu and for whatever else must not read a file the menu hides.
+pub fn hidden(auto: Option<&'static str>, chosen: Option<bool>) -> (bool, Option<String>) {
+    match chosen {
+        Some(true) => (true, Some("hidden by you".to_string())),
+        Some(false) => (false, None),
+        None => (auto.is_some(), auto.map(str::to_string)),
+    }
+}
+
+/// The files the menu shows: those `discover` finds that `hidden` does not
+/// hide, in the order of their names. `chosen` is the user's choice for a file,
+/// if any.
+pub fn visible(root: &Path, places: &[(&Place, &Place)], chosen: impl Fn(&str) -> Option<bool>) -> Vec<EnvFile> {
+    let referenced = referenced(places);
+    let mut files: Vec<EnvFile> =
+        discover(root).into_iter().filter(|f| !hidden(auto_hidden(f, &coverage(f, &referenced), &referenced), chosen(&f.file)).0).collect();
+    files.sort_by(|a, b| a.file.cmp(&b.file));
+    files
+}
+
 /// A `DBT_TARGET` that disagrees with the file suffix, which is usually a file
 /// copied from another environment and not fully edited.
 pub fn target_mismatch(file: &EnvFile) -> bool {

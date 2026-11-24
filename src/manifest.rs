@@ -249,6 +249,11 @@ pub struct RawConfig {
     /// key is absent (0116).
     #[serde(default, deserialize_with = "present")]
     pub freshness: Option<Box<serde_json::Value>>,
+    /// Models only: `{ enforced, alias_types }`. A Value for the reason the
+    /// location keys are, and boxed since most nodes have none worth keeping:
+    /// only `enforced` is read (0188).
+    #[serde(default)]
+    pub contract: Option<Box<serde_json::Value>>,
 }
 
 /// A value kept when its key is there, `null` included, which `Option` alone
@@ -375,14 +380,36 @@ pub struct RawCatalog {
 
 #[derive(serde::Deserialize, Default)]
 pub struct CatalogNode {
+    /// The relation the catalog describes, to tell it from the one the
+    /// manifest names: a catalog written for another target describes
+    /// another schema (0188).
+    #[serde(default)]
+    pub metadata: Option<CatalogRelation>,
     /// Sorted, so two columns whose names differ only in case, which a quoted
     /// identifier allows, meet `merge_catalog` in the same order every time.
     #[serde(default)]
     pub columns: BTreeMap<String, CatalogColumn>,
 }
 
+/// Where the catalog found the table. Every key optional: a catalog of
+/// another producer may leave one out, and a missing key means "not compared".
+#[derive(serde::Deserialize, Default)]
+pub struct CatalogRelation {
+    #[serde(default)]
+    pub database: Option<String>,
+    #[serde(default)]
+    pub schema: Option<String>,
+    #[serde(default)]
+    pub name: Option<String>,
+}
+
 #[derive(serde::Deserialize, Default)]
 pub struct CatalogColumn {
+    /// The column's ordinal position in the table, 1-based, which the map it
+    /// sits in loses: the order the warehouse holds them in (0188). An Option
+    /// so that a null costs the order and not the catalog.
+    #[serde(default)]
+    pub index: Option<i64>,
     #[serde(default)]
     pub name: String,
     #[serde(default)]

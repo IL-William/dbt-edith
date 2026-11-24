@@ -107,6 +107,7 @@ $JSC web/tests/fileicons.js   # a file's icon: its shape by extension, its colou
 $JSC web/tests/tabkinds.js    # the editor's tabs and Open editors: a model's tab draws its kind's bar, a row its file's icon, a late mark draws the tabs once more
 $JSC web/tests/site.js        # the static site's answers: web/site.js against Rust's, from tests/fixtures/site_case.js, and the pieces its walks lean on
 $JSC web/tests/sitepage.js    # a site's page: the header's facts and link, the tab's title, the node an address names, the Code tab's text and notes
+$JSC web/tests/yamlsync.js    # Update YAML: what a model's YAML gains, loses and has retyped from the catalog, on the file's own text with its comments, line endings and BOM, and what it refuses
 ```
 
 The Snowflake script has tests of its own, against a fake connector and a fake
