@@ -3586,6 +3586,13 @@ of its own, and each panel updates the tour, its page under
       dotted query; a plain word is always a column name.
     - A column search replaced by the next keystroke is not cancelled on the
       server; each is a short scan of what is already in memory.
+62. **What collin's download on Windows left (0186).**
+    - "Install another collin version…" (by tag) still types cargo on Windows,
+      where it fails the same way; a release asset per tag could be fetched
+      into its own folder, with the checks 0128 holds an install to.
+    - The command is covered by a Posix run against a folder and by string for
+      PowerShell; it has not yet run on a Windows machine with the
+      `windows-gnu` toolchain.
 
 Left by the pull requests of 2026-10-14, each a known limit written in
 its pull request, unranked:

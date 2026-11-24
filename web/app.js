@@ -6801,7 +6801,9 @@ function shortVersion(v) {
    older than this dbt-edith accepts, with --force so a collin installed any
    other way is replaced, and otherwise a check, which cargo answers by
    rebuilding when GitHub has a newer commit and by "already installed" when it
-   does not. dbt-edith itself never asks GitHub (0043). */
+   does not. dbt-edith itself never asks GitHub (0043). On Windows the command
+   downloads collin.exe from the latest release instead, which `cl.download`
+   says (0186): the check is then a download of the latest, hash-checked. */
 function collinUpdateRow(cl, tool) {
   if (!cl || !cl.found || tool !== 'collin') return null;
   // A version installed side by side is pinned to its tag: there is nothing
@@ -6813,7 +6815,14 @@ function collinUpdateRow(cl, tool) {
     return { label: 'Update collin', urgent: true, sub: v ? `${v}, needs ${cl.wants}` : `needs ${cl.wants}`, command: cl.update,
       title: `This dbt-edith expects collin ${cl.wants} or later, and the one found `
         + (v ? `is ${cl.version}.` : `gives no version, so it is older than ${cl.wants}.`)
-        + '\nClick to type the command that updates it into the terminal.' };
+        + (cl.download
+          ? '\nClick to type the command into the terminal that downloads the latest collin.exe, checks its SHA-256 and puts it in place of the one found.'
+          : '\nClick to type the command that updates it into the terminal.') };
+  }
+  if (cl.download) {
+    return { label: 'Download the latest collin', urgent: false, sub: v, command: cl.install,
+      title: `collin ${cl.version}.\nClick to type the command into the terminal that downloads collin.exe from the latest release, `
+        + 'checks its SHA-256 and puts it in place of this one.' };
   }
   return { label: 'Check for a newer collin', urgent: false, sub: v, command: cl.install,
     title: `collin ${cl.version}.\nClick to type the install command into the terminal: cargo rebuilds collin when `
@@ -6865,14 +6874,15 @@ function sourceLabel(src) {
 /* The tools the menu offers, in its order. A function rather than a constant,
    because the harness evaluates this part of the file and a const does not
    outlive its eval. `missing` is what a greyed entry says. */
-function lineageToolDefs() {
+function lineageToolDefs(download) {
   return [
     { tool: 'fusion', label: 'Fusion',
       missing: 'No column_lineage.fusion.json beside the manifest. dbt Fusion keeps its lineage as parquet under '
         + 'target/index/, which nothing here converts yet.' },
     { tool: 'collin', label: 'Collin', alpha: true,
       missing: 'No column_lineage.collin.json beside the manifest, and collin is not installed. '
-        + 'Click to type the command that installs it into the terminal.' },
+        + (download ? 'Click to type the command that downloads collin.exe from its latest release into the terminal.'
+          : 'Click to type the command that installs it into the terminal.') },
     { tool: 'snowflake', label: 'Snowflake', alpha: true, missing: '' },
   ];
 }
@@ -6887,7 +6897,8 @@ function lineageToolDefs() {
 function lineageTools(sources, active, live, snowflake, cl) {
   const tools = [];
   const taken = new Set();
-  for (const def of lineageToolDefs()) {
+  const download = !!(cl && cl.download);
+  for (const def of lineageToolDefs(download)) {
     const snow = def.tool === 'snowflake';
     if (snow && !snowflake) continue;
     const src = sources.find((s) => s.tool === def.tool) || null;
@@ -6902,7 +6913,7 @@ function lineageTools(sources, active, live, snowflake, cl) {
     if (collin && !src && installed) {
       title = 'Runs collin over the compiled SQL, which writes column_lineage.collin.json.';
     } else if (collin && !src && cl && cl.refused) {
-      title = `${collinRefusedNote(cl)}\nClick to type the command that installs it into the terminal.`;
+      title = `${collinRefusedNote(cl)}\nClick to type the command that ${download ? 'downloads collin.exe from its latest release' : 'installs it'} into the terminal.`;
     } else if (snow) {
       title = 'Fetches a column\'s lineage from Snowflake when you click it, under your dbt profile.'
         + (src ? `\nAdds to ${src.file}` : '');
@@ -7153,7 +7164,9 @@ async function switchLineage(body) {
 
 /* Types the command that installs collin into the terminal and leaves it
    there: building it is the user's decision, and their cargo's download, never
-   this server's (0042). */
+   this server's (0042). On Windows it is a download of the release's collin.exe
+   by the user's own shell, checked against its SHA-256, which `cl.download`
+   says (0186). */
 function installCollin(from) {
   if (S.collin && S.collin.install) sendToTerminal(S.collin.install, false, null, from);
 }

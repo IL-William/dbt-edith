@@ -44,6 +44,101 @@ const REPO: &str = "https://github.com/IL-William/dbt-collin";
 /// another source, a local path or a copied binary, where it is.
 pub const UPDATE: &str = "cargo install --locked --force --git https://github.com/IL-William/dbt-collin collin-cli";
 
+/// The file every collin release carries for Windows (0186), named for its
+/// target and not its version, so `releases/latest/download/` resolves it.
+/// Its hash is the line ending in this name in the release's `SHA256SUMS`.
+pub const WINDOWS_ASSET: &str = "collin-x86_64-pc-windows-msvc.exe";
+
+/// What the download prints once collin is in place. No quote, `$` or backtick,
+/// as `update::DONE`: it sits inside a string in either shell.
+const DOWNLOADED: &str = "collin.exe is in place. Pick Collin, or Regenerate, to run it.";
+
+/// The command that downloads collin from the latest release to `target`,
+/// checks it against the release's SHA-256 and puts it in place of the file
+/// there when `exists` (0186). On Windows the cargo install cannot work: the
+/// toolchain there often targets `-gnu` without a C compiler, which collin's
+/// dependencies need, so the release's own `.exe` is fetched by the user's
+/// shell, as dbt-edith's own update is (0123). None for a shell that is
+/// neither Posix nor PowerShell, or a path neither reads inside quotes.
+pub fn download(target: &Path, exists: bool, shell: Option<crate::update::Shell>) -> Option<String> {
+    download_from(&format!("{REPO}/releases/latest/download"), target, exists, shell)
+}
+
+/// `base` is a parameter for the tests, which read a folder through `file://`.
+fn download_from(base: &str, target: &Path, exists: bool, shell: Option<crate::update::Shell>) -> Option<String> {
+    let fetch = crate::update::Fetch { sums: true, done: DOWNLOADED, replaces: exists, keep_old: false };
+    let path = crate::update::quotable(target, true)?;
+    Some(crate::update::compose_fetch(shell?, base, WINDOWS_ASSET, &path, &fetch))
+}
+
+/// What the page types to get collin: the cargo commands, or on Windows the
+/// download, and whether it is the download (0186).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Get {
+    pub install: String,
+    pub update: String,
+    pub download: bool,
+}
+
+impl Get {
+    pub fn cargo() -> Get {
+        Get { install: INSTALL.to_string(), update: UPDATE.to_string(), download: false }
+    }
+}
+
+/// The commands for this machine. On Windows the download replaces the default
+/// collin found, and otherwise lands beside dbt-edith as `collin.exe`, which
+/// is where a later search finds it first; a file already there that was passed
+/// over (git tracks it) is not written over, so the
+/// cargo commands stay. Everywhere else, and where no download can be typed
+/// (a shell that is neither Posix nor PowerShell, a path neither reads in
+/// quotes), they are the cargo commands. `windows` is a parameter for the
+/// tests.
+pub fn get(windows: bool, default: Option<&Path>, beside: Option<&Path>, shell: Option<crate::update::Shell>) -> Get {
+    if !windows {
+        return Get::cargo();
+    }
+    let target = match (default, beside) {
+        (Some(found), _) => Some((found.to_path_buf(), true)),
+        (None, Some(dir)) => Some(dir.join("collin.exe")).filter(|p| !p.exists()).map(|p| (p, false)),
+        (None, None) => None,
+    };
+    match target.and_then(|(path, exists)| download(&path, exists, shell)) {
+        Some(command) => Get { install: command.clone(), update: command, download: true },
+        None => Get::cargo(),
+    }
+}
+
+/// What a command-line message says to get collin: the cargo command
+/// everywhere but Windows, where it is the file to download and where to save
+/// it (0186). A new one is saved beside dbt-edith or on the PATH.
+pub fn install_hint() -> String {
+    install_hint_on(cfg!(windows))
+}
+
+fn install_hint_on(windows: bool) -> String {
+    hint(INSTALL, "as collin.exe beside dbt-edith.exe or on the PATH", windows)
+}
+
+/// The same for an update, where `found` is the collin that was run and is
+/// printed with the message: a copy saved elsewhere would never run while this
+/// one is there, since beside dbt-edith is searched first, so it is saved over it.
+pub fn update_hint(found: &str) -> String {
+    update_hint_on(found, cfg!(windows))
+}
+
+fn update_hint_on(found: &str, windows: bool) -> String {
+    hint(UPDATE, &format!("over {found}"), windows)
+}
+
+fn hint(cargo: &str, save: &str, windows: bool) -> String {
+    if windows {
+        format!("download {REPO}/releases/latest/download/{WINDOWS_ASSET} and save it {save}")
+    } else {
+        cargo.to_string()
+    }
+}
+
 /// The oldest collin this dbt-edith accepts. Raised when dbt-edith relies on
 /// something a later collin does: 0.8.0 is the first to list its roots, the
 /// columns a literal sets, which the `generated` badge is read from (0096).
@@ -1836,5 +1931,163 @@ pub(crate) mod tests {
             .await;
         assert_eq!(status.state, "failed");
         assert_eq!(loaded.load(Ordering::SeqCst), 0);
+    }
+
+    /// The release's `SHA256SUMS` as `sha256sum` writes it, the asset one line
+    /// among others.
+    fn release_with(release: &Path, exe: &str) -> String {
+        std::fs::create_dir_all(release).unwrap();
+        std::fs::write(release.join(WINDOWS_ASSET), exe).unwrap();
+        let out = Command::new("sha256sum").arg(release.join(WINDOWS_ASSET)).output().expect("sha256sum is installed");
+        let hash = String::from_utf8_lossy(&out.stdout).split(' ').next().unwrap().to_string();
+        std::fs::write(
+            release.join("SHA256SUMS"),
+            format!(
+                "{}  collin-x86_64-unknown-linux-gnu\n{hash}  {WINDOWS_ASSET}\n{}  {WINDOWS_ASSET}.zip\n",
+                "1".repeat(64),
+                "2".repeat(64)
+            ),
+        )
+        .unwrap();
+        hash
+    }
+
+    /// The command is run through `sh` against a folder through `file://`,
+    /// with `sha256sum` (macOS has it from `coreutils`): a fresh install puts
+    /// the file where there was none, a swap replaces the one there and leaves
+    /// no `.old`, and a hash that is not the published one leaves the old file
+    /// and says so.
+    #[test]
+    fn sh_downloads_collin_checked_against_the_sums_of_the_release() {
+        use crate::update::Shell;
+        let d = dir("download");
+        let (release, bin) = (d.join("release"), d.join("bin"));
+        std::fs::create_dir_all(&bin).unwrap();
+        let hash = release_with(&release, "the new collin");
+        let target = bin.join("collin.exe");
+        let base = format!("file://{}", release.display());
+        let run = |exists: bool| {
+            let command = download_from(&base, &target, exists, Some(Shell::Posix)).unwrap();
+            let out = Command::new("sh").args(["-c", &command]).output().unwrap();
+            (out.status.success(), String::from_utf8_lossy(&out.stdout).to_string())
+        };
+        let tidy = |why: &str| {
+            for left in ["collin.exe.new", "collin.exe.sha256", "collin.exe.old"] {
+                assert!(!bin.join(left).exists(), "{why}: {left} is gone");
+            }
+        };
+
+        let (ok, out) = run(false);
+        assert!(ok && out.trim_end().ends_with(DOWNLOADED), "{out}");
+        assert_eq!(std::fs::read_to_string(&target).unwrap(), "the new collin");
+        tidy("a fresh install");
+
+        std::fs::write(&target, "the old collin").unwrap();
+        let (ok, out) = run(true);
+        assert!(ok && out.trim_end().ends_with(DOWNLOADED), "{out}");
+        assert_eq!(std::fs::read_to_string(&target).unwrap(), "the new collin");
+        tidy("a swap leaves nothing of the old one: collin is not running");
+
+        // A hash that is not the file's changes nothing.
+        std::fs::write(&target, "the old collin").unwrap();
+        let sums = std::fs::read_to_string(release.join("SHA256SUMS")).unwrap();
+        let line = sums.lines().find(|l| l.ends_with(&format!("  {WINDOWS_ASSET}"))).unwrap().to_string();
+        std::fs::write(release.join("SHA256SUMS"), sums.replace(&line, &format!("{}  {WINDOWS_ASSET}", "0".repeat(64)))).unwrap();
+        let (ok, out) = run(true);
+        assert!(!ok && !out.contains(DOWNLOADED), "{out}");
+        assert!(out.contains("The download does not match its SHA-256, so nothing was replaced."), "{out}");
+        assert_eq!(std::fs::read_to_string(&target).unwrap(), "the old collin");
+        tidy("a hash that is not the published one");
+
+        // The line ending in the asset is the one read, not its neighbours:
+        // the `.zip` line carries the right hash here, and is not it.
+        std::fs::write(release.join("SHA256SUMS"), format!("{hash}  elsewhere.exe\n{hash}  {WINDOWS_ASSET}.zip\n")).unwrap();
+        let (ok, out) = run(true);
+        assert!(!ok && !out.contains(DOWNLOADED), "a sums file with no line for the asset is a failure: {out}");
+        assert_eq!(std::fs::read_to_string(&target).unwrap(), "the old collin");
+        tidy("no line for the asset");
+
+        std::fs::remove_file(release.join("SHA256SUMS")).unwrap();
+        let (ok, out) = run(false);
+        assert!(!ok && !out.contains(DOWNLOADED), "{out}");
+        assert_eq!(std::fs::read_to_string(&target).unwrap(), "the old collin", "nothing was put in place");
+        tidy("sums that are not there");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn the_download_is_typed_for_either_shell_and_for_a_path_that_exists_or_not() {
+        use crate::update::Shell;
+        assert!(!DOWNLOADED.contains(['\'', '"', '$', '`', '\\']), "it sits inside a string in either shell");
+        let t = Path::new("C:/Users/me/bin/collin.exe");
+        let url = format!("{REPO}/releases/latest/download");
+
+        let sh = download(t, true, Some(Shell::Posix)).unwrap();
+        assert!(sh.contains(&format!("\"{url}/{WINDOWS_ASSET}\"")) && sh.contains(&format!("\"{url}/SHA256SUMS\"")), "{sh}");
+        assert!(sh.contains(&format!("grep ' {WINDOWS_ASSET}$' \"C:/Users/me/bin/collin.exe.sha256\" | cut -d' ' -f1")), "{sh}");
+        assert!(sh.contains("mv -f \"C:/Users/me/bin/collin.exe\" \"C:/Users/me/bin/collin.exe.old\""), "{sh}");
+        assert!(sh.contains("{ rm -f \"C:/Users/me/bin/collin.exe.old\"; true; }"), "the old file goes once the new one is in: {sh}");
+        assert!(sh.ends_with(&format!("&& printf '\\n%s\\n' '{DOWNLOADED}'")), "{sh}");
+        let fresh = download(t, false, Some(Shell::Posix)).unwrap();
+        assert!(!fresh.contains("collin.exe.old"), "nothing steps aside when nothing is there: {fresh}");
+        assert!(fresh.contains("{ mv -f \"C:/Users/me/bin/collin.exe.new\" \"C:/Users/me/bin/collin.exe\" || "), "{fresh}");
+
+        let ps = download(t, true, Some(Shell::PowerShell)).unwrap();
+        assert!(ps.starts_with("& { $ErrorActionPreference='Continue'; "), "{ps}");
+        assert!(ps.contains(&format!("-Uri \"{url}/SHA256SUMS\" -OutFile \"C:/Users/me/bin/collin.exe.sha256\"")), "{ps}");
+        assert!(ps.contains(&format!("Get-Content -ErrorAction Continue -LiteralPath \"C:/Users/me/bin/collin.exe.sha256\" | Where-Object {{ $_ -like \"* {WINDOWS_ASSET}\" }}")), "{ps}");
+        let kept = ps.find("Move-Item -ErrorAction Continue -Force -LiteralPath \"C:/Users/me/bin/collin.exe.new\"").unwrap();
+        assert!(ps[kept..].contains(&format!("Remove-Item -Force -ErrorAction SilentlyContinue -LiteralPath \"C:/Users/me/bin/collin.exe.old\"; Write-Host \"\"; Write-Host \"{DOWNLOADED}\"")), "{ps}");
+        let fresh = download(t, false, Some(Shell::PowerShell)).unwrap();
+        assert!(!fresh.contains("collin.exe.old"), "{fresh}");
+        assert!(
+            fresh.contains(&format!(
+                "-Destination \"C:/Users/me/bin/collin.exe\"; if ($?) {{ Write-Host \"\"; Write-Host \"{DOWNLOADED}\" }} "
+            )),
+            "{fresh}"
+        );
+        assert_eq!(fresh.matches('{').count(), fresh.matches('}').count(), "braces balance: {fresh}");
+        assert_eq!(ps.matches('{').count(), ps.matches('}').count(), "braces balance: {ps}");
+
+        assert_eq!(download(t, true, None), None, "cmd and the like get no command");
+        assert_eq!(download(Path::new("C:/Users/me/it's/collin.exe"), true, Some(Shell::Posix)), None, "a quote in the path");
+    }
+
+    #[test]
+    fn windows_gets_the_download_where_it_can_and_cargo_otherwise() {
+        use crate::update::Shell;
+        let d = dir("get");
+        let posix = Some(Shell::Posix);
+        let found = d.join("elsewhere").join("collin.exe");
+        // Off Windows, always cargo, whatever was found.
+        assert_eq!(get(false, Some(&found), Some(&d), posix), Get::cargo());
+        // On Windows the collin found is the one replaced, by install and update alike.
+        let on = get(true, Some(&found), Some(&d), posix);
+        assert!(on.download && on.install == on.update, "{on:?}");
+        assert!(on.install.contains(&format!("{}.old", crate::update::quotable(&found, true).unwrap())), "{}", on.install);
+        // None found: it lands beside dbt-edith, as a new file.
+        let fresh = get(true, None, Some(&d), posix);
+        assert!(fresh.download && !fresh.install.contains(".old"), "{}", fresh.install);
+        assert!(fresh.install.contains(&format!("{}/collin.exe.new", d.display())), "{}", fresh.install);
+        // A file already there that was passed over is never written over.
+        std::fs::write(d.join("collin.exe"), "tracked").unwrap();
+        assert_eq!(get(true, None, Some(&d), posix), Get::cargo());
+        // No folder beside, no shell the command can be typed in: cargo.
+        assert_eq!(get(true, None, None, posix), Get::cargo());
+        assert_eq!(get(true, Some(&found), Some(&d), None), Get::cargo());
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn the_command_line_names_the_file_to_download_on_windows() {
+        assert_eq!((install_hint_on(false), update_hint_on("/x/collin", false)), (INSTALL.to_string(), UPDATE.to_string()));
+        let url = format!("download {REPO}/releases/latest/download/{WINDOWS_ASSET} and save it ");
+        let new = install_hint_on(true);
+        assert_eq!(new, format!("{url}as collin.exe beside dbt-edith.exe or on the PATH"));
+        // An update is saved over the collin that ran: beside dbt-edith is
+        // searched first, so a copy anywhere else would never run.
+        let old = update_hint_on("C:/tools/collin.exe", true);
+        assert_eq!(old, format!("{url}over C:/tools/collin.exe"));
+        assert!(!new.contains("cargo") && !old.contains("cargo") && !old.contains("PATH"), "{new} {old}");
     }
 }

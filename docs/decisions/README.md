@@ -189,6 +189,7 @@ it; these files say why it is built this way, for whoever changes it next.
 | [0183](0183-the-site-carries-the-jobs-and-reads-git-where-a-job-source-lives.md) | The site carries the jobs, and reads git where a job source lives | changing what `--site` reads of the orchestrator's jobs, what the page says of a source that was not read, how a job file is linked, or which folder git is asked about besides the project's |
 | [0184](0184-columns-are-searched-from-the-palette-behind-a-chip-with-collin.md) | Columns are searched from the palette, behind a chip, with Collin picked | changing what `Cmd/Ctrl + K` finds, adding columns to its default answer, or letting a tool other than Collin search them |
 | [0185](0185-the-greyed-columns-chip-offers-collin.md) | The greyed Columns chip offers Collin | changing what the chip does while Collin is not picked, or what the box offers beside its answer |
+| [0186](0186-collin-is-downloaded-on-windows-where-cargo-cannot-build-it.md) | collin is downloaded on Windows, where cargo cannot build it | changing what the install and update entries type for collin, what a collin release carries for Windows, or how a download's hash is checked |
 
 ## Keeping these honest
 

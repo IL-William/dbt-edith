@@ -20,9 +20,16 @@ and bumps nothing.
 
 ## Unreleased
 
+## 2.29.1 - 2026-11-24
+
 - Offer Collin from the greyed Columns chip of `Cmd/Ctrl + K`: a click or Tab
   shows a row to use Collin, install it, or open the settings when it was set
   aside, and Enter picks it, so typing a column and Enter searches it (0185).
+- Get collin on Windows by downloading `collin.exe` from its latest release,
+  checked against its SHA-256, where cargo cannot build it: the install and
+  update entries type the download into the terminal, "Check for a newer collin"
+  becomes "Download the latest collin", and the command line names the file to
+  save (0186).
 
 ## 2.29.0 - 2026-11-23
 
