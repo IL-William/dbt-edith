@@ -3445,6 +3445,10 @@ span.envpill:hover { filter: none; }
 .filelink { color: var(--accent); cursor: pointer; text-decoration: none; }
 .filelink:hover { text-decoration: underline; }
 .cols .c-name { font: 12.5px var(--mono); white-space: nowrap; }
+/* The glyph after a name keeps its width while hidden, so a row does not move
+   when the pointer reaches it; the card at its narrowest uses this rule too. */
+.cols .c-yaml { display: inline-flex; vertical-align: middle; margin-left: 5px; opacity: 0; }
+.cols tr:hover .c-yaml, .cols .c-yaml:focus-visible { opacity: 1; }
 
 /* --------------------------------------------------------- query history -- */
 .history { height: 100%; display: flex; flex-direction: column; min-height: 0; }

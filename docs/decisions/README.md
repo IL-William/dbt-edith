@@ -190,6 +190,7 @@ it; these files say why it is built this way, for whoever changes it next.
 | [0184](0184-columns-are-searched-from-the-palette-behind-a-chip-with-collin.md) | Columns are searched from the palette, behind a chip, with Collin picked | changing what `Cmd/Ctrl + K` finds, adding columns to its default answer, or letting a tool other than Collin search them |
 | [0185](0185-the-greyed-columns-chip-offers-collin.md) | The greyed Columns chip offers Collin | changing what the chip does while Collin is not picked, or what the box offers beside its answer |
 | [0186](0186-collin-is-downloaded-on-windows-where-cargo-cannot-build-it.md) | collin is downloaded on Windows, where cargo cannot build it | changing what the install and update entries type for collin, what a collin release carries for Windows, or how a download's hash is checked |
+| [0187](0187-a-column-opens-at-its-line-in-its-properties-file.md) | A column opens at its line in its properties file | changing where a column's YAML glyph lands, or opening a package's YAML from the Catalog |
 
 ## Keeping these honest
 

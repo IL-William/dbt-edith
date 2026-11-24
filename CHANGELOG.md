@@ -20,12 +20,15 @@ and bumps nothing.
 
 ## Unreleased
 
+## 2.30.0 - 2026-11-24
+
 - Walk the static site's nodes with the browser's Back and Forward, each node
   visited being an entry of its history (a column is not in it).
 - Draw the lineage of the column's model from Models and from the × on the
   column chip, when a double-click on another model's column moved it.
 - Underline the values of the Catalog's stats that open something, with a dotted
   line at rest.
+- Open a column where its YAML declares it, from the Catalog's Columns tab (0187).
 
 ## 2.29.1 - 2026-11-24
 
