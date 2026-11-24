@@ -93,6 +93,104 @@ dbt-core, and
 the real warehouse types and listing the columns that exist in the warehouse but
 are not documented (shown in italics).
 
+## Update YAML
+
+When `catalog.json` lists columns for a model and its schema YAML says
+something else, Catalog > Columns has an **Update YAML** button in its tools
+row. Its tooltip counts what it would do, `+3 · −1 · 2 types`: columns the table
+has that the YAML lacks, columns the YAML declares that the table does not have,
+and types to write or replace. When the only difference is columns that declare
+no `data_type`, the tooltip ends on `types only`: such a model is offered the
+button too, but is not one whose columns disagree. It is not there for a seed, a
+snapshot, a source, an ephemeral or versioned model, one from an installed
+package, a model `catalog.json` does not list or lists with no column, or one it
+describes at a relation neither the manifest nor a `.env` file of the project
+places it at (below). Those are not compared, since their columns say nothing of
+drift.
+
+The click opens the model's properties file in the editor and changes its
+text there, in one step that Undo takes back. Nothing is saved: the tab shows
+the pencil, the lines added or changed are lit until the next edit, and a card in
+the middle of the page says what was done and ends on `save it to keep it`. The
+card is one line per reason, with the columns it holds joined, at most half the
+window high and scrolling past it; the focus is on it, so Escape closes it.
+
+- **A column the table has** is added after the one before it in the table's own
+  order, or at the top of the list when none is, as `- name:` and `data_type:`.
+  A file that sets its columns apart with a blank line has the new ones set apart
+  too. A name Snowflake kept upper-case is written lower-case, and any other
+  spelling, a quoted name, as it is. A model with no `columns:` gets the key; a
+  model the file does not hold gets its entry under `models:`.
+- **A column with no `data_type`**, or with one that holds nothing (`data_type:`,
+  `data_type: ""`, `null`), gets one, after its `name:` line or where the empty
+  key stands.
+- **A `data_type` whose base type differs** is replaced, in place and only when
+  the file still holds the type that was compared. Types are compared by base, as
+  a contract does: `varchar(100)` is `text`, `number(38,2)` is `number`, and on
+  Snowflake `int`, `decimal` and `numeric` are one base. A bare `timestamp` never
+  differs from a `timestamp_ntz`, `_ltz` or `_tz`. Another adapter's types are
+  compared as written, lower-cased, with their parameters cut.
+- **What is written** on Snowflake is `varchar` for any text type, `number` for a
+  number, `float`, and `timestamp_ntz`, `timestamp_ltz` or `timestamp_tz`; a
+  number the catalog gives with its precision is written with it. Another
+  adapter's catalog type is written lower-cased as it is.
+- **A column the table lacks** is removed whole, its comments included, and the
+  card says which of them held a description or tests, since those go with it. The
+  comments and blank lines between it and the next column stay. When it was the
+  last column of the list and none is added, `columns:` goes too.
+- **On a model whose contract is enforced**, a Snowflake number the catalog gives
+  without a precision is not written: a bare `number` in a contract is
+  `number(38,0)` and rounds decimals. The column is added without a type if it is
+  missing, and the card lists it as not typed, "read it from Snowflake".
+
+A change is made only where the text still matches. A column that has gone from
+the file, a type that is no longer the one compared, a column that has since got
+one: each is left, and the card says which and why. A column declared twice is
+listed and never merged or changed. The patch is made on the tab's own text, so a
+file open with unsaved edits is patched in them.
+
+A model's file is refused whole, with its reason, when it holds a flow-style
+`columns:` or model entry, an anchor, an alias or a merge key in the entry,
+several documents, a tab in the indentation, CR-only line breaks, a column with
+no `name`, or a `versions:` key. Edit those by hand. Every line the patch does
+not touch is kept as the editor holds it; the editor holds a file with plain line
+breaks and saves it so, as it does for any edit made in it.
+
+**Which catalog.** A catalog is often written against a deployed environment, a
+reference worth comparing with, and not against the manifest's own target. A
+model whose catalog relation is the one the manifest names is compared as such.
+Otherwise the project's `.env` files are read, those the environment menu shows
+and not the templates, backups or files hidden there. A file counts when the
+model's location depends on it: resolved under it, in full and with a schema,
+it is the relation the catalog describes (a database or alias the config leaves
+out is the manifest's), and at least one part is read from the file. A model whose location is written nowhere or literal resolves
+alike under every file, and is credited to none. The model is then compared with
+that environment's table, and the answer names the file (`.env.prod`; the first
+by name when several resolve alike, and for the project's header the one most
+models found). Only the file's name is sent. Before changing anything the button
+then says that `catalog.json` describes that environment's table, built from the
+code deployed there, which may be behind this branch: a column the branch added
+shows as a removal and one it dropped as an addition, so each removal is to be
+checked against the model's SQL. It says more when the model's code is newer than
+`catalog.json`.
+
+**Before it changes anything** the button asks, with the catalog's date, when
+`catalog.json` is older than the model's last run (its file under `target/run/`
+is newer), or when the model's table is older than its code: that file is older
+than the model, `dbt_project.yml` or a macro, or than its schema file when the
+model's contract is enforced (the YAML changes a table's columns only through
+a contract). Both are read from file times, never a clock, for one model at a
+time, and a model never run here has neither; they do not apply to a deployed
+environment's catalog, which a local run says nothing of. `Update anyway` or
+`Cancel`.
+
+When the model has no properties file, a dialog proposes `<model>.yml` beside its
+SQL; it creates it with `version: 2` and fills it in the editor as above. The new
+file is on disk from then on and stays there if its tab is closed unsaved. If
+that file already exists, or is open, no dialog is shown and nothing is
+overwritten: it is opened and the model's entry added to it. A static site has no
+button.
+
 ## Where a model lives
 
 ![The Catalog of customers with a Snowsight menu beside each Copy of its Location table, and under its jobs the last builds read from Snowflake for each environment](../shots/catalog-snowflake.png)

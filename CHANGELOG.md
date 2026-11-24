@@ -20,6 +20,10 @@ and bumps nothing.
 
 ## Unreleased
 
+- Update a model's schema YAML from the catalog: a button in Catalog > Columns
+  adds the columns the table has, types them and drops the ones it lacks, in the
+  editor for you to review and save (0188).
+
 ## 2.30.0 - 2026-11-24
 
 - Walk the static site's nodes with the browser's Back and Forward, each node

@@ -3599,6 +3599,48 @@ of its own, and each panel updates the tour, its page under
       `history.replaceState([up, down], ...)` on the entry being left, and read
       that state back in the `popstate` handler to set the depth before
       `focusNode`. A column is not in an entry, by choice.
+64. **What Update YAML left (0188).**
+    - **Reports and Snowflake.** The button is on one model's Columns tab. A bulk
+      update of a folder from Reports, and the columns read from Snowflake for
+      the environment pill's environment, which gives a number its precision and
+      lifts the contract trap, are the next two steps; `GET /api/yaml-sync`
+      already answers for the whole project.
+    - **Not compared:** seeds, snapshots, sources, ephemeral and versioned
+      models, and a package's models. A versioned model declares its columns per
+      version.
+    - **Types alone are a status of their own** (`untyped`), so a project that
+      declares no types does not list every model as disagreeing, but the button
+      is offered for both.
+    - **`quote: true` is not written** for a name that needs quoting in the
+      warehouse; only the name is.
+    - **The table-behind-code flag** compares the run file with the model file,
+      `dbt_project.yml` and the newest macro, and with the schema file only on a
+      model whose contract is enforced. It rises on the contract model just
+      updated, once its YAML is saved, until it is run.
+    - **The whole-project answer carries no freshness flags**: a stat or more per
+      model. A batch form is for the bulk update.
+    - **A deployed environment's catalog** is recognised through the `.env`
+      files (the first by name when several resolve to one place); a model whose
+      place no file resolves in full stays not checked, and the removals it
+      proposes are for the user to check against the SQL.
+    - **A file created for a model with no YAML** is not shown in the tree until
+      the tree is reloaded.
+    - **Duplicated column names** are listed and left; the manifest keeps only one
+      of two, so the server cannot count them.
+65. **Descriptions from precedent.** Update YAML adds a column with a name and a
+    type and no description. The description could come from where the project
+    already says it: the same column name documented in another model, or the
+    parent column through collin's lineage when it only passes one through. It
+    wants a choice among several precedents (the nearest model upstream, the
+    most common wording) and a way to show the user which one was taken, in the
+    review the patch already is; a wrong description copied across a project is
+    worse than none, which is why it is not built.
+66. **The editor saves a CRLF file with LF.** CodeMirror holds a file with
+    plain line breaks and `getValue()` joins them with `\n`, so any edit saved
+    from the editor rewrites a CRLF file's every line ending (the Git tab's diff
+    already reads around it, `diffSides`). Update YAML inherits it. It wants the
+    tab to remember the file's ending and write it back, with a mixed file kept
+    as it is; its own pull request.
 
 Left by the pull requests of 2026-10-14, each a known limit written in
 its pull request, unranked:

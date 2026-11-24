@@ -3805,6 +3805,9 @@ span.envpill:hover { filter: none; }
 }
 .notice-x:hover { color: var(--fg); }
 .notice-body { margin-top: 8px; font-size: 12.5px; line-height: 1.5; color: var(--fg-dim); }
+/* What an Update YAML did, a line each (0188). */
+.notice.sync .notice-body { white-space: pre-line; max-height: 50vh; overflow: auto; }
+.notice.sync { outline: none; }
 
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-track { background: transparent; }
@@ -3818,6 +3821,9 @@ span.envpill:hover { filter: none; }
    outline and its text twin; the outline is a rect with no fill of its own. */
 #graph .roletaglabel { font: 600 9.5px var(--mono); letter-spacing: .04em; }
 .roletag rect { fill: none; stroke-width: 1; }
+.coltools .yamlsync[hidden] { display: none; }
+/* The lines Update YAML put in, lit until the next edit (0188). */
+.cm-synced { background: var(--ok-tint); box-shadow: inset 3px 0 0 var(--ok); }
 /* Where a jump to a test landed, lit and faded (0041). */
 .cm-flash { animation: cm-flash 1.8s ease-out; }
 @keyframes cm-flash { 0%, 40% { background: rgba(var(--accent-rgb), .38); box-shadow: inset 3px 0 0 var(--accent); } 100% { background: transparent; box-shadow: none; } }

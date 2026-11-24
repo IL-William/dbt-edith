@@ -51,6 +51,7 @@ mod unused_paths;
 mod update;
 mod venv;
 mod yaml;
+mod yaml_sync;
 
 use clap::Parser;
 use std::path::{Path, PathBuf};

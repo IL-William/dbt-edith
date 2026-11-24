@@ -245,7 +245,7 @@ impl Version {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct Column {
     pub name: String,
     pub data_type: String,
@@ -259,6 +259,34 @@ pub struct Column {
     /// True when the column only exists in catalog.json, i.e. it is in the
     /// warehouse but not declared in YAML.
     pub undeclared: bool,
+    /// The column's place in the table, 1-based, as catalog.json numbers it
+    /// (`u32::MAX` when it gave none); 0 when the catalog does not list the
+    /// column. A model's only: the order a YAML update writes columns in, and
+    /// which declared ones the table lacks (0188).
+    pub index: u32,
+    /// The YAML wrote a `data_type`, which `merge_catalog` then leaves alone;
+    /// without this a declared type cannot be told from a read one (0188).
+    pub typed: bool,
+    /// The catalog's type, kept only when it is not the `data_type` held: a
+    /// column the YAML typed differently, or a twin the merge did not fill.
+    pub table_type: Option<Box<str>>,
+}
+
+/// Where the catalog found a model's table, each part None when it said
+/// nothing (0188). Its presence says the catalog lists the model at all.
+#[derive(Clone, Debug, PartialEq)]
+pub struct TableRelation {
+    pub database: Option<String>,
+    pub schema: Option<String>,
+    pub name: Option<String>,
+}
+
+/// The declared column of a name that differs from `name` only in case, which
+/// the catalog has not placed yet: the one spelled as `name` first, else any;
+/// `at`, the column the merge matched, when there is none.
+fn twin(columns: &[Column], lower: &str, name: &str, at: usize) -> usize {
+    let free = |c: &Column| !c.undeclared && c.index == 0 && c.name.to_lowercase() == lower;
+    columns.iter().position(|c| free(c) && c.name == name).or_else(|| columns.iter().position(free)).unwrap_or(at)
 }
 
 /// A node's columns by lower-cased name, each at the first column of that
@@ -352,6 +380,11 @@ pub struct Node {
     /// node says, for the chips and the column a test hangs on (0127).
     pub column_arg: String,
     pub warn: bool,
+    /// A model's contract is enforced: the types of its YAML are the table's
+    /// DDL, not a note (0188).
+    pub contract: bool,
+    /// The relation the catalog describes for a model it lists (0188).
+    pub table: Option<Box<TableRelation>>,
     /// Sources only: whether dbt would count the table as having a freshness
     /// threshold, `Some` once the manifest says so, even as `null`, and None
     /// when it says nothing, which gives no verdict (0116).
@@ -1260,12 +1293,17 @@ impl Graph {
                 raw_node
                     .columns
                     .into_values()
-                    .map(|c| Column {
-                        name: c.name,
-                        data_type: c.data_type.unwrap_or_default(),
-                        description: c.description,
-                        tests: Vec::new(),
-                        undeclared: false,
+                    .map(|c| {
+                        let data_type = c.data_type.unwrap_or_default();
+                        Column {
+                            name: c.name,
+                            typed: !data_type.is_empty(),
+                            data_type,
+                            description: c.description,
+                            tests: Vec::new(),
+                            undeclared: false,
+                            ..Column::default()
+                        }
                     })
                     .collect()
             } else {
@@ -1366,6 +1404,8 @@ impl Graph {
                 combination,
                 column_arg,
                 warn,
+                contract: raw_node.config.contract.as_ref().and_then(|c| c.get("enforced")).and_then(|e| e.as_bool()).unwrap_or(false),
+                table: None,
                 freshness,
                 settings,
                 attached: raw_node.attached_node.unwrap_or_default(),
@@ -1738,6 +1778,7 @@ impl Graph {
                     description: String::new(),
                     tests: Vec::new(),
                     undeclared: true,
+                    ..Column::default()
                 });
                 touched.push(*n);
             }
@@ -2226,9 +2267,20 @@ impl Graph {
         for (id, entry) in cat.nodes.into_iter().chain(cat.sources) {
             let Some(&i) = self.index.get(&id) else { continue };
             let node = &mut self.nodes[i as usize];
+            // A model's columns are placed in the table (0188); a source's are not compared with anything.
+            let model = node.kind == Kind::Model;
+            if model {
+                let m = entry.metadata.as_ref();
+                node.table = Some(Box::new(TableRelation {
+                    database: m.and_then(|m| m.database.clone()),
+                    schema: m.and_then(|m| m.schema.clone()),
+                    name: m.and_then(|m| m.name.clone()),
+                }));
+            }
             let mut names = first_by_name(&node.columns);
             for (_, col) in entry.columns {
                 let key = col.name.to_lowercase();
+                let index = col.index.and_then(|i| u32::try_from(i).ok()).filter(|&i| i > 0).unwrap_or(u32::MAX);
                 match names.get(&key).copied() {
                     Some(at) => {
                         let existing = &mut node.columns[at];
@@ -2237,6 +2289,18 @@ impl Graph {
                         }
                         if existing.description.is_empty() {
                             existing.description = col.comment.clone().unwrap_or_default();
+                        }
+                        if model {
+                            // Two columns a quoted identifier made differ only in case each take their own: the one
+                            // the merge matched may be taken already, and then it is the twin that is placed.
+                            let to = if node.columns[at].index == 0 { at } else { twin(&node.columns, &key, &col.name, at) };
+                            let placed = &mut node.columns[to];
+                            if placed.index == 0 {
+                                placed.index = index;
+                                if placed.data_type != col.r#type {
+                                    placed.table_type = Some(col.r#type.as_str().into());
+                                }
+                            }
                         }
                     }
                     None => {
@@ -2247,6 +2311,8 @@ impl Graph {
                             description: col.comment.unwrap_or_default(),
                             tests: Vec::new(),
                             undeclared: true,
+                            index: if model { index } else { 0 },
+                            ..Column::default()
                         });
                     }
                 }
@@ -5568,6 +5634,7 @@ mod tests {
                     description: String::new(),
                     tests: Vec::new(),
                     undeclared: true,
+                    ..Column::default()
                 });
                 touched.push(*n);
             }
@@ -5656,6 +5723,7 @@ mod tests {
                         description: col.comment.unwrap_or_default(),
                         tests: Vec::new(),
                         undeclared: true,
+                        ..Column::default()
                     }),
                 }
                 touched += 1;
@@ -5725,6 +5793,7 @@ mod tests {
                     description: ["", "declared"][roll(2) as usize].to_string(),
                     tests: vec![i as u32],
                     undeclared: roll(2) == 0,
+                    ..Column::default()
                 })
                 .collect();
             if roll(2) == 0 {
