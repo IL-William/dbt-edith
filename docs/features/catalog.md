@@ -23,7 +23,13 @@ Columns with its count. Over the Columns table a field filters the columns by
 name, the number of columns kept and of columns typed inside it at the right
 (`3 of 8 · 7/8 typed`); Sort puts the columns A to Z or by their tests, and by
 their key where a key names a column of the node, a seed or a source as well as
-a model.
+a model. A YAML glyph after a column's name, shown when the row is hovered or
+focused, opens the node's properties file at that column's `- name:` line, lit
+with its description and tests, and a double click keeps the tab (in the
+Lineage space's card, where opening the file closes the panel, a click keeps
+it). A column only catalog.json lists, in italics, opens the `columns:` of its
+entry, where it can be added; a versioned model looks in its version first and
+then in the entry, and a node of a package or in a static site has no glyph.
 Each version of a versioned model is a node of its own, named as `dbt ls`
 names it, `orders.v2`, which is also what the name's copy glyph copies: a
 `--select` takes that one version. Beside the name, a chip says where it stands:

@@ -1285,6 +1285,54 @@ function macroDefLine(text, name) {
   return { line, ch: at - (before.lastIndexOf('\n') + 1) };
 }
 
+/* A properties file read as a tree, with the lookups testLine and columnLine
+   share: the children of a node, one by its key, a key's value on its line, a
+   list item by its `name:`. dbt matches a column by name whatever its case, and
+   a node by its name, so `entry` tries the exact spelling before the folded. */
+function yamlTree(text) {
+  const nodes = yamlOutline(text), lines = text.split('\n');
+  const kids = new Map();
+  nodes.forEach((n, i) => {
+    if (!kids.has(n.parent)) kids.set(n.parent, []);
+    kids.get(n.parent).push(i);
+  });
+  const under = (i) => kids.get(i) || [];
+  const key = (i, label) => (i == null ? null : under(i).find((j) => nodes[j].label === label));
+  const value = (j) => yamlLineValue(lines[nodes[j].line], nodes[j].col);
+  const named = (list, name, fold) => (list == null ? null : under(list).find((i) => {
+    const j = key(i, 'name');
+    if (j == null) return false;
+    const v = value(j);
+    return fold ? v.toLowerCase() === name.toLowerCase() : v === name;
+  }));
+  const entry = (list, name) => {
+    const i = named(list, name, false);
+    return i != null ? i : named(list, name, true);
+  };
+  return { nodes, lines, under, key, value, named, entry };
+}
+
+/* The entry of a properties file that declares a node, by the name the graph
+   gives it: under one of the declaring lists, else a table under its source
+   when the name is `source.table`. Null when the file does not declare it. */
+function yamlHostEntry(tree, host) {
+  const { nodes, under, key, entry } = tree;
+  const tops = under(-1);
+  let found = null;
+  for (const top of tops) {
+    if (found == null && DECLARING_LISTS.has(nodes[top].label)) found = entry(top, host);
+  }
+  const dot = host.indexOf('.');
+  if (found == null && dot > 0) {
+    for (const top of tops) {
+      if (found != null || nodes[top].label !== 'sources') continue;
+      const src = entry(top, host.slice(0, dot));
+      if (src != null) found = entry(key(src, 'tables'), host.slice(dot + 1));
+    }
+  }
+  return found;
+}
+
 /* Where a data test is declared in a properties file (0041). The manifest
    gives a test no line, so it is looked for over the buffer: under the entry
    of `t.host`, the node whose YAML declares it, in the tests of its column,
@@ -1296,40 +1344,9 @@ function macroDefLine(text, name) {
    item's last line, its arguments included, and the line itself otherwise. */
 function testLine(text, t) {
   if (!t || !t.host || !t.test_name) return null;
-  const nodes = yamlOutline(text), lines = text.split('\n');
-  const kids = new Map();
-  nodes.forEach((n, i) => {
-    if (!kids.has(n.parent)) kids.set(n.parent, []);
-    kids.get(n.parent).push(i);
-  });
-  const under = (i) => kids.get(i) || [];
-  const key = (i, label) => (i == null ? null : under(i).find((j) => nodes[j].label === label));
-  const value = (j) => yamlLineValue(lines[nodes[j].line], nodes[j].col);
-  // dbt matches a column by name whatever its case, and a node by its name.
-  const named = (list, name, fold) => (list == null ? null : under(list).find((i) => {
-    const j = key(i, 'name');
-    if (j == null) return false;
-    const v = value(j);
-    return fold ? v.toLowerCase() === name.toLowerCase() : v === name;
-  }));
-  const entry = (list, name) => {
-    const i = named(list, name, false);
-    return i != null ? i : named(list, name, true);
-  };
-  const tops = under(-1);
-  let host = null;
-  for (const top of tops) {
-    if (host == null && DECLARING_LISTS.has(nodes[top].label)) host = entry(top, t.host);
-  }
-  // A source is `source.table` in the graph, a table under its source here.
-  const dot = t.host.indexOf('.');
-  if (host == null && dot > 0) {
-    for (const top of tops) {
-      if (host != null || nodes[top].label !== 'sources') continue;
-      const src = entry(top, t.host.slice(0, dot));
-      if (src != null) host = entry(key(src, 'tables'), t.host.slice(dot + 1));
-    }
-  }
+  const tree = yamlTree(text);
+  const { nodes, under, key, value, named } = tree;
+  const host = yamlHostEntry(tree, t.host);
   if (host == null) return null;
 
   const testsOf = (i) => {
@@ -1368,6 +1385,73 @@ function testLine(text, t) {
     return at(mine != null ? mine : found[0], true);
   }
   return at([testsOf(col), col, testsOf(host), host].find((i) => i != null));
+}
+
+/* Whether two versions are the same one, as dbt reads them: `v: 2` is a number
+   in the YAML and "2" the text the manifest sends, and `2.0` is a 2 too. */
+function sameVersion(a, b) {
+  if (a === b) return true;
+  return a !== '' && b !== '' && !Number.isNaN(Number(a)) && Number(a) === Number(b);
+}
+
+/* Where a column is declared in a properties file (0187), found over the buffer
+   like a test: `c = { host, version, column }`, `host` being the node's name
+   without its version. In a versioned model the version's own `columns:` come
+   first and the entry's after them, as dbt inherits those under `include`. A
+   column matches by `name:`, its exact spelling before any case. Found, it
+   lands on its `name` key and `end` is the item's last line, trailing blank
+   and comment lines left out, so its description and tests are lit with it.
+   Not found, because it is undeclared or written another way, the nearest
+   thing there is: the version's columns, the entry's, the version, the entry,
+   `end` being that line. Nothing when the entry is not there. */
+function columnLine(text, c) {
+  if (!c || !c.host) return null;
+  const tree = yamlTree(text);
+  const { nodes, lines, under, key, value, entry } = tree;
+  const host = yamlHostEntry(tree, c.host);
+  if (host == null) return null;
+
+  let ver = null;
+  if (c.version) {
+    ver = under(key(host, 'versions')).find((i) => {
+      const v = key(i, 'v');
+      return v != null && sameVersion(value(v), String(c.version));
+    });
+    if (ver === undefined) ver = null;
+  }
+  const lists = [ver != null ? key(ver, 'columns') : null, key(host, 'columns')];
+  if (c.column) {
+    for (const list of lists) {
+      // The exact spelling first, so a file declaring both `ID` and `id`
+      // lands each on its own.
+      const item = entry(list, c.column);
+      if (item == null) continue;
+      const n = nodes[key(item, 'name')];
+      // An item's range runs to the next node, so the blank lines and
+      // comments that follow it are drawn back out of the flash.
+      let end = nodes[item].endLine;
+      while (end > n.line && /^\s*(#.*)?$/.test(lines[end])) end--;
+      return { line: n.line, ch: n.col, end };
+    }
+  }
+  const near = nodes[[lists[0], lists[1], ver, host].find((i) => i != null)];
+  return { line: near.line, ch: near.col, end: near.line };
+}
+
+/* The YAML file a column can be opened in, and nothing where there is none to
+   open: in a site, which has no file to read, in a package, whose files `dbt
+   deps` rewrites (and whose `yml` the server does not place under
+   dbt_packages/, so the node's package says it too), and for a node declared
+   by no YAML. A source is its own YAML; a model's is its patch file. */
+function columnYamlFile(n, project, site) {
+  if (site || !n) return '';
+  if (project && n.package && n.package !== project) return '';
+  // Not known to be ours without a project name: a package's file is on disk
+  // under dbt_packages/ all the same.
+  if (n.file && inPackage(n.file)) return '';
+  const file = n.yml || n.file || '';
+  if (!file || inPackage(file) || !/\.ya?ml$/i.test(file)) return '';
+  return file;
 }
 
 /* Whether a file defines a macro, a generic test or a materialization: the
@@ -1740,33 +1824,52 @@ async function openVarDef(t) {
   flashLines(at.line, at.line);
 }
 
-/* A generic test opened where it is declared (0041): its properties file, at
-   the item `testLine` finds under its host, even when that file is the one
-   shown. `pin` keeps the tab, as a double click does; `focus` false leaves the
-   keyboard on the canvas a click came from. A second click on the test the
-   cursor already sits on, the first half of a double click among them, is no
-   new place to come back to, so it records none. */
-async function openTest(t, { pin = false, focus = true } = {}) {
-  if (S.site || !t || !t.file) return;
-  const spot = (f) => {
-    if (!f || !f.doc) return null;
-    const text = f.doc.getValue();
-    return text.length <= OUTLINE_MAX ? testLine(text, t) : null;
-  };
-  const there = S.active === t.file && S.cm ? spot(S.open.get(t.file)) : null;
+/* A file opened on a spot found in its text, which `spot` looks for in an open
+   file (null for none): shared by a test (0041) and a column (0187). `pin`
+   keeps the tab, as a double click does; `focus` false leaves the keyboard on
+   the canvas a click came from. A second jump to the spot the cursor already
+   sits on, the first half of a double click among them, is no new place to
+   come back to, so it records none. */
+async function openLanding(file, spot, { pin = false, focus = true } = {}) {
+  const there = S.active === file && S.cm ? spot(S.open.get(file)) : null;
   const cur = there && S.cm.getCursor();
   if (!(cur && cur.line === there.line && cur.ch === there.ch)) pushJump({ pin });
-  await openFile(t.file, { focusLineage: false, preview: !pin });
-  revealInTree(t.file);
-  const f = S.open.get(t.file);
-  if (S.active !== t.file || !f || !f.doc) return;           // it could not be opened
+  await openFile(file, { focusLineage: false, preview: !pin });
+  revealInTree(file);
+  const f = S.open.get(file);
+  if (S.active !== file || !f || !f.doc) return;           // it could not be opened
   const at = spot(f);
   if (!at) return;
   gotoPos(at.line, at.ch, focus);
-  // In the upper third rather than at an edge, its arguments below it.
+  // In the upper third rather than at an edge, the rest of it below.
   const third = S.cm.getScrollInfo().clientHeight / 3;
   S.cm.scrollIntoView({ from: { line: at.line, ch: 0 }, to: { line: at.line, ch: 0 } }, third);
   flashLines(at.line, at.end);
+}
+
+/* A generic test opened where it is declared (0041): its properties file, at
+   the item `testLine` finds under its host, even when that file is the one
+   shown. */
+async function openTest(t, { pin = false, focus = true } = {}) {
+  if (S.site || !t || !t.file) return;
+  return openLanding(t.file, (f) => {
+    if (!f || !f.doc) return null;
+    const text = f.doc.getValue();
+    return text.length <= OUTLINE_MAX ? testLine(text, t) : null;
+  }, { pin, focus });
+}
+
+/* A column opened where its YAML declares it (0187), or where it could be
+   added when it is undeclared, in the node's properties file. */
+async function openYamlColumn(n, c, { pin = false } = {}) {
+  const file = columnYamlFile(n, S.meta && S.meta.project, S.site);
+  if (!file) return;
+  const want = { host: versionBase(n), version: n.version || '', column: c.name };
+  return openLanding(file, (f) => {
+    if (!f || !f.doc) return null;
+    const text = f.doc.getValue();
+    return text.length <= OUTLINE_MAX ? columnLine(text, want) : null;
+  }, { pin });
 }
 
 /* Lines lit for a moment, then faded, so the eye finds where a jump landed
@@ -10773,7 +10876,7 @@ function sendToTerminal(cmd, run, typed, from) {
    for any other node. Pure, so the harness reads it without a DOM. */
 function versionChip(n) {
   if (!n || !n.version) return null;
-  const base = n.name.endsWith('.v' + n.version) ? n.name.slice(0, -(n.version.length + 2)) : n.name;
+  const base = versionBase(n);
   const latest = n.latest_version ? 'v' + n.latest_version : '';
   const reaches = latest ? `ref('${base}') reaches ${latest}` : `the manifest names no latest version of ${base}`;
   if (n.version_state === 'latest') {
@@ -10784,6 +10887,12 @@ function versionChip(n) {
     text: latest ? `${state} · latest ${latest}` : state,
     title: `${reaches}; ref('${base}', v=${n.version}) reaches this one.`,
   };
+}
+
+/* A versioned model's name without its `.v<version>`: the name its YAML entry
+   carries and a ref() naming no version writes. */
+function versionBase(n) {
+  return n.version && n.name.endsWith('.v' + n.version) ? n.name.slice(0, -(n.version.length + 2)) : n.name;
 }
 
 /* The words after the name: the materialization and the schema, as the hover
@@ -19097,7 +19206,7 @@ function columnCountWidth(total, typed, filtering) {
   return filtering ? columnCountText(total, total, typed, true).length + 'ch' : '';
 }
 
-function catalogColumns(body, n) {
+function catalogColumns(body, n, inCard) {
   if (!n.columns.length) {
     if (S.colReveal === n.id && S.dock === 'catalog') S.colReveal = '';
     const p = document.createElement('p');
@@ -19237,6 +19346,7 @@ function catalogColumns(body, n) {
   };
   const rows = [];
   let focused = null;
+  const yamlFile = columnYamlFile(n, S.meta && S.meta.project, S.site);
   for (const c of cols) {
     const tr = document.createElement('tr');
     if (c.undeclared) tr.className = 'c-undeclared';
@@ -19251,6 +19361,24 @@ function catalogColumns(body, n) {
       name.append(Object.assign(document.createElement('span'), {
         className: tag.dashed ? 'keytag dashed' : 'keytag', textContent: tag.text, title: tag.title,
       }));
+    }
+    if (yamlFile) {
+      // After the tags, and outside the filter's rewrite of the name span. The
+      // row's own click opens the lineage, so this one stops short of it.
+      const yml = document.createElement('button');
+      yml.type = 'button';
+      yml.className = 'icon c-yaml';
+      yml.innerHTML = YML_ICON;
+      yml.setAttribute('aria-label', `Open ${c.name} in ${yamlFile}`);
+      yml.title = c.undeclared
+        ? `not declared in YAML: open ${n.name} in ${yamlFile} to add it there`
+        : `open where ${yamlFile} declares ${c.name}`;
+      // In the Lineage space's card, opening a file closes the panel, so a
+      // double click's second click would fall through to what lies beneath:
+      // one click keeps the tab there and no double click is bound.
+      yml.addEventListener('click', (e) => { e.stopPropagation(); openYamlColumn(n, c, { pin: inCard }); });
+      if (!inCard) yml.addEventListener('dblclick', (e) => { e.stopPropagation(); openYamlColumn(n, c, { pin: true }); });
+      name.append(yml);
     }
     rows.push({ tr, name: text, c });
     if (c.undeclared) name.title = 'in the warehouse but not declared in YAML';
