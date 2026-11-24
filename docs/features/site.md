@@ -207,7 +207,9 @@ and the status bar's venv, environment, branch, shell and update.
   warns on stderr. The page never says that no job runs a node when it did not
   open the file that would say.
 - **The address** names the node on screen, `index.html#model.shop.orders`, so a
-  link to it opens on it.
+  link to it opens on it. Each node visited is an entry of the browser's history,
+  so Back and Forward walk the nodes in the order they were visited. A column is
+  not in the address: drawing one adds no entry.
 - **The theme** is kept in the browser, per browser.
 
 ## What is not in it

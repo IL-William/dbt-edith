@@ -20,6 +20,13 @@ and bumps nothing.
 
 ## Unreleased
 
+- Walk the static site's nodes with the browser's Back and Forward, each node
+  visited being an entry of its history (a column is not in it).
+- Draw the lineage of the column's model from Models and from the × on the
+  column chip, when a double-click on another model's column moved it.
+- Underline the values of the Catalog's stats that open something, with a dotted
+  line at rest.
+
 ## 2.29.1 - 2026-11-24
 
 - Offer Collin from the greyed Columns chip of `Cmd/Ctrl + K`: a click or Tab

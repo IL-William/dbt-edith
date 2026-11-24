@@ -258,6 +258,9 @@ and draws fewer than the cell counts, with a button to draw up to 3000 (see
 the indirect edges below). With no edges and Snowflake not picked,
 nothing changes: the Columns table is exactly as it was and the Columns switch
 stays disabled.
+Models, or the × on the column's chip, draws the lineage of the model whose
+column is on screen, which a double-click on the column box of another model
+changes.
 
 **The tag in a column box says what produced it**, read off the edges into
 it: their role, or `mixed` when two roles meet there. A column nothing feeds

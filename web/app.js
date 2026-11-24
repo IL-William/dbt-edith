@@ -5550,10 +5550,16 @@ async function focusNode(id, { open = false, keepDepth = false } = {}) {
   S.colFocus = null;
   S.colDraw++;                                // a column answer still on its way is not drawn over this
   leaveColumnWait();
-  // A site's address names the node, so a link to it opens on it. Storage and the address bar can
-  // be refused where the file is opened from, and then there is simply no link.
+  // A site's address names the node, so a link to it opens on it, and each node visited is an entry
+  // that Back returns to (a column is not in it). Storage and the address bar can be refused where
+  // the file is opened from, and then there is simply no link.
   if (S.site) {
-    try { history.replaceState(null, '', siteHash(id)); } catch { /* no link to this node */ }
+    try {
+      const known = (node) => { try { EdithSite.number(node); return true; } catch { return false; } };
+      const step = siteAddressStep(location.hash, id, known);
+      if (step === 'push') history.pushState(null, '', siteHash(id));
+      else if (step === 'replace') history.replaceState(null, '', siteHash(id));
+    } catch { /* no link to this node */ }
     // Its file is lit in the tree, as the editor's is: opened up to it, and marked selected.
     revealInTree(EdithSite.treePath(id)).catch(() => {});
   }
@@ -7200,6 +7206,13 @@ async function regenerateCollin() {
   }
 }
 
+/* The model the canvas is about, for the controls that go back to a model's lineage (Models, the
+   column chip's ×): in column mode the model whose column is on screen, which a double-click on
+   another model's column moves while S.focus still names the model the walk started from. */
+function modelOnScreen() {
+  return S.graphMode === 'column' && S.colFocus ? S.colFocus.id : S.focus;
+}
+
 /* A run that failed leaves nothing to wait for: the canvas goes back to the
    model of the column that was asked for, as it did before a column waited
    for the run. The toast says why. */
@@ -7921,8 +7934,8 @@ async function redrawLineage() {
     try { renderCatalog(await nodeDetail({ id: S.node.id })); } catch { /* gone with the last manifest */ }
   }
   if (S.graphMode === 'column' && !(S.meta && S.meta.cll_edges)) {
-    const id = S.focus || (S.colFocus && S.colFocus.id);
-    if (id) focusNode(id);
+    const id = modelOnScreen();
+    if (id) focusNode(id, { keepDepth: true });
     else { leaveColumnWait(); blankLineage(); }
   } else {
     rerender();
@@ -9381,9 +9394,9 @@ function paintMode() {
     x.type = 'button';
     x.className = 'x';
     x.textContent = '×';
-    x.title = 'back to model lineage';
+    x.title = `back to the lineage of ${nameOfId(S.colFocus.id, S.node)}`;
     x.setAttribute('aria-label', 'Leave column mode');
-    x.addEventListener('click', () => { if (S.focus) focusNode(S.focus); });
+    x.addEventListener('click', () => { const id = modelOnScreen(); if (id) focusNode(id, { keepDepth: true }); });
     chip.title = `${nameOfId(S.colFocus.id, S.node)}.${S.colFocus.column}`;
     chip.append(b, x);
   }
@@ -9470,7 +9483,7 @@ function relinkTools() {
     if (b.dataset.mode === 'select') { openSelection(); return; }
     emptyHint('Select a model to see its lineage.');
     if (b.dataset.mode === 'column' && S.colFocus) focusColumn(S.colFocus.id, S.colFocus.column);
-    else if (S.focus) focusNode(S.focus);
+    else if (modelOnScreen()) focusNode(modelOnScreen(), { keepDepth: true });
     else blankLineage();
   }));
 
@@ -23050,6 +23063,18 @@ function siteHashId(hash) {
 
 function siteHash(id) { return '#' + encodeURIComponent(id); }
 
+/* What focusing a node does to a site's address, given the address now. 'none': it already names the
+   node, so the move came from the address (Back, Forward, a link) and pushing again would cut the
+   forward entries. 'replace': it names no node the site has (none yet, the first focus, or one a
+   typed address got wrong, which drew nothing), and a push would leave an entry to go Back to that
+   shows nothing. 'push': any other node, so Back returns to the one left. `known` says whether the
+   site has a node, which keeps this pure. */
+function siteAddressStep(current, id, known) {
+  const named = siteHashId(current);
+  if (named === id) return 'none';
+  return named === '' || !known(named) ? 'replace' : 'push';
+}
+
 /* What the Code tab shows of one answer of /api/site/code, for the view picked (0180): the text and
    the CodeMirror mode it is read in, or a note saying why there is none. Source is Jinja over SQL,
    compiled is SQL, and a Python model is plain text in both, no mode for it being loaded. A manifest
@@ -23176,7 +23201,11 @@ async function bootSite() {
     try { EdithSite.number(id); } catch { return; }
     focusNode(id, { keepDepth: true });
   };
+  // Back and Forward between entries made with pushState fire popstate, and a fragment change typed
+  // or followed fires hashchange as well: either way the address is read, and the second call of
+  // one move finds the node already on screen.
   window.addEventListener('hashchange', fromAddress);
+  window.addEventListener('popstate', fromAddress);
   fromAddress();
 }
 
