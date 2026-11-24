@@ -83,7 +83,7 @@ WIDTH, HEIGHT = 1440, 900
 NAMES = [
     "editor", "editor-project-keys", "lineage", "lineage-export", "jobs", "catalog", "column-lineage", "collin-report",
     "search-palette", "search-files", "lineage-node", "selection-card",
-    "reports-coverage", "reports-job-order",
+    "reports-coverage", "reports-job-order", "reports-yaml",
     "catalog-location", "catalog-compiled", "terminal", "git",
     "updates", "shortcuts", "themes",
     "snowflake-history", "reports-builds", "catalog-snowflake", "catalog-clone",
@@ -845,6 +845,11 @@ class Shots:
         self.reports("joborder", "pair")
         time.sleep(1)
         self.take("reports-job-order")
+        # YAML and warehouse: the models whose YAML differs from the catalog, by folder. The tree is drawn once the answer is in.
+        self.reports("yamlsync", "Update all")
+        self.until("!!document.querySelector('#reports-view .ybtree .ybfolder')", "the YAML tree")
+        time.sleep(1)
+        self.take("reports-yaml")
         self.code()
 
         # Where a model lives in each environment: the .env files appear, and

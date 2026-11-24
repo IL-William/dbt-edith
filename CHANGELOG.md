@@ -23,6 +23,10 @@ and bumps nothing.
 - Update a model's schema YAML from the catalog: a button in Catalog > Columns
   adds the columns the table has, types them and drops the ones it lacks, in the
   editor for you to review and save (0188).
+- Update the YAML of a folder or the whole project from Reports: a YAML and
+  warehouse section lists the models whose YAML differs from catalog.json by
+  folder, and a dialog shows every file patched, with what is left out and why,
+  before it writes anything (0188).
 
 ## 2.30.0 - 2026-11-24
 

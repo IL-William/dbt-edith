@@ -189,7 +189,8 @@ SQL; it creates it with `version: 2` and fills it in the editor as above. The ne
 file is on disk from then on and stays there if its tab is closed unsaved. If
 that file already exists, or is open, no dialog is shown and nothing is
 overwritten: it is opened and the model's entry added to it. A static site has no
-button.
+button. A folder, or the whole project, is updated from Reports
+([YAML and warehouse](jobs-and-reports.md#reports)).
 
 ## Where a model lives
 

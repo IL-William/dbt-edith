@@ -171,13 +171,13 @@ impl Files<'_> {
     }
 }
 
-/// Every model of the project, or the one at `only`.
+/// Every model of the project, or the ones at `only`.
 ///
-/// Only a single model gets its freshness flags: they cost a stat or more per
+/// Only the models named get their freshness flags: they cost a stat or more per
 /// model, which a whole-project answer would pay thousands of times, so that
-/// answer carries none (a batch form comes with the bulk update). `chosen` is
+/// answer carries none. `chosen` is
 /// the user's choice to hide an `.env` file, or not, by its name.
-pub fn check(graph: &Graph, root: &Path, target: &Path, only: Option<u32>, chosen: &dyn Fn(&str) -> Option<bool>) -> Answer {
+pub fn check(graph: &Graph, root: &Path, target: &Path, only: Option<&[u32]>, chosen: &dyn Fn(&str) -> Option<bool>) -> Answer {
     let catalog_at = graph.catalog_mtime;
     let snowflake = graph.meta.adapter.eq_ignore_ascii_case("snowflake");
     let files = Files { graph, root, chosen, found: std::cell::OnceCell::new() };
@@ -212,7 +212,7 @@ pub fn check(graph: &Graph, root: &Path, target: &Path, only: Option<u32>, chose
         m
     };
     let models: Vec<ModelSync> = match only {
-        Some(i) => vec![one(&graph.nodes[i as usize])],
+        Some(list) => list.iter().map(|&i| one(&graph.nodes[i as usize])).collect(),
         None => graph.nodes.iter().filter(|n| n.kind == Kind::Model && !n.disabled).map(one).collect(),
     };
     let mut seen: std::collections::BTreeMap<&str, usize> = std::collections::BTreeMap::new();
@@ -786,7 +786,7 @@ mod tests {
         let nodes = json!({ ID: model("orders", cols(&[("id", "number")]), config) });
         let mut g = build("snowflake", nodes, Some(table(ID, ["ANALYTICS", "MARTS", "ORDERS"], &[("ID", "NUMBER"), ("X", "TEXT")])));
         g.catalog_mtime = catalog_at;
-        let m = check(&g, dir, &dir.join("target"), Some(0), &|_| None).models.remove(0);
+        let m = check(&g, dir, &dir.join("target"), Some(&[0]), &|_| None).models.remove(0);
         assert_eq!(m.status, Status::Disagrees);
         (m.catalog_behind_run, m.table_behind_code)
     }
@@ -850,7 +850,7 @@ mod tests {
         g.catalog_mtime = 400;
         let m = check(&g, &dir, &dir.join("target"), None, &|_| None).models.remove(0);
         assert_eq!((m.status, m.catalog_behind_run, m.table_behind_code), (Status::Disagrees, false, false));
-        let m = check(&g, &dir, &dir.join("target"), Some(0), &|_| None).models.remove(0);
+        let m = check(&g, &dir, &dir.join("target"), Some(&[0]), &|_| None).models.remove(0);
         assert!(m.catalog_behind_run);
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -938,10 +938,10 @@ mod tests {
         }
         // A local run is the manifest's target, so it says nothing of the deployed table.
         set(&dir, "target/run/shop/models/orders.sql", 900);
-        let m = check(&g, &dir, &dir.join("target"), Some(0), &|_| None).models.remove(0);
+        let m = check(&g, &dir, &dir.join("target"), Some(&[0]), &|_| None).models.remove(0);
         assert_eq!((m.deployed, m.code_after_catalog, m.catalog_behind_run, m.table_behind_code), (true, false, false, false));
         set(&dir, "models/orders.sql", 500);
-        let m = check(&g, &dir, &dir.join("target"), Some(0), &|_| None).models.remove(0);
+        let m = check(&g, &dir, &dir.join("target"), Some(&[0]), &|_| None).models.remove(0);
         assert_eq!((m.deployed, m.code_after_catalog, m.catalog_behind_run, m.table_behind_code), (true, true, false, false));
         // Whole project: `deployed` is said, the stat is not made.
         let m = check(&g, &dir, &dir.join("target"), None, &|_| None).models.remove(0);
@@ -1046,10 +1046,36 @@ mod tests {
     }
 
     #[test]
+    fn a_list_of_models_is_answered_with_the_flags_of_each_and_of_none_else() {
+        let dir = project();
+        for f in ["models/orders.sql", "models/schema.yml", "dbt_project.yml"] {
+            set(&dir, f, 100);
+        }
+        set(&dir, "target/run/shop/models/orders.sql", 500);
+        let two = "model.shop.payments";
+        let mut nodes = json!({ ID: model("orders", cols(&[("id", "number")]), json!({})) });
+        nodes[two] = model("payments", cols(&[("id", "number")]), json!({}));
+        let mut catalog = table(ID, ["ANALYTICS", "MARTS", "ORDERS"], &[("ID", "NUMBER"), ("X", "TEXT")]);
+        catalog
+            .as_object_mut()
+            .unwrap()
+            .extend(table(two, ["ANALYTICS", "MARTS", "PAYMENTS"], &[("ID", "NUMBER"), ("X", "TEXT")]).as_object().unwrap().clone());
+        let mut g = build("snowflake", nodes, Some(catalog));
+        g.catalog_mtime = 400;
+        let answer = check(&g, &dir, &dir.join("target"), Some(&[0, 1]), &|_| None);
+        let flagged: Vec<(&str, bool)> = answer.models.iter().map(|m| (m.name.as_str(), m.catalog_behind_run)).collect();
+        assert_eq!(flagged, [("orders", true), ("payments", false)], "payments has no run file");
+        let answer = check(&g, &dir, &dir.join("target"), Some(&[1]), &|_| None);
+        assert_eq!(answer.models.len(), 1);
+        assert_eq!(answer.models[0].name, "payments");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn one_model_can_be_asked_for_and_the_answer_is_serialised_without_what_is_empty() {
         let nodes = json!({ ID: model("orders", cols(&[("id", "number")]), json!({})) });
         let g = build("snowflake", nodes, Some(table(ID, ["ANALYTICS", "MARTS", "ORDERS"], &[("ID", "NUMBER")])));
-        let answer = check(&g, Path::new("/nonexistent"), Path::new("/nonexistent/target"), Some(0), &|_| None);
+        let answer = check(&g, Path::new("/nonexistent"), Path::new("/nonexistent/target"), Some(&[0]), &|_| None);
         let v = serde_json::to_value(&answer).unwrap();
         assert_eq!(v["catalog_at"], 1_000);
         assert_eq!(v["models"][0]["status"], "agrees");
