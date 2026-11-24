@@ -139,6 +139,11 @@ check('...and says it is running', pending.tools[1].sub, 'running');
 check('a collin cache is picked, not installed, even with collin gone',
       lineageTools(found, '', false, true, { found: false }).tools[1].install, false);
 
+var fetched = lineageTools(onlySnow, 'column_lineage.snowflake.json', false, true, { found: false, state: 'idle', download: true });
+check('on Windows the entry says the click downloads collin.exe, not that it installs it',
+      fetched.tools[1].install + ' / ' + (fetched.tools[1].title.indexOf('downloads collin.exe from its latest release into the terminal') > 0)
+      + ' / ' + (fetched.tools[1].title.indexOf('installs it') < 0), 'true / true / true');
+
 // A collin git tracks came with a repository and is not run (0094): the entry
 // still installs, and its tooltip, the menu and the Columns tab say why.
 var shipped = { found: false, state: 'idle', refused: 'C:\\shop\\collin.exe' };
@@ -318,6 +323,16 @@ check('an older version names both', older.sub + ' / ' + (older.title.indexOf('i
 var current = collinUpdateRow({ found: true, outdated: false, version: '0.8.0 (86decf5)', wants: '0.8.0', update: 'u', install: 'i' }, 'collin');
 check('a recent collin is offered a check, not forced, and not urgent', current.label + ' / ' + current.sub + ' / ' + current.command + ' / ' + current.urgent,
       'Check for a newer collin / 0.8.0 / i / false');
+// On Windows the commands download collin.exe from the latest release (0186).
+var dlOld = collinUpdateRow({ found: true, outdated: true, download: true, version: '0.2.0 (a142ee5)', wants: '0.8.0', update: 'd', install: 'd' }, 'collin');
+check('a download keeps the update label and says it downloads the latest collin.exe over the one found',
+      dlOld.label + ' / ' + dlOld.command + ' / ' + (dlOld.title.indexOf('downloads the latest collin.exe, checks its SHA-256 and puts it in place of the one found') > 0), 'Update collin / d / true');
+check('...where cargo\'s update says it updates it', old.title.indexOf('that updates it into the terminal') > 0 && old.title.indexOf('downloads') < 0, true);
+var dlCurrent = collinUpdateRow({ found: true, outdated: false, download: true, version: '0.12.2 (86decf5)', wants: '0.8.0', update: 'd', install: 'd' }, 'collin');
+check('a recent collin is offered the download of the latest, not a cargo check',
+      dlCurrent.label + ' / ' + dlCurrent.command + ' / ' + dlCurrent.urgent + ' / ' + (dlCurrent.title.indexOf('downloads collin.exe from the latest release') > 0) + ' / ' + (dlCurrent.title.indexOf('cargo') < 0),
+      'Download the latest collin / d / false / true / true');
+check('...and cargo\'s check stays cargo\'s', current.label, 'Check for a newer collin');
 check('an old collin is said in the Columns tab before anything else',
       collinHint('collin', { found: true, outdated: true, version: '', wants: '0.8.0', stale: true }).text,
       'this collin gives no version, so it is older than 0.8.0: the column lineage menu updates it');

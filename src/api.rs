@@ -588,8 +588,9 @@ struct CollinBody {
     /// Its cache is missing or older than the manifest, so the next pick or
     /// column click runs it.
     stale: bool,
-    /// What the install entry types into the terminal.
-    install: &'static str,
+    /// What the install entry types into the terminal: cargo, or on Windows the
+    /// download of collin's release (0186).
+    install: String,
     /// What `collin --version` said, `0.2.0 (a142ee5)`, empty when it said
     /// nothing: a collin from before `--version`.
     #[serde(skip_serializing_if = "String::is_empty")]
@@ -601,7 +602,10 @@ struct CollinBody {
     /// and the hint would promise one the menu does not offer (0060, 0098).
     wants: &'static str,
     outdated: bool,
-    update: &'static str,
+    update: String,
+    /// `install` and `update` download collin.exe rather than run cargo, which
+    /// the page says in its wording (0186).
+    download: bool,
     #[serde(flatten)]
     status: collin_run::Status,
     /// How many models collin read the SQL of, and why it did not read the
@@ -670,17 +674,22 @@ struct CollinNow {
     /// The version picked for the project is the install refused: not gone,
     /// so the menu does not say it was removed.
     chosen_refused: bool,
+    /// What the install and update entries type.
+    get: collin_run::Get,
 }
 
 async fn collin_now(st: &Arc<AppState>) -> CollinNow {
     let shared = st.clone();
     let chosen = st.collin_chosen.lock().ok().and_then(|c| c.clone());
+    let shell = crate::update::shell_kind(&st.shell.program);
     let read = tokio::task::spawn_blocking(move || {
         let uid = collin_run::effective_uid();
         let (installs, unsafe_installs) =
             shared.collin_installs.as_deref().map(|d| collin_run::installs_checked(d, uid)).unwrap_or_default();
         let collin_run::Located { bin: default, refused } = collin_run::locate();
         let default = collin_run::without_refused(default, &unsafe_installs);
+        let beside = std::env::current_exe().ok().and_then(|p| p.parent().map(Path::to_path_buf));
+        let get = collin_run::get(cfg!(windows), default.as_deref(), beside.as_deref(), shell);
         // What the menu names when it can name one: the version picked for the
         // project and refused first, since it is the reason a different
         // collin runs, then the default one git passed over, then any other
@@ -709,7 +718,7 @@ async fn collin_now(st: &Arc<AppState>) -> CollinNow {
         // version, or a collin that gives none, is judged by its time alone.
         let other = matches!((&wrote, short(version.clone())), (Some(w), now) if !now.is_empty() && *w != now);
         let stale = collin_run::stale(&out, &shared.manifest_path) || other;
-        CollinNow { bin, version, stale, versions, outdated, refused, chosen_refused }
+        CollinNow { bin, version, stale, versions, outdated, refused, chosen_refused, get }
     });
     read.await.unwrap_or(CollinNow {
         bin: None,
@@ -719,6 +728,7 @@ async fn collin_now(st: &Arc<AppState>) -> CollinNow {
         outdated: false,
         refused: None,
         chosen_refused: false,
+        get: collin_run::Get::cargo(),
     })
 }
 
@@ -763,11 +773,12 @@ async fn meta_body(st: &Arc<AppState>) -> MetaBody {
         CollinBody {
             found,
             stale: now.stale,
-            install: collin_run::INSTALL,
+            install: now.get.install,
             outdated: now.outdated,
             version: now.version.unwrap_or_default(),
             wants: collin_run::WANTS_TEXT,
-            update: collin_run::UPDATE,
+            update: now.get.update,
+            download: now.get.download,
             refused: now.refused.as_ref().map(|(p, _)| p.display().to_string()).unwrap_or_default(),
             refused_why: match &now.refused {
                 Some((_, collin_run::Refusal::Unsure(why))) => why.clone(),
@@ -5328,6 +5339,9 @@ mod tests {
         cache("collin 0.3.0");
         let meta = response_of(port, get("/api/meta", &h)).await;
         assert!(meta.contains(r#""stale":false"#), "{meta}");
+        // Off Windows the entries type cargo, as they always did (0186).
+        assert!(meta.contains(r#""download":false"#) && meta.contains(&format!(r#""install":"{}""#, collin_run::INSTALL)), "{meta}");
+        assert!(meta.contains(&format!(r#""update":"{}""#, collin_run::UPDATE)), "{meta}");
 
         let back = response_of(port, post(r#"{"version":""}"#)).await;
         assert!(back.starts_with("HTTP/1.1 200") && !back.contains(r#""chosen""#), "{back}");

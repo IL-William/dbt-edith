@@ -369,7 +369,7 @@ pub(crate) fn produce(
     }
     passed_over(&collin, err)?;
     let Some(bin) = collin.bin else {
-        writeln!(err, "error: --run-collin found no collin to run: {}", collin_run::INSTALL)?;
+        writeln!(err, "error: --run-collin found no collin to run: {}", collin_run::install_hint())?;
         return Ok(None);
     };
     let version = collin_run::version(&bin);
@@ -382,7 +382,7 @@ pub(crate) fn produce(
             collin_run::COMPILED_SINCE_TEXT,
             printable(&bin.display().to_string()),
             printable(&named),
-            collin_run::UPDATE
+            collin_run::update_hint(&printable(&bin.display().to_string()))
         )?;
         return Ok(None);
     }
@@ -395,7 +395,7 @@ pub(crate) fn produce(
             "warning: {} is older than collin {}, which dbt-edith wants: {}",
             printable(&named),
             collin_run::WANTS_TEXT,
-            collin_run::UPDATE
+            collin_run::update_hint(&printable(&bin.display().to_string()))
         )?;
     }
     let out = collin::path_for(folder, "collin");
@@ -1109,7 +1109,7 @@ fn regenerate(
     let collin = collin_run::locate();
     passed_over(&collin, err)?;
     if collin.bin.is_none() {
-        writeln!(err, "  collin is not installed: {}", collin_run::INSTALL)?;
+        writeln!(err, "  collin is not installed: {}", collin_run::install_hint())?;
     }
     Ok(())
 }

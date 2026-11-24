@@ -872,7 +872,7 @@ pub fn hows_from(source: Option<&Path>, exe: &Path, shell: Option<Shell>, window
 /// character either would expand or end the quotes on: `!` is bash's and
 /// zsh's history there, and PowerShell ends a string on a typographic quote
 /// too. On Windows, a bracket as well, which PowerShell reads as a wildcard.
-fn quotable(path: &Path, windows: bool) -> Option<String> {
+pub(crate) fn quotable(path: &Path, windows: bool) -> Option<String> {
     let s = path.to_str()?;
     let s = if windows { s.replace('\\', "/") } else { s.to_string() };
     let odd = |c: char| {
@@ -979,6 +979,29 @@ fn download_of(asset: &str, exe: &Path, shell: Option<Shell>, windows: bool) -> 
     })
 }
 
+/// What differs between the downloads dbt-edith types: for itself (0123) and
+/// for collin on Windows (0186). The first is the default.
+pub struct Fetch<'a> {
+    /// Where the published hash is read from: the first field of
+    /// `<asset>.sha256` (false), or the line of the release's `SHA256SUMS`
+    /// ending in ` <asset>` (true).
+    pub sums: bool,
+    /// What the command ends on when the file is in place, held to the rule of
+    /// `DONE`: no quote, `$` or backtick.
+    pub done: &'a str,
+    /// Whether a file already holds the name. Without one nothing steps aside:
+    /// the download is only moved into place.
+    pub replaces: bool,
+    /// Whether `<exe>.old` stays after the swap. dbt-edith keeps it, since its
+    /// own running file cannot be deleted on Windows; collin is not running.
+    pub keep_old: bool,
+}
+
+impl Fetch<'static> {
+    /// dbt-edith's own update.
+    const OWN: Fetch<'static> = Fetch { sums: false, done: DONE, replaces: true, keep_old: true };
+}
+
 /// Download `<base>/<asset>` and its hash beside `exe`, whatever `exe` is
 /// called, compare them, and only then swap: the running file steps aside as
 /// `<exe>.old`, the new one takes its name, and the old one comes back if that
@@ -991,20 +1014,43 @@ fn download_of(asset: &str, exe: &Path, shell: Option<Shell>, windows: bool) -> 
 /// one). The same rules as `compose` hold for the text: no quote, `$` or
 /// backtick in what is printed.
 fn compose_download(shell: Shell, base: &str, asset: &str, exe: &str) -> String {
+    compose_fetch(shell, base, asset, exe, &Fetch::OWN)
+}
+
+/// The same download for another file, which `fetch` describes (0186).
+pub fn compose_fetch(shell: Shell, base: &str, asset: &str, exe: &str, fetch: &Fetch) -> String {
     let (new, sum) = (format!("{exe}.new"), format!("{exe}.sha256"));
-    let (url, sum_url) = (format!("{base}/{asset}"), format!("{base}/{asset}.sha256"));
+    let url = format!("{base}/{asset}");
+    let sum_url = if fetch.sums { format!("{base}/SHA256SUMS") } else { format!("{base}/{asset}.sha256") };
+    let done = fetch.done;
     // Quoted: zsh reads an unquoted `=https` as a command to look up.
     let proto = format!("--proto '={}' --proto-redir '=https'", base.split("://").next().unwrap_or("https"));
     match shell {
-        Shell::Posix => format!(
-            "(curl -fsSL {proto} -o \"{new}\" \"{url}\" && curl -fsSL {proto} -o \"{sum}\" \"{sum_url}\" && \
-             {{ [ \"$(sha256sum \"{new}\" | cut -d' ' -f1)\" = \"$(cut -d' ' -f1 \"{sum}\")\" ] \
-             || {{ printf '%s\\n' '{MISMATCH}'; false; }}; }} && rm -f \"{sum}\" \
-             || {{ rm -f \"{new}\" \"{sum}\"; false; }}) \
-             && {{ mv -f \"{exe}\" \"{exe}.old\" && (mv -f \"{new}\" \"{exe}\" || {{ mv -f \"{exe}.old\" \"{exe}\"; false; }}) \
-             || {{ rm -f \"{new}\"; false; }}; }} \
-             && printf '\\n%s\\n' '{DONE}'"
-        ),
+        Shell::Posix => {
+            let published =
+                if fetch.sums { format!("grep ' {asset}$' \"{sum}\" | cut -d' ' -f1") } else { format!("cut -d' ' -f1 \"{sum}\"") };
+            let swap = match (fetch.replaces, fetch.keep_old) {
+                (true, true) => format!(
+                    "{{ mv -f \"{exe}\" \"{exe}.old\" && (mv -f \"{new}\" \"{exe}\" || {{ mv -f \"{exe}.old\" \"{exe}\"; false; }}) \
+                     || {{ rm -f \"{new}\"; false; }}; }}"
+                ),
+                // The old file goes once the new one is in place, and a
+                // failure to remove it changes nothing.
+                (true, false) => format!(
+                    "{{ mv -f \"{exe}\" \"{exe}.old\" && (mv -f \"{new}\" \"{exe}\" || {{ mv -f \"{exe}.old\" \"{exe}\"; false; }}) \
+                     && {{ rm -f \"{exe}.old\"; true; }} || {{ rm -f \"{new}\"; false; }}; }}"
+                ),
+                (false, _) => format!("{{ mv -f \"{new}\" \"{exe}\" || {{ rm -f \"{new}\"; false; }}; }}"),
+            };
+            format!(
+                "(curl -fsSL {proto} -o \"{new}\" \"{url}\" && curl -fsSL {proto} -o \"{sum}\" \"{sum_url}\" && \
+                 {{ [ \"$(sha256sum \"{new}\" | cut -d' ' -f1)\" = \"$({published})\" ] \
+                 || {{ printf '%s\\n' '{MISMATCH}'; false; }}; }} && rm -f \"{sum}\" \
+                 || {{ rm -f \"{new}\" \"{sum}\"; false; }}) \
+                 && {swap} \
+                 && printf '\\n%s\\n' '{done}'"
+            )
+        }
         // 5.1, which Windows ships, has no `&&`; it also offers TLS 1.0 first
         // and shows a progress bar that slows the download to a crawl. In a
         // script block, so neither preference leaks into the user's session,
@@ -1014,19 +1060,37 @@ fn compose_download(shell: Shell, base: &str, asset: &str, exe: &str) -> String 
         // 1.2 is added to what is on, not set, since that is process-wide; on
         // the system default (0) it is left alone, which already allows it,
         // where `0 -bor Tls12` would be Tls12 alone.
-        Shell::PowerShell => format!(
-            "& {{ $ErrorActionPreference='Continue'; $ProgressPreference='SilentlyContinue'; \
-             if ([Net.ServicePointManager]::SecurityProtocol -ne 0) {{ [Net.ServicePointManager]::SecurityProtocol = \
-             [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12 }}; \
-             Invoke-WebRequest -ErrorAction Continue -UseBasicParsing -Uri \"{url}\" -OutFile \"{new}\"; if ($?) {{ \
-             Invoke-WebRequest -ErrorAction Continue -UseBasicParsing -Uri \"{sum_url}\" -OutFile \"{sum}\"; if ($?) {{ \
-             if ((Get-FileHash -ErrorAction Continue -Algorithm SHA256 -LiteralPath \"{new}\").Hash -eq ((Get-Content -ErrorAction Continue -LiteralPath \"{sum}\") -split ' ')[0]) {{ \
-             Move-Item -ErrorAction Continue -Force -LiteralPath \"{exe}\" -Destination \"{exe}.old\"; if ($?) {{ \
-             Move-Item -ErrorAction Continue -Force -LiteralPath \"{new}\" -Destination \"{exe}\"; \
-             if ($?) {{ Write-Host \"\"; Write-Host \"{DONE}\" }} else {{ Move-Item -ErrorAction Continue -Force -LiteralPath \"{exe}.old\" -Destination \"{exe}\" }} }} \
-             }} else {{ Write-Host \"{MISMATCH}\" }} }} }}; \
-             Remove-Item -Force -ErrorAction SilentlyContinue -LiteralPath \"{new}\", \"{sum}\" }}"
-        ),
+        Shell::PowerShell => {
+            let lines = if fetch.sums { format!(" | Where-Object {{ $_ -like \"* {asset}\" }}") } else { String::new() };
+            let tidy = if fetch.keep_old {
+                String::new()
+            } else {
+                format!("Remove-Item -Force -ErrorAction SilentlyContinue -LiteralPath \"{exe}.old\"; ")
+            };
+            let swap = if fetch.replaces {
+                format!(
+                    "Move-Item -ErrorAction Continue -Force -LiteralPath \"{exe}\" -Destination \"{exe}.old\"; if ($?) {{ \
+                     Move-Item -ErrorAction Continue -Force -LiteralPath \"{new}\" -Destination \"{exe}\"; \
+                     if ($?) {{ {tidy}Write-Host \"\"; Write-Host \"{done}\" }} else {{ Move-Item -ErrorAction Continue -Force -LiteralPath \"{exe}.old\" -Destination \"{exe}\" }} }} \
+                     "
+                )
+            } else {
+                format!(
+                    "Move-Item -ErrorAction Continue -Force -LiteralPath \"{new}\" -Destination \"{exe}\"; \
+                     if ($?) {{ Write-Host \"\"; Write-Host \"{done}\" }} "
+                )
+            };
+            format!(
+                "& {{ $ErrorActionPreference='Continue'; $ProgressPreference='SilentlyContinue'; \
+                 if ([Net.ServicePointManager]::SecurityProtocol -ne 0) {{ [Net.ServicePointManager]::SecurityProtocol = \
+                 [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12 }}; \
+                 Invoke-WebRequest -ErrorAction Continue -UseBasicParsing -Uri \"{url}\" -OutFile \"{new}\"; if ($?) {{ \
+                 Invoke-WebRequest -ErrorAction Continue -UseBasicParsing -Uri \"{sum_url}\" -OutFile \"{sum}\"; if ($?) {{ \
+                 if ((Get-FileHash -ErrorAction Continue -Algorithm SHA256 -LiteralPath \"{new}\").Hash -eq ((Get-Content -ErrorAction Continue -LiteralPath \"{sum}\"{lines}) -split ' ')[0]) {{ \
+                 {swap}}} else {{ Write-Host \"{MISMATCH}\" }} }} }}; \
+                 Remove-Item -Force -ErrorAction SilentlyContinue -LiteralPath \"{new}\", \"{sum}\" }}"
+            )
+        }
     }
 }
 

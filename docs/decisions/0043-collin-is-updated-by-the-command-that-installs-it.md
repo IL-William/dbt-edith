@@ -1,6 +1,6 @@
 # 0043. collin is updated by the command that installs it, and its version decides how
 
-Date: 2026-10-06 · Status: accepted, amended by 0060 and 0098 · Amends 0042
+Date: 2026-10-06 · Status: accepted, amended by 0060, 0098 and 0186 · Amends 0042
 
 **Trigger:** read before raising the collin version dbt-edith accepts, or
 changing what the menu offers once collin is installed.

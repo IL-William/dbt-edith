@@ -63,6 +63,26 @@ cargo install --locked --git https://github.com/IL-William/dbt-collin collin-cli
 Where cargo is not available, copy a `collin.exe` built elsewhere beside
 `dbt-edith.exe`, in a folder git does not track.
 
+**On Windows, collin is downloaded rather than built.** The Rust toolchain there
+often targets `windows-gnu` with no C compiler, which one of collin's
+dependencies needs, so the cargo command fails on those machines whatever
+version it builds. Every collin release carries `collin-x86_64-pc-windows-msvc.exe`
+and a `SHA256SUMS`, and on Windows Collin's entry types a command into your
+terminal, Git Bash or PowerShell, that downloads it from the latest release,
+checks it against the line of `SHA256SUMS` that names it, and only then puts it
+where collin goes: in place of the collin dbt-edith found, or, with none found,
+as `collin.exe` beside `dbt-edith.exe`. A hash that does not match leaves the
+file there as it was and says so; the `.old` file is removed once the new one
+is in, when it can be. When it ends, the terminal says `collin.exe is in place.
+Pick Collin, or Regenerate, to run it.` No file is written over a `collin.exe`
+beside dbt-edith that was passed over (tracked by git): there the cargo command
+is typed as before, and so it is in another shell, `cmd` say. dbt-edith itself
+downloads nothing, as for its own update: your shell does
+([0186](../decisions/0186-collin-is-downloaded-on-windows-where-cargo-cannot-build-it.md)).
+On the command line, the messages that name the install say, on Windows, to
+download that file and save it as `collin.exe` beside `dbt-edith.exe` or on the
+`PATH`, and those that name the update, to save it over the collin they name.
+
 **A collin git tracks does not run.** One the repository commits came with it,
 not from you, and a `dbt-edith.exe` copied into the project would otherwise run
 it the moment Collin is picked. dbt-edith asks git about the collin it finds,
@@ -82,7 +102,7 @@ over a file git tracks is still that tracked file, and is passed over too
 **Other collin versions sit beside it.** "Install another collin version…",
 under Collin in the menu, asks for a version and types the command that
 installs it at its tag into a folder of its own, under dbt-edith's config
-directory:
+directory (still cargo on Windows, which the download above does not reach):
 
 ```
 cargo install --locked --git https://github.com/IL-William/dbt-collin --tag v0.3.0 --root "<config>/collin/0.3.0" collin-cli; chmod -R go-w "<config>/collin/"
@@ -131,8 +151,10 @@ one, the old repository's 0.2.0 included, or one that gives no version, gets
 "Update collin", which types the command above with `--force`, and the
 Columns tab says so first. A recent one gets "Check for a newer collin", the
 command as it is, which rebuilds collin when GitHub has a newer commit and
-otherwise says it is already installed. While a version installed by tag
-runs, there is neither line, and nothing calls it older, whatever its number:
+otherwise says it is already installed; on Windows that line is "Download the
+latest collin", which types the download above and puts the latest `collin.exe`
+in place of the one found, and "Update collin" types it too. While a version
+installed by tag runs, there is neither line, and nothing calls it older, whatever its number:
 no update reaches it, and the default one is picked back in the same menu
 (0098, 0109).
 
