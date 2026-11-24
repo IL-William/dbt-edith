@@ -118,9 +118,19 @@ the column's lineage and the model's file. The search never runs collin: it read
 the columns already loaded from the YAML, the catalog and collin's cache, and a
 cache that is missing or older than the manifest is said under the answer, a
 column picked from an older one running collin first, as a click in the Catalog
-does. With another tool picked the chip is greyed, its tooltip saying so, and a
-static site has none
-([0184](../decisions/0184-columns-are-searched-from-the-palette-behind-a-chip-with-collin.md)).
+does. With another tool picked the chip is greyed, and a click or `Tab` on it
+puts one row above the usual answer, selected first, for Enter to pick (typing
+keeps it): "Use Collin for column lineage" when collin is found, which switches
+the tool and turns the chip on, searching what is typed, and runs collin in the
+background when its cache is missing or older than the manifest, the answer
+asked again when it ends; "Install collin" when it is not found, which types the
+install command into the terminal; and, when a collin was found but is not run
+(a repository's own, or an install others can write to), or there is no command
+to type, a row that opens the Column lineage section of the settings, carrying
+the reason when there is one. A second press takes the row away. A
+static site has no chip
+([0184](../decisions/0184-columns-are-searched-from-the-palette-behind-a-chip-with-collin.md),
+[0185](../decisions/0185-the-greyed-columns-chip-offers-collin.md)).
 
 The index is a directory walk, redone every 20 seconds, so a new file or a
 branch switch shows up without any invalidation logic. `target`, `logs`, `.git`

@@ -20,6 +20,10 @@ and bumps nothing.
 
 ## Unreleased
 
+- Offer Collin from the greyed Columns chip of `Cmd/Ctrl + K`: a click or Tab
+  shows a row to use Collin, install it, or open the settings when it was set
+  aside, and Enter picks it, so typing a column and Enter searches it (0185).
+
 ## 2.29.0 - 2026-11-23
 
 - Search columns from `Cmd/Ctrl + K` with a Columns chip, off at every opening,
