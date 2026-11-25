@@ -20,6 +20,12 @@ and bumps nothing.
 
 ## Unreleased
 
+## 2.31.1 - 2026-11-25
+
+- Catalog > Columns groups its tools: column lineage and YAML each in a tray, the
+  YAML's source named on its button, and the column lineage's note on a line
+  under the row.
+
 ## 2.31.0 - 2026-11-25
 
 - Update a model's schema YAML from the catalog: a button in Catalog > Columns

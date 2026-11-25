@@ -46,6 +46,10 @@ check('no schema known', catalogMeta({ kind: 'model', materialized: 'table' }), 
 check('the same words as the hover card\'s lead', catalogMeta({ kind: 'seed', schema: 'main' }).split(' \u00b7 ')[0],
   subtitleParts({ kind: 'seed', schema: 'main' }).lead);
 
+print('\n--- the tools row ---');
+check('the pill counts the tests no column holds, in the singular for one', [modelTestsLabel(1), modelTestsLabel(2)], ['1 model test \u2192', '2 model tests \u2192']);
+check('a group of the row with nothing to show is not displayed', /display:\s*none/.test(rule('.coltools .colgroup[hidden]')), true);
+
 print('\n--- the tabs ---');
 check('a model has Preview and Columns, counted', catalogTabList({ kind: 'model', columns: [1, 2, 3] }),
   [{ key: 'preview', label: 'Preview', count: 0 }, { key: 'columns', label: 'Columns', count: 3 }]);

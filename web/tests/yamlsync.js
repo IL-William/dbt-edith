@@ -266,3 +266,22 @@ check('a live read says Snowflake, not the catalog, when the table is behind its
   yamlSyncBehind({ table_behind_code: true }, 0, when, 'snowflake'),
   "This model's table is older than its code: run it first, or the columns Snowflake has are not the ones its code builds.");
 check('and when it is a deployed environment', /^Snowflake has the table of \.env\.prod, an environment deployed/.test(yamlSyncBehind({ deployed: true, catalog_env: '.env.prod' }, 0, when, 'snowflake')), true);
+
+// The left half of the Update YAML control: a button, a word, or nothing.
+var s = (status, extra) => Object.assign({ status: status }, extra || {});
+check('Snowflake shows its button at once, naming the table and the environment',
+  [yamlSyncState('snowflake', undefined, true, 0, 'orders', '.env.prod').kind, yamlSyncState('snowflake', undefined, true, 0, 'orders', '.env.prod').label,
+    /orders.*Snowflake, \.env\.prod.*Nothing is read before you click/.test(yamlSyncState('snowflake', undefined, true, 0, 'orders', '.env.prod').title)],
+  ['button', 'Update YAML', true]);
+check('a catalog that disagrees is a button, its title the tip', [yamlSyncState('catalog', s('disagrees', { missing: [1, 2] }), false).kind, yamlSyncState('catalog', s('disagrees', { missing: [1, 2] }), true).title.split('\n')[0]], ['button', '+2']);
+check('types alone are a button too, said so', [yamlSyncState('catalog', s('untyped', { untyped: [1] }), false).label, yamlSyncState('catalog', s('untyped', { untyped: [1] }), false).title.split('\n')[0]], ['Update YAML', '1 type, types only']);
+check('a YAML that agrees says so, with or without Snowflake', [yamlSyncState('catalog', s('agrees'), false), yamlSyncState('catalog', s('agrees'), true).kind],
+  [{ kind: 'ok', label: '\u2713 YAML matches', title: 'The schema YAML already says what catalog.json says.' }, 'ok']);
+check('a model not checked says so only where Snowflake can be picked', [yamlSyncState('catalog', s('not_checked', { reason: 'its table is not the one catalog.json lists' }), true, 5), yamlSyncState('catalog', s('not_checked', { reason: 'x' }), false, 5)],
+  [{ kind: 'quiet', label: 'YAML not checked', title: 'its table is not the one catalog.json lists' }, null]);
+check('no catalog.json (not_checked, no date) says so only where Snowflake can be picked',
+  [yamlSyncState('catalog', s('not_checked', { reason: 'it is not in catalog.json' }), true, 0), yamlSyncState('catalog', s('not_checked', { reason: 'it is not in catalog.json' }), false, 0)],
+  [{ kind: 'quiet', label: 'no catalog.json', title: 'There is no catalog.json: run dbt docs generate, or read the columns from Snowflake.' }, null]);
+check('a request that failed says the check did not answer, only where Snowflake can be picked',
+  [yamlSyncState('catalog', null, true, 0), yamlSyncState('catalog', null, false, 0)],
+  [{ kind: 'quiet', label: 'YAML not checked', title: 'The check did not answer.' }, null]);

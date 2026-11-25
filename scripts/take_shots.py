@@ -727,9 +727,9 @@ class Shots:
         self.dock_to(400)
         self.dock("catalog")
         self.catalog_tab("Columns")
-        # The Update YAML button is drawn when its own request is answered, after the columns.
+        # The Update YAML control is drawn when its own request is answered, after the columns.
         self.until("document.querySelectorAll('#catalog tr.c-linked').length > 0"
-                   " && !!document.querySelector('#catalog .yamlsync:not([hidden])')", "the columns and Update YAML")
+                   " && !!document.querySelector('#catalog .colgroup:not([hidden]) .yamlgroup')", "the columns and Update YAML")
         self.take("catalog")
 
         # One column's lineage on the canvas.
