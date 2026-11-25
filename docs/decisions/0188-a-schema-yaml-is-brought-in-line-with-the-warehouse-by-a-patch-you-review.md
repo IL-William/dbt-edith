@@ -100,6 +100,51 @@ type can no longer be told from a read one.
   an installed package's are not compared. `GET /api/yaml-sync` answers for the
   whole project or one model, so a bulk update can reuse it.
 
+## Bulk: a folder from Reports
+
+The Catalog updates one model, in the editor. Reports updates a layer, a folder
+of models at any depth, and the editor cannot be the review there: it holds one
+file at a time, and a folder is dozens.
+
+- **A dialog is the review.** Update opens a wide `modal()` that reads each file
+  from the disk with its stamp, runs the Catalog's patch on it for each of its
+  models in turn, and shows file by file what changes and what a removal loses.
+  Nothing is written before its own button, and a file changed on the disk since
+  it was read is refused by the stamp and skipped, so the review is of what is
+  written. The same patch, so the same refusals and skips.
+- **What is left out, and why.** Models behind the catalog or the code (the
+  freshness flags, asked for the models of the folder alone through the POST form
+  of `/api/yaml-sync`, the whole-project answer carrying none), models a patch
+  refuses, and files open with unsaved edits, which a write would race. **Also the
+  ones behind** includes the first kind, never the others: a refused model cannot
+  be patched, and an unsaved file is the user's.
+- **A deployed catalog alone leaves no model out.** It flags every model, since a
+  local run builds the manifest's target and none of its run files can be older
+  or newer than a deployed table in a way that means anything, so leaving them
+  out would leave out the whole project in the most useful case. It is said once
+  at the top of the dialog, with the removals as the risk: a column the branch
+  added reads as one to remove.
+- **Types only is off by default.** A project that declares no types has every
+  model with columns to type, and an update of that would rewrite every file in
+  the project at one click. The models are listed, as `types`, and a switch brings
+  them into the counts and into Update.
+- **A new file has its full content.** A model with no YAML gets `<model>.yml`
+  beside its SQL written whole, as a new file in the preview, created with the
+  empty stamp. The file is looked for when the dialog reads, and one that is
+  there then is patched like any other; one that appears between that read and
+  the write is refused by the empty stamp (a 409) and skipped, said on the card.
+  No stub, since no editor shows the change afterwards.
+- **A patch is made once per file and kept.** Patching reads the whole file, and
+  a file holds many models, so the plan is made file by file between frames, with
+  its progress said, and a file's result is kept until the models it was made for
+  change: asking for the models behind patches the files they are in and no
+  other.
+- **Reads a few at a time, writes one at a time.** Four reads in flight, writes in
+  order: a folder of hundreds of files does not open hundreds of requests, and a
+  skipped file is the one that changed.
+- **The section is dbt's, quiet.** It reads `catalog.json`, which dbt writes, and
+  never lights the tab: a project with no types would always light it.
+
 ## Rejected
 
 - **Writing the file from the server.** The patch is the user's to review, and
@@ -111,3 +156,10 @@ type can no longer be told from a read one.
   the note would be read after the build.
 - **Removals behind a switch.** Half an update leaves a YAML that still disagrees,
   and the review is what makes them safe.
+- **Updating a folder in the editor.** One tab per file, dozens of dirty tabs to
+  review and save one at a time; the dialog is the one place that shows the whole
+  change.
+- **Leaving a deployed catalog's models out as behind.** It would leave every one
+  of them out.
+- **Types only on by default.** One click rewriting a file per model of a project
+  that declares no types.

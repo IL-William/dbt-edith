@@ -4452,6 +4452,256 @@ function yamlSyncSaid(sync, patch, file) {
   return said;
 }
 
+/* ------------------------------------------- Update YAML in bulk, from Reports (0188)
+   The pure part: which models a folder would update, what is left out and why,
+   the files the patches fall in, and what is said of the outcome. The server
+   decides every type and every name; the patch is yamlSyncPatch, run on the
+   text of each file as it is on the disk when the dialog opens. */
+
+/* Whether a model is one the update speaks of: its columns or types differ
+   from the table's, a model with nothing but untyped columns only when the
+   switch says so. */
+function yamlBulkWants(sync, includeTypes) {
+  return sync.status === 'disagrees' || (!!includeTypes && sync.status === 'untyped');
+}
+
+/* The models of an answer by what was found, and how many the update would
+   change. */
+function yamlBulkCounts(models, includeTypes, written) {
+  const out = { disagrees: 0, untyped: 0, agrees: 0, not_checked: 0, update: 0 };
+  for (const m of models) {
+    const key = m.status === 'not_checked' ? 'not_checked' : m.status;
+    out[key] = (out[key] || 0) + 1;
+    if (yamlBulkWants(m, includeTypes) && !(written && written.has(m.id))) out.update++;
+  }
+  return out;
+}
+
+/* The folder tree of the models' .sql paths, at any depth, of the models that
+   differ: each folder with how many of the models below it the update would
+   change (`update`) and how many it lists (`shown`), folders and models by
+   name. A model already written, which the manifest has not caught up with, is
+   listed and not counted. One pass: a project of thousands of models is built
+   in the time of one loop. */
+function yamlBulkTree(models, includeTypes, written) {
+  const root = { name: '', path: '', folders: [], models: [], update: 0, shown: 0 };
+  const index = new Map([['', root]]);
+  for (const m of models) {
+    if (m.status !== 'disagrees' && m.status !== 'untyped') continue;
+    const parts = m.file.split('/');
+    parts.pop();
+    const wanted = yamlBulkWants(m, includeTypes) && !(written && written.has(m.id));
+    let at = root;
+    let path = '';
+    root.shown++;
+    if (wanted) root.update++;
+    for (const part of parts) {
+      path = path ? path + '/' + part : part;
+      let next = index.get(path);
+      if (!next) {
+        next = { name: part, path, folders: [], models: [], update: 0, shown: 0 };
+        index.set(path, next);
+        at.folders.push(next);
+      }
+      next.shown++;
+      if (wanted) next.update++;
+      at = next;
+    }
+    at.models.push(m);
+  }
+  const byName = (a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
+  for (const node of index.values()) {
+    node.folders.sort(byName);
+    node.models.sort(byName);
+  }
+  return root;
+}
+
+/* The models a folder's Update button changes: those under `folder` ('' is the
+   whole project) the update speaks of, less the ones written and waiting. */
+function yamlBulkScope(models, folder, includeTypes, written) {
+  const under = folder ? folder + '/' : '';
+  return models.filter((m) => yamlBulkWants(m, includeTypes) && !(written && written.has(m.id)) && m.file.startsWith(under));
+}
+
+/* The models catalog.json says nothing of, by the reason, the most first. */
+function yamlBulkNotChecked(models) {
+  const groups = new Map();
+  for (const m of models) {
+    if (m.status !== 'not_checked') continue;
+    if (!groups.has(m.reason)) groups.set(m.reason, []);
+    groups.get(m.reason).push(m);
+  }
+  return [...groups].map(([reason, list]) => ({ reason, models: list.sort((a, b) => (a.name < b.name ? -1 : 1)) }))
+    .sort((a, b) => b.models.length - a.models.length || (a.reason < b.reason ? -1 : 1));
+}
+
+/* What stands against writing a model's columns from this catalog without a
+   look: its table is behind the catalog, or its code is behind its table, or
+   newer than the catalog. A deployed environment's catalog alone is not one,
+   since it flags every model; it is said once for the lot (yamlBulkDeployed). */
+function yamlBulkWhy(sync) {
+  return [
+    sync.catalog_behind_run ? 'its last run is newer than catalog.json' : '',
+    sync.table_behind_code ? 'its table is older than its code' : '',
+    sync.code_after_catalog ? 'its code is newer than catalog.json' : '',
+  ].filter(Boolean);
+}
+
+/* What is said once at the top of the dialog when the catalog is a deployed
+   environment's. */
+function yamlBulkDeployed(env) {
+  return `catalog.json describes the tables of ${env}, built from code that may be behind this branch: `
+    + 'a column to remove may be one this branch added.';
+}
+
+/* The properties file a model's patch goes in: its own, else a new one beside
+   its SQL. */
+function yamlBulkFile(sync) {
+  return sync.yml || yamlSyncNewFile(sync.file, sync.name);
+}
+
+/* The chips on a model's row: what it would gain, lose and have typed, or
+   `types` for a model whose columns only lack a type. */
+function yamlBulkChips(sync) {
+  if (sync.status === 'untyped') return [{ text: 'types', kind: 'types' }];
+  const types = (sync.retype || []).length + (sync.untyped || []).length;
+  return [
+    (sync.missing || []).length ? { text: `+${sync.missing.length}`, kind: 'add' } : null,
+    (sync.extra || []).length ? { text: `−${sync.extra.length}`, kind: 'del' } : null,
+    types ? { text: `~${types}`, kind: 'types' } : null,
+  ].filter(Boolean);
+}
+
+/* What the dialog would do, from the models asked, the files as read (`reads`
+   by path: `{content, stamp}`, `{missing: true}` for a file that is not there,
+   `{error}`, `{truncated: true}`), the files open with unsaved edits (`dirty`,
+   a Set of paths) and whether the models behind are included. Each file is
+   patched once for all its models in turn. Left out, with the reason: models
+   behind (unless included), files open with unsaved edits, files not read,
+   models the patch refuses. `idle` are those the file already says right.
+
+   A file's result is kept in `cache` under the models it was made for, and made
+   again only when those change: asking for the models behind patches the files
+   they are in and no other. It is a generator that yields before each patch,
+   which a page runs between frames (yamlBulkDrive) and a test to the end: one patch reads the whole file, and a file of hundreds of
+   models is hundreds of them. */
+function* yamlBulkSteps(syncs, reads, dirty, withBehind, cache) {
+  const plan = { files: [], left: [], idle: [], env: '' };
+  const byFile = new Map();
+  for (const s of syncs) {
+    if (s.deployed && !plan.env) plan.env = s.catalog_env;
+    const why = yamlBulkWhy(s);
+    if (why.length && !withBehind) {
+      plan.left.push({ sync: s, kind: 'behind', why: why.join(', ') });
+      continue;
+    }
+    const file = yamlBulkFile(s);
+    if (!byFile.has(file)) byFile.set(file, []);
+    byFile.get(file).push(s);
+  }
+  const total = byFile.size;
+  let at = 0;
+  for (const [file, models] of byFile) {
+    at++;
+    const key = models.map((m) => m.id).join('|') + (dirty.has(file) ? '#unsaved' : '');
+    let part = cache.get(file);
+    if (!part || part.key !== key) {
+      const made = { left: [], idle: [], file: null };
+      const left = (kind, why) => models.forEach((s) => made.left.push({ sync: s, kind, why }));
+      const read = reads.get(file) || { error: 'it was not read' };
+      if (dirty.has(file)) left('unsaved', 'its file is open in the editor with unsaved edits');
+      else if (read.error) left('unread', `its file could not be read: ${read.error}`);
+      else if (read.truncated) left('unread', 'its file is too large to be read whole');
+      else {
+        let text = read.missing ? '' : read.content;
+        const done = [];
+        for (const s of models) {
+          yield { file, at, total };
+          const patch = yamlSyncPatch(text, s.name, s);
+          if (patch.refused) {
+            made.left.push({ sync: s, kind: 'refused', why: patch.refused });
+            continue;
+          }
+          text = patch.text;
+          const changed = patch.added.length || patch.removed.length || patch.retyped.length || patch.typed.length;
+          if (changed) done.push({ sync: s, patch });
+          // Nothing changed and nothing skipped: the file already says it. Skips are the text not matching what was compared.
+          else if (patch.skipped.length) made.left.push({ sync: s, kind: 'skipped', why: patch.skipped.map((k) => `${k.name} (${k.op}): ${k.why}`).join('; ') });
+          else made.idle.push({ sync: s, patch });
+        }
+        if (done.length) made.file = { file, isNew: !!read.missing, text, stamp: read.missing ? '' : read.stamp, models: done };
+      }
+      part = { key, made };
+      cache.set(file, part);
+    }
+    plan.left.push(...part.made.left);
+    plan.idle.push(...part.made.idle);
+    if (part.made.file) plan.files.push(part.made.file);
+  }
+  return plan;
+}
+
+/* What a patch of one model says, a line each: what it changes, what removing
+   cost, and what it left. */
+function yamlBulkLines(sync, patch) {
+  const lines = [];
+  const part = (label, list) => { if (list.length) lines.push(`${label} ${list.length}: ${list.join(', ')}`); };
+  part('Adds', patch.added);
+  part('Removes', patch.removed);
+  for (const name of patch.removed) {
+    const x = (sync.extra || []).find((e) => e.name === name);
+    const what = x ? [x.described ? 'a description' : '', x.tests ? `${x.tests} test${x.tests > 1 ? 's' : ''}` : ''].filter(Boolean) : [];
+    if (what.length) lines.push(`${name} loses ${what.join(' and ')}`);
+  }
+  part('Retypes', patch.retyped.map((r) => `${r.name} ${r.from} to ${r.to}`));
+  part('Types', patch.typed.map((t) => `${t.name} ${t.to}`));
+  for (const s of patch.skipped) lines.push(`Leaves ${s.name} (${s.op}): ${s.why}`);
+  for (const h of sync.held || []) lines.push(`Does not type ${h.name}: ${h.reason}`);
+  return lines;
+}
+
+/* The words of a left-out model's kind, for the dialog and the card. */
+function yamlBulkKindWords(kind) {
+  return { behind: 'behind the catalog or the code', unsaved: 'open with unsaved edits', refused: 'refused', unread: 'not read', skipped: 'the file no longer matches', reloaded: 'no longer in the manifest' }[kind] || kind;
+}
+
+/* The line that says which files, at most `cap` of them, and how many more. */
+function yamlBulkNames(list, cap = 6) {
+  return list.slice(0, cap).join(', ') + (list.length > cap ? ` and ${list.length - cap} more` : '');
+}
+
+/* What the card says once the files are written: the ones written and how many
+   models they hold, the ones skipped and why (one line a reason), what was
+   left out of the dialog, and that the section waits for a parse. */
+function yamlBulkResult(done, left) {
+  const lines = [];
+  const files = (n) => `${n} file${n === 1 ? '' : 's'}`;
+  const models = (n) => `${n} model${n === 1 ? '' : 's'}`;
+  if (done.written.length) {
+    const n = done.written.reduce((sum, f) => sum + f.models, 0);
+    lines.push(`Wrote ${files(done.written.length)} (${models(n)}): ${yamlBulkNames(done.written.map((f) => f.file))}`);
+  }
+  const why = new Map();
+  for (const s of done.skipped) {
+    if (!why.has(s.why)) why.set(s.why, []);
+    why.get(s.why).push(s.file);
+  }
+  for (const [reason, list] of why) lines.push(`Skipped ${yamlBulkNames(list)}: ${reason}`);
+  const kinds = new Map();
+  for (const l of left) kinds.set(l.kind, (kinds.get(l.kind) || 0) + 1);
+  for (const [kind, n] of kinds) lines.push(`Left out, ${yamlBulkKindWords(kind)}: ${models(n)}`);
+  if (!done.written.length && !done.skipped.length) lines.push('Nothing was written.');
+  if (done.written.length) lines.push('The section shows those models as waiting for a parse until the manifest reloads.');
+  return lines;
+}
+
+/* What the section's head says it was read from. */
+function yamlBulkAbout(answer, fmt = (d) => d.toLocaleString()) {
+  const env = !answer.catalog_env || answer.catalog_env === 'manifest' ? "the manifest's target" : answer.catalog_env;
+  return `catalog.json, ${env}, written ${fmt(new Date(answer.catalog_at * 1000))}`;
+}
+
 /* ATX headings, and none inside a fenced block: that is what a reader navigates
    a markdown file by. */
 function mdOutline(text) {
@@ -7983,6 +8233,7 @@ function collinReportBody(view) {
     : collinReportGroups(view.findings).map((g) => ({ group: g.group, label: g.label, desc: g.desc,
       folds: g.findings.map((f) => ({
         title: f.title, tone: '', lever: f.lever, rows: f.entries, open: few,
+        link: f.kind === 'yaml_stale' ? yamlSyncLink() : undefined,
         find: (e) => `${e.id} ${(e.items || []).join(' ')}`,
         draw: (hits, d) => [reportList(hits, (e) => collinEntryRow(f, e), d, CHECK_SHOWN)],
       })) }));
@@ -8035,6 +8286,7 @@ function collinWrittenSections(written) {
   return collinWrittenGroups(written).map((g) => ({ group: g.group, label: g.label, desc: g.desc,
     folds: g.findings.map((f) => ({
       title: f.title, tone: '', severity: f.severity || undefined, lever: f.why || '',
+      link: f.category === 'yaml_out_of_date' ? yamlSyncLink() : undefined,
       rows: f.models, open: (len) => len <= 5,
       find: (m) => `${m.name || ''} ${m.unique_id} ${m.detail || ''}`,
       // What to do is the fix, so it is read at once and not behind "why". The
@@ -13131,9 +13383,10 @@ function escapePanel() {
    a node (0116) and the builds of each environment once the index says
    Snowflake is on and the manifest holds the dbt_artifacts tables (0117), and
    those of each job once a source is named as well (0119), and the order of
-   the jobs' steps once a source is named (0126),
+   the jobs' steps once a source is named (0126), and the models whose YAML
+   differs from the table catalog.json lists once it lists one (0188),
    each `quiet`: listed, but it never lights the button nor opens the panel
-   (0116, 0117, 0119, 0126). Before
+   (0116, 0117, 0119, 0126, 0188). Before
    that the coverage is listed all the same, `empty`, as the place a source is
    added from (0070), but it is not opened on for itself, and the button stays
    dimmed (0075). */
@@ -13153,6 +13406,8 @@ function reportsSections(index, focus) {
       title: "The project's macros no node reaches, and who calls a macro, from what the manifest records each node and macro calling" },
     { key: 'checks', label: 'Checks', tool: 'dbt',
       title: "This tool's own checks on the project, which dbt warns of none of: sources without freshness, models with no test or no description, sources no node reads" },
+    { key: 'yamlsync', label: 'YAML and warehouse', tool: 'dbt',
+      title: "Which models' schema YAML differs from the table catalog.json lists for them, by folder, with an Update for each folder or the whole project" },
     { key: 'builds', label: 'Builds by environment', tool: 'snowflake',
       title: "When each model last ran in each environment and how it ended, read from Snowflake when asked, from the tables of the dbt_artifacts package" },
     { key: 'jobbuilds', label: 'Builds by job', tool: 'snowflake',
@@ -13177,7 +13432,7 @@ function reportsSections(index, focus) {
   // which is no file's news (0117). The order of the steps is a question
   // asked, and a project with jobs would nearly always have an answer, so it
   // is no news either (0126).
-  const quiet = (key) => key === 'checks' || key === 'builds' || key === 'jobbuilds' || key === 'joborder';
+  const quiet = (key) => key === 'checks' || key === 'yamlsync' || key === 'builds' || key === 'jobbuilds' || key === 'joborder';
   return all.filter((sec) => listed(sec.key))
     .map((sec) => Object.assign(sec, has(sec.key) ? (quiet(sec.key) ? { quiet: true } : {}) : { empty: true }));
 }
@@ -13647,6 +13902,8 @@ async function openReports(section, { reread = true } = {}) {
     updateStatus();
     return;
   }
+  // The panel is opened on it: types only starts off again (0188).
+  if (key === 'yamlsync') yamlBulkState().types = false;
   showReportSection(key);
 }
 
@@ -13893,6 +14150,14 @@ function reportFold(f) {
   sum.addEventListener('click', () => { d.dataset.touched = '1'; });
   d.append(sum);
   if (f.lever) d.append(reportLever(f.lever));
+  // Where the fix is done, when the section for it is there (0188).
+  if (f.link) {
+    const p = jel('p', 'rlever');
+    const a = jel('a', 'filelink', f.link.text);
+    a.addEventListener('click', (ev) => { ev.preventDefault(); showReportSection(f.link.section); });
+    p.append(a);
+    d.append(p);
+  }
   return d;
 }
 
@@ -14053,6 +14318,8 @@ async function showReportSection(key) {
   paintReportsNav();
   updateStatus();
   const ask = ++S.reportsAsk;
+  // Opened, not read again: types only starts off (0188).
+  if (key === 'yamlsync' && S.reportsDrawn !== 'yamlsync') yamlBulkState().types = false;
   if (key !== S.reportsDrawn) {
     view.replaceChildren(jel('div', 'compiled-empty', 'Reading…'));
     S.reportsDrawn = '';
@@ -14061,7 +14328,7 @@ async function showReportSection(key) {
   const again = () => showReportSection(key);
   const drawn = key === 'run' ? await runSection(again) : key === 'warnings' ? await warningsSection(again)
     : key === 'collin' ? await collinSection(again)
-      : key === 'macros' ? await macrosSection(again) : key === 'checks' ? await checksSection(again)
+      : key === 'macros' ? await macrosSection(again) : key === 'checks' ? await checksSection(again) : key === 'yamlsync' ? await yamlSyncSection(again)
         : key === 'builds' ? await buildsSection() : key === 'jobbuilds' ? await jobBuildsSection()
           : key === 'joborder' ? await jobOrderSection(again)
             : await jobsCoverageSection(again);
@@ -14299,6 +14566,377 @@ const CHECKS = [
   { key: 'models_without_key', title: 'Models with no key test',
     why: 'No enabled unique test on a column and no unique_combination_of_columns test, a test with a where aside. A unique_key alone does not count: nothing checks it.' },
 ];
+
+/* YAML and warehouse (0188): every model whose schema YAML differs from the
+   table catalog.json describes, by folder, with an Update button for the whole
+   project or any folder. The button opens a dialog that is the review: the
+   files as they are on the disk, patched, the changes and what a removal loses,
+   and what is left out and why. Nothing is written before its button. */
+
+function yamlBulkState() {
+  if (!S.yamlBulk) S.yamlBulk = { types: false, written: new Map() };
+  return S.yamlBulk;
+}
+
+/* The models written and not yet seen by a parse: the manifest they were
+   written under is still the one on screen. */
+function yamlBulkWaiting() {
+  const at = (S.meta && S.meta.manifest_mtime) || 0;
+  const waiting = new Set();
+  for (const [id, was] of yamlBulkState().written) if (was === at) waiting.add(id);
+  return waiting;
+}
+
+/* A card of lines, bounded and closed by Escape, as Update YAML's is. */
+function syncCard(title, lines) {
+  notice({ title, body: lines.join('\n'), sticky: true });
+  S.notice.card.classList.add('sync');
+  S.notice.card.tabIndex = -1;
+  S.notice.card.focus({ preventScroll: true });
+}
+
+/* The link a collin finding about YAML behind the warehouse carries to this
+   section, only while the section is there. */
+function yamlSyncLink() {
+  if (!(S.reports && S.reports.yamlsync)) return undefined;
+  return { text: 'Update these from catalog.json, in YAML and warehouse', section: 'yamlsync' };
+}
+
+async function yamlSyncSection(again) {
+  const head = (about, extra = []) => reportHead({ title: 'YAML and warehouse', tool: 'dbt', about, again, extra });
+  let answer;
+  try { answer = await api.get('/api/yaml-sync'); }
+  catch (e) { return [head(''), jel('div', 'compiled-empty', e.message)]; }
+  if (!answer.catalog_at) return [head(''), jel('div', 'compiled-empty', 'There is no catalog.json: run dbt docs generate, and the columns of each table are compared with the YAML.')];
+  const state = yamlBulkState();
+  const body = jel('div', 'reportbody');
+  const tiles = jel('div', '');
+  const tree = jel('div', 'ybtree');
+  const notes = jel('div', '');
+
+  const types = jel('label', 'ybswitch');
+  const box = jel('input', '');
+  box.type = 'checkbox';
+  box.checked = state.types;
+  types.append(box, 'Include types only');
+  types.title = 'A model whose only difference is columns with no data_type is left out of the counts and of Update, unless this is on.';
+  const all = jel('button', 'btn sm primary', 'Update all');
+  all.type = 'button';
+
+  const paint = () => {
+    const waiting = yamlBulkWaiting();
+    const counts = yamlBulkCounts(answer.models, state.types, waiting);
+    tiles.replaceChildren(reportTiles([
+      { label: 'Disagree', value: String(counts.disagrees), sub: 'columns to add or remove, types that differ', tone: counts.disagrees ? 'warn' : '' },
+      { label: 'Types only', value: String(counts.untyped), sub: state.types ? 'included in Update' : 'left out of Update' },
+      { label: 'Agree', value: String(counts.agrees), sub: 'the YAML says what the table says' },
+      { label: 'Not checked', value: String(counts.not_checked), sub: 'listed below, with why' },
+    ]));
+    all.textContent = `Update all (${counts.update})`;
+    all.disabled = !counts.update;
+    const view = tree.closest('.reports-view');
+    const place = view && keepReportPlace(view);
+    tree.replaceChildren(...yamlBulkTreeView(answer, state, waiting));
+    if (place) restoreReportPlace(view, place);
+  };
+  box.addEventListener('change', () => { state.types = box.checked; paint(); });
+  all.addEventListener('click', () => {
+    openYamlBulk('the whole project', yamlBulkScope(answer.models, '', state.types, yamlBulkWaiting()), answer);
+  });
+
+  if (answer.catalog_env && answer.catalog_env !== 'manifest') notes.append(jel('p', 'runnote', yamlBulkDeployed(answer.catalog_env)));
+  notes.append(jel('p', 'runnote', 'A model is compared with the table catalog.json lists for it. Update opens a dialog that shows each file as it would be '
+    + 'written, with what is left out and why, and writes nothing before its own button.'));
+  body.append(tiles, notes, tree);
+  paint();
+  const unchecked = yamlBulkNotChecked(answer.models);
+  if (unchecked.length) body.append(yamlBulkNotCheckedView(unchecked));
+  return [head(yamlBulkAbout(answer), [types, all]), body];
+}
+
+/* The folders of the tree, the first two levels open and the rest folded, each
+   folder's rows made when it is first opened: thousands of models are a few
+   hundred rows at a time. */
+function yamlBulkTreeView(answer, state, waiting) {
+  const root = yamlBulkTree(answer.models, state.types, waiting);
+  if (!root.shown) return [jel('p', 'runnote', 'Every model catalog.json lists has the columns its YAML declares.')];
+  const rows = (node, depth) => [
+    ...node.folders.map((f) => folder(f, depth + 1)),
+    ...(node.models.length ? [modelList(node.models)] : []),
+  ];
+  const modelList = (models) => {
+    const ul = jel('ul', 'rentries');
+    ul.append(...models.map((m) => modelRow(m)));
+    return ul;
+  };
+  const modelRow = (m) => {
+    const li = jel('li', 'ybrow');
+    const wait = waiting.has(m.id);
+    if (!yamlBulkWants(m, state.types) || wait) li.classList.add('dim');
+    const name = jel('a', 'filelink', m.name);
+    name.title = `${m.id}\n${m.yml || 'no properties file yet'}`;
+    name.addEventListener('click', (ev) => { ev.preventDefault(); openFromReport(m.id, { dock: 'catalog' }); });
+    li.append(name);
+    for (const c of yamlBulkChips(m)) {
+      const chip = jel('span', 'ybchip', c.text);
+      chip.dataset.kind = c.kind;
+      li.append(chip);
+    }
+    if (wait) {
+      const chip = jel('span', 'ybchip', 'updated, waiting for a parse');
+      chip.dataset.kind = 'wait';
+      li.append(chip);
+    }
+    return li;
+  };
+  const folder = (node, depth) => {
+    const d = jel('details', 'ybfolder');
+    d.open = depth <= 2;
+    const sum = jel('summary', '');
+    sum.append(reportChevron(), jel('span', 'rtitle', node.name), jel('span', 'ybcount', yamlBulkFolderCount(node)), jel('span', 'grow'));
+    const update = jel('button', 'btn sm ybupdate', 'Update');
+    update.type = 'button';
+    update.disabled = !node.update;
+    update.title = node.update ? `Update the YAML of the ${node.update} model${node.update === 1 ? '' : 's'} under ${node.path}` : 'Nothing under this folder would be updated';
+    // Inside the summary, a click must not also fold the folder.
+    update.addEventListener('click', (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      openYamlBulk(node.path, yamlBulkScope(answer.models, node.path, state.types, waiting), answer);
+    });
+    sum.append(update);
+    sum.addEventListener('click', () => { d.dataset.touched = '1'; });
+    d.append(sum);
+    const fill = () => {
+      if (d.dataset.filled || !d.open) return;
+      d.dataset.filled = '1';
+      d.append(...rows(node, depth));
+    };
+    d.addEventListener('toggle', fill);
+    fill();
+    return d;
+  };
+  return rows(root, 0);
+}
+
+/* What a folder row says it holds: how many models the update would change,
+   and of how many it lists. */
+function yamlBulkFolderCount(node) {
+  return node.update === node.shown ? `${node.update}` : `${node.update} of ${node.shown}`;
+}
+
+/* The models not compared, by reason, in a fold of their own. */
+function yamlBulkNotCheckedView(groups) {
+  const total = groups.reduce((n, g) => n + g.models.length, 0);
+  const d = jel('details', 'reportfinding');
+  d.open = false;
+  const sum = jel('summary', '');
+  sum.append(reportChevron(), jel('span', 'rtitle', 'Not checked'), jel('span', 'tabbadge rcount', String(total)));
+  sum.addEventListener('click', () => { d.dataset.touched = '1'; });
+  d.append(sum);
+  d.append(reportLever('catalog.json says nothing true of these models, so their YAML is not compared with it. A table the catalog lists with no column, or for another relation, is no evidence of drift.'));
+  for (const g of groups) {
+    const f = jel('details', 'checkfolder');
+    f.open = false;
+    f.append(reportFolderSummary(`${g.reason} (${g.models.length})`));
+    const ul = reportList(g.models, (m) => {
+      const li = jel('li', '');
+      const a = jel('a', 'filelink', m.name);
+      a.title = m.id;
+      a.addEventListener('click', (ev) => { ev.preventDefault(); openFromReport(m.id, { dock: 'catalog' }); });
+      li.append(a);
+      return li;
+    }, f, 200);
+    f.append(ul);
+    d.append(f);
+  }
+  return d;
+}
+
+/* Reads a list of paths a few at a time. A path with no file is `missing`
+   when `lenient` (a model with no YAML yet has none to find), an error
+   otherwise. */
+async function yamlBulkRead(paths, lenient) {
+  const reads = new Map();
+  const queue = [...paths];
+  const next = async () => {
+    for (let path = queue.shift(); path !== undefined; path = queue.shift()) {
+      try {
+        const body = await api.get('/api/file?path=' + encodeURIComponent(path));
+        reads.set(path, { content: body.content, stamp: body.stamp, truncated: body.truncated });
+      } catch (e) {
+        reads.set(path, lenient.has(path) ? { missing: true } : { error: e.message });
+      }
+    }
+  };
+  await Promise.all([next(), next(), next(), next()]);
+  return reads;
+}
+
+/* Runs yamlBulkSteps between frames, a few tens of milliseconds at a time, so
+   the page stays alive while hundreds of files are patched, and says how far
+   it has got. */
+async function yamlBulkDrive(run, progress) {
+  let slice = performance.now();
+  for (let step = run.next(); ; step = run.next()) {
+    if (step.done) return step.value;
+    if (performance.now() - slice > 40) {
+      progress(step.value);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      slice = performance.now();
+    }
+  }
+}
+
+/* One toast for a long step, its words changed as it goes and removed at the end. */
+function yamlBulkProgress(text) {
+  let t = document.querySelector('#toast .ybprogress');
+  if (!text) { if (t) t.remove(); return; }
+  if (!t) {
+    t = jel('div', 'toast ybprogress');
+    $('#toast').appendChild(t);
+  }
+  t.textContent = text;
+}
+
+/* The dialog: the models asked, with their freshness flags, their files read
+   from the disk and patched, shown file by file. */
+async function openYamlBulk(label, wanted, answer) {
+  if (S.yamlBulkBusy) return;
+  if (!wanted.length) return toast('nothing to update there');
+  S.yamlBulkBusy = true;
+  try {
+    yamlBulkProgress(`reading ${wanted.length} model${wanted.length === 1 ? '' : 's'}`);
+    // The flags of these models alone, a few thousand to a request (the route's bound).
+    const flagged = new Map();
+    for (let at = 0; at < wanted.length; at += 4000) {
+      const got = await api.send('/api/yaml-sync', 'POST', { nodes: wanted.slice(at, at + 4000).map((m) => m.id) });
+      got.models.forEach((m) => flagged.set(m.id, m));
+    }
+    // A manifest reloaded since the page read the section no longer has some of them.
+    const dropped = wanted.filter((m) => !flagged.has(m.id));
+    const syncs = wanted.map((m) => flagged.get(m.id)).filter(Boolean);
+    const fresh = new Set(syncs.filter((m) => !m.yml).map(yamlBulkFile));
+    yamlBulkProgress(`reading ${new Set(syncs.map(yamlBulkFile)).size} files`);
+    const reads = await yamlBulkRead(new Set(syncs.map(yamlBulkFile)), fresh);
+    // Taken again before each dialog: a tab may have been edited while the last was open.
+    const openUnsaved = () => new Set(S.order.filter((p) => (S.open.get(p) || {}).dirty));
+    const cache = new Map();
+    const idle = new Map();
+    let withBehind = false;
+    try {
+      for (;;) {
+        const plan = await yamlBulkDrive(yamlBulkSteps(syncs, reads, openUnsaved(), withBehind, cache), (p) => yamlBulkProgress(`patching file ${p.at} of ${p.total}`));
+        yamlBulkProgress('');
+        dropped.forEach((m) => plan.left.push({ sync: m, kind: 'reloaded', why: 'the manifest was reloaded and no longer has it' }));
+        plan.idle.forEach((x) => idle.set(x.sync.id, x.sync));
+        const behind = plan.left.filter((l) => l.kind === 'behind').length;
+        const actions = [{ id: null, label: 'Cancel' }];
+        if (behind) actions.push({ id: 'also', label: `Also the ones behind (${behind})` });
+        if (plan.files.length) actions.push({ id: 'write', label: `Write ${plan.files.length} file${plan.files.length === 1 ? '' : 's'}`, style: 'primary' });
+        const pick = await modal({ title: `Update the YAML of ${label}`, body: yamlBulkPreview(plan, answer), actions, wide: true });
+        if (pick === 'also') { withBehind = true; continue; }
+        if (pick === 'write') await writeYamlBulk(plan);
+        return;
+      }
+    } finally {
+      yamlBulkProgress('');
+      // The file already says what the catalog says: the manifest has not caught up, as for a model written.
+      if (idle.size) {
+        const at = (S.meta && S.meta.manifest_mtime) || 0;
+        idle.forEach((m, id) => yamlBulkState().written.set(id, at));
+        if (S.reportsSection === 'yamlsync' && panelOpen('reports')) showReportSection('yamlsync');
+      }
+    }
+  } catch (e) {
+    toast('Update YAML: ' + e.message, 'err');
+  } finally {
+    yamlBulkProgress('');
+    S.yamlBulkBusy = false;
+  }
+}
+
+/* What the dialog shows: the deployed environment's catalog said once, the
+   models left out and why, then each file with the models' changes. */
+function yamlBulkPreview(plan, answer) {
+  const box = jel('div', 'ybpreview');
+  if (plan.env) box.append(jel('p', 'runnote', yamlBulkDeployed(plan.env)));
+  const models = plan.files.reduce((n, f) => n + f.models.length, 0);
+  box.append(jel('p', '', plan.files.length
+    ? `${plan.files.length} file${plan.files.length === 1 ? '' : 's'} to write, for ${models} model${models === 1 ? '' : 's'}. Each is shown as it is on the disk now, patched; nothing is kept before Write.`
+    : 'No file would change.'));
+  if (plan.left.length) {
+    const d = jel('details', 'ybleft');
+    d.open = plan.left.length <= 8;
+    d.append(jel('summary', '', `${plan.left.length} model${plan.left.length === 1 ? '' : 's'} left out`));
+    const ul = jel('ul', '');
+    for (const kind of ['behind', 'unsaved', 'refused', 'unread', 'skipped', 'reloaded']) {
+      const those = plan.left.filter((l) => l.kind === kind);
+      if (!those.length) continue;
+      const byWhy = new Map();
+      for (const l of those) {
+        if (!byWhy.has(l.why)) byWhy.set(l.why, []);
+        byWhy.get(l.why).push(l.sync.name);
+      }
+      for (const [why, names] of byWhy) ul.append(jel('li', '', `${yamlBulkNames(names, 10)}: ${why}`));
+    }
+    d.append(ul);
+    box.append(d);
+  }
+  if (plan.idle.length) {
+    const d = jel('details', 'ybleft');
+    d.open = plan.idle.length <= 8;
+    d.append(jel('summary', '', `${plan.idle.length} model${plan.idle.length === 1 ? '' : 's'} already said right by their file`));
+    d.append(jel('p', 'runnote', `${yamlBulkNames(plan.idle.map((x) => x.sync.name), 10)}: the file says what catalog.json says, `
+      + 'saved since the last parse. They are shown as waiting for a parse.'));
+    box.append(d);
+  }
+  for (const f of plan.files) {
+    const d = jel('details', 'ybfile');
+    d.open = plan.files.length <= 3;
+    d.append(jel('summary', '', `${f.file}${f.isNew ? ' (new file)' : ''}: ${f.models.length} model${f.models.length === 1 ? '' : 's'}`));
+    const fill = () => {
+      if (d.dataset.filled || !d.open) return;
+      d.dataset.filled = '1';
+      const ul = jel('ul', '');
+      for (const { sync, patch } of f.models) {
+        const li = jel('li', '', sync.name);
+        const sub = jel('ul', '');
+        for (const line of yamlBulkLines(sync, patch)) sub.append(jel('li', '', line));
+        li.append(sub);
+        ul.append(li);
+      }
+      d.append(ul);
+    };
+    d.addEventListener('toggle', fill);
+    fill();
+    box.append(d);
+  }
+  return box;
+}
+
+/* The writes, one file after another, each with the stamp it was read with: a
+   file changed since is refused by the server and skipped here. Open clean tabs
+   follow their file as they already do. */
+async function writeYamlBulk(plan) {
+  const done = { written: [], skipped: [] };
+  const state = yamlBulkState();
+  const at = (S.meta && S.meta.manifest_mtime) || 0;
+  for (const f of plan.files) {
+    try {
+      await api.send('/api/file', 'PUT', { path: f.file, content: f.text, stamp: f.stamp });
+      done.written.push({ file: f.file, models: f.models.length });
+      for (const { sync } of f.models) state.written.set(sync.id, at);
+    } catch (e) {
+      done.skipped.push({ file: f.file, why: e.changed ? 'it changed on disk since it was read' : e.message });
+    }
+  }
+  dropNodeCache();
+  refreshOpenFiles();
+  refreshGit();
+  syncCard(done.skipped.length ? 'The YAML was updated, with files skipped' : 'The YAML was updated', yamlBulkResult(done, plan.left));
+  if (S.reportsSection === 'yamlsync' && panelOpen('reports')) showReportSection('yamlsync');
+}
 
 async function checksSection(again) {
   const about = "this tool's own rules, read off the manifest: dbt warns of none of them";

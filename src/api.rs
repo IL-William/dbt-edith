@@ -267,7 +267,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/envs/select", post(select_env))
         .route("/api/vars", get(list_vars))
         .route("/api/compiled", get(compiled_sql))
-        .route("/api/yaml-sync", get(yaml_sync))
+        .route("/api/yaml-sync", get(yaml_sync).post(yaml_sync_flags))
         .route("/api/lineage", get(lineage))
         .route("/api/select", get(selection))
         .route("/api/selectors", get(list_selectors))
@@ -1044,10 +1044,16 @@ async fn reports_index(State(st): State<Arc<AppState>>) -> Response {
     // once per macro (0105).
     // The checks section is listed only while one of the seven finds a node,
     // counted from the same graph: no file is read (0116).
-    let (unexplained, checks) = {
+    let (unexplained, checks, listed, catalog_at) = {
         let graph = st.graph.read().await;
         let unreached = graph.macro_use.unreached(&graph.macros);
-        (unreached.into_iter().filter(|&m| macro_used(&graph, m).unexplained()).count(), crate::checks::count(&graph))
+        let listed = graph.nodes.iter().filter(|n| n.kind == crate::graph::Kind::Model && n.table.is_some()).count();
+        (
+            unreached.into_iter().filter(|&m| macro_used(&graph, m).unexplained()).count(),
+            crate::checks::count(&graph),
+            listed,
+            graph.catalog_mtime,
+        )
     };
     // Whether the builds can be read from the package's two tables. The graph
     // is looked at again after the awaits above: a manifest rewritten meanwhile
@@ -1065,6 +1071,7 @@ async fn reports_index(State(st): State<Arc<AppState>>) -> Response {
         macros: (unexplained > 0).then_some(MacrosIndex { unexplained, at: manifest_at }),
         builds,
         checks: (checks > 0).then_some(ChecksIndex { count: checks, at: manifest_at }),
+        yamlsync: (listed > 0).then_some(YamlSyncIndex { models: listed, at: catalog_at, manifest_at }),
     })
     .into_response()
 }
@@ -1314,6 +1321,19 @@ struct ReportsIndex {
     builds: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     checks: Option<ChecksIndex>,
+    /// Listed while catalog.json lists a model's table: the models it lists and
+    /// when it was written. Nothing is compared for the index, which is polled (0188).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    yamlsync: Option<YamlSyncIndex>,
+}
+
+#[derive(serde::Serialize)]
+struct YamlSyncIndex {
+    models: usize,
+    /// When catalog.json was written, and the manifest the page read it with:
+    /// a parse changes what the section says, so it makes the section stale.
+    at: u64,
+    manifest_at: u64,
 }
 
 /// How many nodes the checks list in all, against the manifest they were
@@ -3227,20 +3247,53 @@ struct YamlSyncQuery {
 ///
 /// With `node` the answer carries the model's freshness flags; without it, for
 /// the whole project, it carries none, since they cost file-system calls for
-/// each model. A batch form that does comes with the bulk update.
+/// each model. The POST form below gives them for a list of models.
 async fn yaml_sync(State(st): State<Arc<AppState>>, Query(q): Query<YamlSyncQuery>) -> Response {
     let graph = st.graph.read().await.clone();
     let only = match q.node.as_deref() {
         Some(id) => match graph.index.get(id) {
-            Some(&i) if graph.nodes[i as usize].kind == crate::graph::Kind::Model => Some(i),
+            Some(&i) if graph.nodes[i as usize].kind == crate::graph::Kind::Model => Some(vec![i]),
             _ => return (StatusCode::NOT_FOUND, "unknown model").into_response(),
         },
         None => None,
     };
+    yaml_sync_answer(&st, graph, only).await
+}
+
+/// The most models one batch may name: a folder of the bulk update is a few
+/// thousand at most, and an answer to more is the whole project's, which GET gives.
+const MAX_YAML_SYNC_BATCH: usize = 5_000;
+
+#[derive(Deserialize)]
+struct YamlSyncBatch {
+    nodes: Vec<String>,
+}
+
+/// The same answer for the models named, each with its freshness flags: what
+/// the bulk update asks once it knows which models a folder would change
+/// (0188). An id that is no model of the manifest on screen is left out of the
+/// answer, a manifest reloaded since the page read it.
+async fn yaml_sync_flags(State(st): State<Arc<AppState>>, Json(b): Json<YamlSyncBatch>) -> Response {
+    if b.nodes.len() > MAX_YAML_SYNC_BATCH {
+        return (StatusCode::PAYLOAD_TOO_LARGE, format!("at most {MAX_YAML_SYNC_BATCH} models at a time")).into_response();
+    }
+    let graph = st.graph.read().await.clone();
+    let mut ids: Vec<u32> = b
+        .nodes
+        .iter()
+        .filter_map(|id| graph.index.get(id.as_str()).copied())
+        .filter(|&i| graph.nodes[i as usize].kind == crate::graph::Kind::Model)
+        .collect();
+    ids.sort_unstable();
+    ids.dedup();
+    yaml_sync_answer(&st, graph, Some(ids)).await
+}
+
+async fn yaml_sync_answer(st: &Arc<AppState>, graph: Arc<Graph>, only: Option<Vec<u32>>) -> Response {
     let (root, target) = (st.root.clone(), st.target_dir.clone());
     let settings = st.settings.load();
     match tokio::task::spawn_blocking(move || {
-        crate::yaml_sync::check(&graph, &root, &target, only, &|file: &str| settings.envs.get(file).and_then(|o| o.hidden))
+        crate::yaml_sync::check(&graph, &root, &target, only.as_deref(), &|file: &str| settings.envs.get(file).and_then(|o| o.hidden))
     })
     .await
     {
@@ -5414,6 +5467,58 @@ mod tests {
         assert_eq!(why, "collin is not run: x is open");
         assert!(collin_missing(None).starts_with("collin is not installed"));
 
+        server.abort();
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The batch form of the YAML update's route answers for the models named,
+    /// with their freshness flags, leaves an unknown id out, refuses too long a
+    /// list, and sits behind the key like every route (0188). The index lists
+    /// the section once catalog.json lists a model.
+    #[tokio::test]
+    async fn the_yaml_sync_batch_answers_for_the_models_named() {
+        let root = temp_project("yaml-sync");
+        std::fs::create_dir_all(root.join("models")).unwrap();
+        std::fs::create_dir_all(root.join("target/run/demo/models")).unwrap();
+        std::fs::write(root.join("models/a.sql"), "select 1").unwrap();
+        std::fs::write(root.join("target/run/demo/models/a.sql"), "create table").unwrap();
+        let (port, st, server) = serve(&root).await;
+        let host = format!("127.0.0.1:{port}");
+        let h = [("Host", host.as_str())];
+        let model = |name: &str| {
+            serde_json::json!({ "name": name, "resource_type": "model", "package_name": "demo",
+                                "original_file_path": format!("models/{name}.sql"), "database": "D", "schema": "S",
+                                "config": { "materialized": "table" }, "columns": { "x": { "name": "x" } } })
+        };
+        let raw_manifest: crate::manifest::RawManifest = serde_json::from_value(serde_json::json!({
+            "metadata": { "project_name": "demo", "adapter_type": "snowflake" },
+            "nodes": { "model.demo.a": model("a"), "model.demo.b": model("b") } }))
+        .unwrap();
+        let mut g = Graph::build(raw_manifest, &root.join("target/manifest.json"), 0, 0);
+        let table = |name: &str| {
+            serde_json::json!({ "metadata": { "database": "D", "schema": "S", "name": name },
+                "columns": { "X": { "name": "X", "type": "NUMBER", "index": 1 }, "Y": { "name": "Y", "type": "TEXT", "index": 2 } } })
+        };
+        let cat: crate::manifest::RawCatalog =
+            serde_json::from_value(serde_json::json!({ "nodes": { "model.demo.a": table("a"), "model.demo.b": table("b") } })).unwrap();
+        g.merge_catalog(cat, 1);
+        *st.graph.write().await = Arc::new(g);
+
+        let post = |body: &str| {
+            let mut r = format!("POST /api/yaml-sync HTTP/1.1\r\nAuthorization: Bearer {TEST_KEY}\r\nHost: {host}\r\n");
+            r.push_str(&format!("Content-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()));
+            r
+        };
+        let whole = response_of(port, get("/api/yaml-sync", &h)).await;
+        assert!(whole.contains(r#""name":"a""#) && whole.contains(r#""name":"b""#) && !whole.contains("catalog_behind_run"), "{whole}");
+        let one = response_of(port, post(r#"{"nodes":["model.demo.a","nope"]}"#)).await;
+        assert!(one.contains(r#""name":"a""#) && !one.contains(r#""name":"b""#), "only the model named: {one}");
+        assert!(one.contains(r#""catalog_behind_run":true"#), "its flags, the run file being newer than a catalog written at 1: {one}");
+        let many = format!(r#"{{"nodes":[{}]}}"#, vec![r#""x""#; MAX_YAML_SYNC_BATCH + 1].join(","));
+        assert!(status_of(port, post(&many)).await.ends_with("413 Payload Too Large"));
+        assert!(status_of(port, keyless(post(r#"{"nodes":[]}"#))).await.ends_with("401 Unauthorized"));
+        let index = response_of(port, get("/api/reports", &h)).await;
+        assert!(index.contains(r#""yamlsync":{"models":2,"at":1,"manifest_at":0}"#), "{index}");
         server.abort();
         let _ = std::fs::remove_dir_all(&root);
     }

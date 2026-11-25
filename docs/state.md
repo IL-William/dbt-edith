@@ -3600,11 +3600,9 @@ of its own, and each panel updates the tour, its page under
       that state back in the `popstate` handler to set the depth before
       `focusNode`. A column is not in an entry, by choice.
 64. **What Update YAML left (0188).**
-    - **Reports and Snowflake.** The button is on one model's Columns tab. A bulk
-      update of a folder from Reports, and the columns read from Snowflake for
-      the environment pill's environment, which gives a number its precision and
-      lifts the contract trap, are the next two steps; `GET /api/yaml-sync`
-      already answers for the whole project.
+    - **Snowflake.** The columns read from Snowflake for the environment pill's
+      environment, which give a number its precision and lift the contract trap,
+      are the step after the bulk update from Reports (item 67).
     - **Not compared:** seeds, snapshots, sources, ephemeral and versioned
       models, and a package's models. A versioned model declares its columns per
       version.
@@ -3641,6 +3639,21 @@ of its own, and each panel updates the tour, its page under
     already reads around it, `diffSides`). Update YAML inherits it. It wants the
     tab to remember the file's ending and write it back, with a mixed file kept
     as it is; its own pull request.
+67. **What the bulk YAML update left (0188).**
+    - **Snowflake live.** The columns read from Snowflake for the environment
+      pill's environment, which give a number its precision and lift the contract
+      trap, are the step after this; the dialog reads `catalog.json` only.
+    - **A write is a sequence of requests,** not a transaction: a request that
+      fails midway leaves the files before it written, which the card lists.
+    - **The tree lists the models that differ only.** The models that agree are a
+      count; a folder whose models all agree is not drawn.
+    - **The section is dbt's in the rail,** its own colour for `catalog.json` is
+      not drawn: the tools' colours are one per reader.
+    - **A model written waits for a parse by the manifest's time alone:** a parse
+      that changed nothing about it also ends the wait, and the model is counted
+      again if it still differs.
+    - **No count in the rail,** since counting needs the comparison, which the
+      polled index does not make.
 
 Left by the pull requests of 2026-10-14, each a known limit written in
 its pull request, unranked:

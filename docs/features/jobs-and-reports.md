@@ -244,9 +244,10 @@ results once dbt has written them, the warnings dbt would give as it parses once
 there is one, collin's report once collin has written one, the coverage of your
 jobs once the Jobs tab has a source, and the order of their steps with it, the
 project's macros while one is reached by no node and nothing explains it, this
-tool's own checks while one finds a node, and the builds of each environment
-once the dbt_artifacts package is there. The order of the steps, the checks and
-the builds are listed but never light the tab. The panel covers the whole
+tool's own checks while one finds a node, the YAML and warehouse section once
+catalog.json lists a model, and the builds of each environment once the
+dbt_artifacts package is there. The order of the steps, the checks, the YAML and
+warehouse and the builds are listed but never light the tab. The panel covers the whole
 window, the sidebar too, so a list is read at full width, as the settings do
 (0137, 0140). The tab is lit while the panel is down and does nothing when
 clicked then. Anything that shows a file or a dock tab rolls it up again: a name
@@ -421,6 +422,62 @@ manifest says nothing of freshness, as another producer's may, is given no
 verdict. The section is listed in the panel while one of the seven lists a node,
 but never lights the tab, carries no chip, since the count would rarely go
 down, and is never the section the panel opens on (0116).
+
+![The YAML and warehouse section of Reports: the models whose YAML differs from the catalog, by folder, with an Update for each folder](../shots/reports-yaml.png)
+
+**YAML and warehouse** brings the schema YAML of a folder in line with the
+tables `catalog.json` lists, a model at a time being [Update YAML in the
+Catalog](catalog.md#update-yaml), whose comparison and patch it uses. It is
+listed while `catalog.json` lists a model's table, under dbt, never lights the
+tab, and carries no count in the rail.
+
+- **Its head** names where the columns were read from, `catalog.json, the
+  manifest's target, written <date>`, or the `.env` file whose environment the
+  catalog describes (`catalog.json, .env.prod, written <date>`), with a line
+  saying so when it is a deployed environment's. Over the section, four figures:
+  models whose columns **disagree** (columns to add or remove, a type that is
+  another type), **types only** (their columns only lack a `data_type`),
+  those that **agree**, and those **not checked**. **Include types only**, off
+  at each opening, leaves the types-only models out of Update and of the counts
+  it shows, and **Update all** takes every model the figures count.
+- **The tree** is the folders of the models' `.sql` files, at any depth, with
+  the models that differ in them. A folder says how many models under it Update
+  would change (`3`, or `3 of 5` when it lists more), folds and unfolds, and has
+  its own **Update**: the layer or sub-layer it is, at any depth. The first
+  folders are open and the deeper ones folded, each filling its rows when
+  opened, so a project of thousands of models opens at once. A model's row
+  carries chips, `+3` columns to add, `−1` to remove, `~2` types to write or
+  replace, or `types` for a model that only lacks them; its name opens the
+  Catalog on it.
+- **Not checked** is a fold of its own, grouped by reason: not in `catalog.json`,
+  ephemeral, listed with no column, described at another relation than the
+  manifest's or any `.env` file's, versioned, from an installed package.
+- **Update** opens a dialog, which is the review: nothing is written before its
+  button. For the models it was asked for it reads each properties file from the
+  disk as it is, with the stamp it has, runs the Catalog's patch on it for each
+  model of the file in turn, and shows file by file the models and what changes,
+  and what removing a column loses (a description, tests). A model with no
+  properties file gets `<model>.yml` beside its SQL, with its full content, shown
+  as a new file; one that exists by then is patched. Left out, listed with why:
+  the models behind (the model's last run newer than `catalog.json`, its table
+  older than its code, its code newer than the catalog: the freshness flags of
+  the Catalog's button, asked for these models alone), those a patch refuses
+  (the Catalog's list), and the files open in the editor with unsaved edits. A
+  catalog that describes a deployed environment is said once at the top and
+  leaves no model out for that: it flags every model, and a column to remove may
+  be one this branch added. The buttons are **Cancel**, **Also the ones
+  behind** (which includes the models behind, never the refused or unsaved
+  ones, and is shown again with them in) and **Write N files**.
+- **Writing** is one file after the other, each sent with the stamp it was read
+  with and in the file's own line endings. A file that changed on the disk
+  since is refused and skipped, and the card says so. Open tabs with nothing
+  unsaved follow their file as they already do. A card, at most half the window
+  high and closed by Escape, lists the files written with how many models they
+  hold, the ones skipped and why, and what was left out. A model written shows
+  `updated, waiting for a parse` and is no longer counted, until the manifest
+  reloads; Read again then says what is left.
+- **From collin's report**, the fold of models whose YAML is behind the
+  warehouse, and collin's own finding that the YAML is out of date, link here.
 
 **Builds by environment** is listed once Snowflake's features are on and the
 manifest holds the dbt_artifacts package's `model_executions` and `invocations`
