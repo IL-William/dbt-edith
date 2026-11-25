@@ -3590,9 +3590,6 @@ of its own, and each panel updates the tour, its page under
     - "Install another collin version…" (by tag) still types cargo on Windows,
       where it fails the same way; a release asset per tag could be fetched
       into its own folder, with the checks 0128 holds an install to.
-    - The command is covered by a Posix run against a folder and by string for
-      PowerShell; it has not yet run on a Windows machine with the
-      `windows-gnu` toolchain.
 63. **What the static site's address history left (Back and Forward).**
     - Back and Forward walk the nodes visited but keep the depth the canvas has
       then, not the one the entry was left at. The way to do it: before pushing,
@@ -3651,9 +3648,9 @@ of its own, and each panel updates the tour, its page under
     - **No count in the rail,** since counting needs the comparison, which the
       polled index does not make.
 68. **What the live read left (0188).**
-    - **Not tried on a real account.** The read is tested against the fake
-      connector and a fake sidecar; INFORMATION_SCHEMA's columns, and what a
-      role without the privilege gets from it, are not checked on a warehouse.
+    - **What the tests cover.** The read is tested against the fake connector
+      and a fake sidecar; INFORMATION_SCHEMA's columns, and what a role without
+      the privilege gets from it, are outside them.
     - **A bare `number` already written under an enforced contract is not
       flagged.** It compares equal to `number(38,2)` by base, though the contract
       rounds with it; telling them apart means comparing precision, which the
@@ -3668,6 +3665,20 @@ of its own, and each panel updates the tour, its page under
       quote (a quoted database) is answered as not read.
     - **A type other than a number** is the view's `data_type` as Snowflake spells
       it, with no length (`TEXT`, `FLOAT`), written as the catalog's types are.
+69. **What the greyed Columns chip's offer left (0185).**
+    - The Install row only types the command into the terminal and does not
+      run it; the user presses Enter.
+    - Switching to Collin with a stale cache shows the first answer from the old
+      cache until collin's run ends, and then asks again.
+    - A static site gets no offer: the chip is hidden there.
+70. **What a column's YAML glyph left (0187).**
+    - On a versioned model the test chips still look for `orders.v2` where the
+      YAML says `name: orders`, and land nowhere; `testLine` could reuse
+      `versionBase` and `sameVersion` as the glyph does.
+    - The flash trims a trailing `# Heading` line of a `description: |` block,
+      as it does a comment.
+    - A file over the outline limit opens with no landing.
+    - A package's model and the static site have no glyph.
 
 Left by the pull requests of 2026-10-14, each a known limit written in
 its pull request, unranked:
@@ -4598,7 +4609,7 @@ both that route and the cross-compile.
     could be `dbt-edith` alone. And the MSVC route's warning on every build
     could become a search for `rc.exe`.
   - A `collin.exe` copied over a file git tracks is refused too (0094), so
-    the VM's collin has to sit in a folder git does not track.
+    a collin.exe has to sit in a folder git does not track.
   - The cut canvas's note says "the rest of their lineage" rather than
     "their children", a selection growing upstream too, and shows once the
     starts take half of what is drawn (1.31.0).
