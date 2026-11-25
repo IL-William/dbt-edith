@@ -250,3 +250,19 @@ check('a model of types alone says so', yamlSyncTip({ status: 'untyped', untyped
 check('a deployed catalog is always said', yamlSyncBehind({ deployed: true, catalog_env: '.env.prod' }, 5, when).split('\n').length, 1);
 check('and says more when the code is newer', yamlSyncBehind({ deployed: true, catalog_env: '.env.prod', code_after_catalog: true }, 5, when).split('\n').length, 2);
 check('and names the file, the removals and the SQL', /\.env\.prod.*removal.*SQL/.test(yamlSyncBehind({ deployed: true, catalog_env: '.env.prod' }, 5, when)), true);
+
+// Where the columns are read from: catalog.json, or Snowflake for the pill's environment.
+check('the source is named in a switch, a tooltip and a head', [
+  yamlSyncSourceWords('catalog', 'manifest'),
+  yamlSyncSourceWords('snowflake', 'manifest'),
+  yamlSyncSourceWords('snowflake', ''),
+  yamlSyncSourceWords('snowflake', '.env.prod'),
+], ['catalog.json', "Snowflake, the manifest's target", "Snowflake, the manifest's target", 'Snowflake, .env.prod']);
+check('a live request adds the source and the environment, the catalog nothing', [yamlSyncQuery('catalog', ''), yamlSyncQuery('snowflake', ''), yamlSyncQuery('snowflake', '.env.prod')],
+  ['', 'source=snowflake&env=', 'source=snowflake&env=.env.prod']);
+check('and so does a body', [yamlSyncSourceBody({ nodes: ['a'] }, 'catalog', 'x'), yamlSyncSourceBody({ nodes: ['a'] }, 'snowflake', '.env.qa')],
+  [{ nodes: ['a'] }, { nodes: ['a'], source: 'snowflake', env: '.env.qa' }]);
+check('a live read says Snowflake, not the catalog, when the table is behind its code',
+  yamlSyncBehind({ table_behind_code: true }, 0, when, 'snowflake'),
+  "This model's table is older than its code: run it first, or the columns Snowflake has are not the ones its code builds.");
+check('and when it is a deployed environment', /^Snowflake has the table of \.env\.prod, an environment deployed/.test(yamlSyncBehind({ deployed: true, catalog_env: '.env.prod' }, 0, when, 'snowflake')), true);

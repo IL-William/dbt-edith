@@ -145,6 +145,66 @@ file at a time, and a folder is dozens.
 - **The section is dbt's, quiet.** It reads `catalog.json`, which dbt writes, and
   never lights the tab: a project with no types would always light it.
 
+## Live: the columns from Snowflake
+
+The catalog is what dbt wrote at one moment, for one target, and without a
+precision for a number. A read of the table itself answers the three.
+
+- **`INFORMATION_SCHEMA.COLUMNS`, and nothing else.** The columns of a table are
+  metadata the role already reads to run dbt, in a view every database has: names,
+  positions, types, precision and scale. `DESCRIBE` or a sample query would give
+  the same or a value of the table, and `GET_LINEAGE` is a different question
+  (0016). Only those columns are selected; no value of any table leaves, nothing
+  is kept, and the read follows a click, never the showing of a model.
+- **One query per database.** The statement names the database, which cannot be a
+  bind value, so it goes in as text, and only a plain name does: letters, digits,
+  `_` and `$`, folded to upper case as dbt writes it and quoted. The connector binds
+  in its driver, so the whole statement passes through `%` formatting, and a `%` or
+  a quote in a name would be formatted or would end the identifier and run what
+  follows; escaping was rejected for an allow-list, and a database that is not a
+  plain name is not queried but answered as not read, with that reason. The
+  schemas and tables asked are bind values in two lists, and the rows are filtered
+  to the pairs asked, since two lists match each other across pairs. A database
+  Snowflake answers with an error (it does not exist, or the role cannot see it)
+  fails its own relations only, as not found; an error of the connection is raised.
+  A request carries at most two thousand relations and the route five thousand
+  models, a project past that is read in batches with its progress said.
+- **`number(p,s)` only from a live read.** A catalog says `NUMBER` and nothing of
+  its precision, so the contract trap holds a number back; the table says
+  `NUMBER(38,2)`, which is what a contract wants, so it is written and nothing is
+  held. A bare `number` already written in a contract is not judged: that is a
+  type the YAML chose, and the base compares equal.
+- **Found, or not found.** A table always has a column, so a relation with no row
+  is one that is not there or that the role cannot see, and is said so, as not
+  checked: never a table with no columns, which would read as every column of the
+  YAML to remove.
+- **The environment is the pill's.** The manifest's target asks the manifest's
+  relation; an `.env` file asks the model's location resolved under it in full, and
+  a model it leaves unresolved is not checked. A database no file names is the
+  profile target's, and is not read under the file's name either: it would read the
+  manifest's table and label it that environment's. (A catalog is matched against
+  its own relation, so there the target's database may stand in.) The file that was
+  a match for a catalog (above) is here a choice, since the question is what that
+  environment has.
+- **A live answer is kept for the page session.** A read is a click's worth of
+  Snowflake, so redrawing the section (closing the settings, a write, the idle
+  marks) draws the answer held; it is read again on Read again, a switch, the
+  pill's environment changing, and the prompt's button. The environment is the
+  answer's, echoed by the server, so the dialog asks for what the section shows
+  whatever the pill says by then. With no catalog the section is listed while
+  Snowflake's features are on, starts on Snowflake, and asks nothing until a
+  button says so.
+- **No catalog flag, and deployed still warns.** There is no catalog to be behind
+  a run or the code, so those flags are not asked; a table older than its code
+  still applies to the manifest's target. A deployment's tables are still built
+  from code that may be behind this branch whichever way they are read, so an
+  `.env` file's environment says so, and a column the branch added still shows as
+  a removal.
+- **Failures are the others'.** A refused connection or a role without the
+  privilege is worded by the same Snowflake reads, with their phase, so the page
+  can point at the profile; the script is started only on the click, behind
+  Snowflake's features.
+
 ## Rejected
 
 - **Writing the file from the server.** The patch is the user's to review, and
@@ -163,3 +223,7 @@ file at a time, and a folder is dozens.
   of them out.
 - **Types only on by default.** One click rewriting a file per model of a project
   that declares no types.
+- **Reading the values to infer a type.** A sample is a value of a table, which
+  never leaves it (0048).
+- **One query for the whole project.** A project of many databases has several,
+  and a statement over every schema reads far more than the models asked.

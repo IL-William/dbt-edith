@@ -192,6 +192,14 @@ overwritten: it is opened and the model's entry added to it. A static site has n
 button. A folder, or the whole project, is updated from Reports
 ([YAML and warehouse](jobs-and-reports.md#reports)).
 
+With Snowflake's features on, a switch beside the button, **catalog.json |
+Snowflake, <environment>**, picks where the columns of the table are read
+from, for the page session: Snowflake's own tables for the status bar's
+environment, read on the click and never kept ([the live read](snowflake.md#columns-for-the-yaml-update)).
+The button's tooltip and its dialog say which source they are about, a number is
+written with the precision and scale the table has, and no flag about a catalog
+being behind applies.
+
 ## Where a model lives
 
 ![The Catalog of customers with a Snowsight menu beside each Copy of its Location table, and under its jobs the last builds read from Snowflake for each environment](../shots/catalog-snowflake.png)

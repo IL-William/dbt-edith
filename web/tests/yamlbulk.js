@@ -186,3 +186,21 @@ var yields = 0;
 for (var st = steps.next(); !st.done; st = steps.next()) yields++;
 check('a page may stop between two patches, and the plan is the same at the end', [yields, st.value.files.length], [3, 2]);
 yamlSyncPatch = patchOnce;
+
+// A live read is said as one.
+check('the head of a live read says Snowflake, its environment and when it was read', [
+  yamlBulkAbout({ source: 'snowflake', catalog_env: 'manifest', read_at: 7 }, (d) => 'D' + d.getTime() / 1000),
+  yamlBulkAbout({ source: 'snowflake', catalog_env: '.env.prod', read_at: 7 }, (d) => 'D' + d.getTime() / 1000),
+], ["Snowflake, the manifest's target, read D7", 'Snowflake, .env.prod, read D7']);
+check('the deployed environment is said once, by Snowflake', yamlBulkDeployed('.env.prod', 'snowflake'),
+  'Snowflake has the tables of .env.prod, built from code that may be behind this branch: a column to remove may be one this branch added.');
+check('with a live read no catalog flag stands against a model, only its table behind its code', yamlBulkWhy({ table_behind_code: true }), ['its table is older than its code']);
+
+// A read that found nothing is not a file that says it right.
+var unknown = [sync('orders', { status: 'not_checked', reason: 'not found in .env.prod, or not visible to this role', missing: undefined }),
+  sync('refunds', { status: 'not_checked', reason: 'its location is not resolved under .env.prod', missing: undefined })];
+var nothing = yamlBulkPlan(unknown, reads({ 'models/schema.yml': { content: yml, stamp: 's' } }), new Set(), true);
+check('every model not compared is left out with its reason, and none is idle or written',
+  [nothing.idle.length, nothing.files.length, nothing.left.map((l) => [l.sync.name, l.kind, l.why])],
+  [0, 0, [['orders', 'unchecked', 'not found in .env.prod, or not visible to this role'], ['refunds', 'unchecked', 'its location is not resolved under .env.prod']]]);
+check('and says so in the card', yamlBulkResult({ written: [], skipped: [] }, nothing.left), ['Left out, not compared: 2 models', 'Nothing was written.']);

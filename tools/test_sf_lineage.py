@@ -98,6 +98,23 @@ BUILD_ROWS = [
 ]
 
 
+# What INFORMATION_SCHEMA.COLUMNS holds of two databases: table_schema, table_name,
+# column_name, ordinal_position, data_type, numeric_precision, numeric_scale. The fake
+# runs no SQL, so it applies the two IN lists itself, as the real statement does, which
+# also returns a table of one asked schema under another asked name.
+COLUMN_ROWS = {
+    "ANALYTICS": [
+        ("MARTS", "ORDERS", "ID", 1, "NUMBER", 38, 0),
+        ("MARTS", "ORDERS", "AMOUNT", 3, "NUMBER", 12, 2),
+        ("MARTS", "ORDERS", "STATUS", 2, "TEXT", None, None),
+        ("MARTS", "CUSTOMERS", "ID", 1, "NUMBER", 38, 0),
+        ("STAGING", "STG_ORDERS", "ID", 1, "NUMBER", 38, 0),
+        ("STAGING", "CUSTOMERS", "NOTE", 1, "TEXT", None, None),
+    ],
+    "SALES_DB": [("S", "T", "C", 1, "FLOAT", None, None)],
+}
+
+
 def profiles(**dev_overrides):
     dev = {
         "type": "snowflake",
@@ -135,6 +152,18 @@ class FakeCursor:
         elif "identifier(%(exe)s)" in sql:
             self.conn.builds.append((sql, params))
             self.result = list(self.conn.build_rows)
+        elif "information_schema.columns" in sql:
+            self.conn.columns.append((sql, params))
+            # The connector binds in its driver: the whole statement goes through `%` formatting, as here.
+            sql % {k: "'" + str(v).replace("'", "''") + "'" for k, v in params.items()}
+            database = re.search(r'from "((?:[^"]|"")*)"\.information_schema\.columns', sql).group(1).replace('""', '"')
+            if database not in COLUMN_ROWS:
+                # What Snowflake does for a database that does not exist or this role cannot see: an error, not no rows.
+                raise RuntimeError(f"SQL compilation error:\nDatabase '{database}' does not exist or not authorized.")
+            schemas = {v for k, v in params.items() if k.startswith("s")}
+            tables = {v for k, v in params.items() if k.startswith("t")}
+            self.result = [r for r in COLUMN_ROWS.get(database, []) if r[0] in schemas and r[1] in tables]
+            self.result.sort(key=lambda r: (r[0], r[1], r[3]))
         elif "query_history_by_user" in sql:
             self.conn.history.append((sql, params))
             self.result = history_rows(params)
@@ -153,6 +182,7 @@ class FakeConnection:
         self.executed = []
         self.history = []
         self.builds = []
+        self.columns = []
         self.build_rows = BUILD_ROWS
         self.asked_who = 0
         self.no_org = no_org
@@ -677,6 +707,160 @@ class Builds(ScriptTest):
     def test_a_failing_read_is_a_reply_with_its_phase(self):
         self.refuse_connection = "Incorrect username or password was specified."
         answer = self.ask(self.request())[1]
+        self.assertEqual(answer["phase"], "connect")
+        self.assertIn("Incorrect username", answer["error"])
+
+
+class Columns(ScriptTest):
+    def ask(self, *requests):
+        code, lines, _ = self.serve(*requests)
+        self.assertEqual(code, 0)
+        return {r["id"]: r for r in self.answers(lines)}
+
+    def request(self, *relations, **kwargs):
+        return {"id": 1, "op": "columns", "relations": [dict(zip(("database", "schema", "name"), r, strict=True)) for r in relations], **kwargs}
+
+    def test_the_columns_of_a_table_come_in_its_own_order_with_their_type_and_precision(self):
+        answer = self.ask(self.request(("ANALYTICS", "MARTS", "ORDERS")))[1]
+        (orders,) = answer["relations"]
+        self.assertTrue(orders["found"])
+        self.assertEqual([c["name"] for c in orders["columns"]], ["ID", "STATUS", "AMOUNT"], "by ordinal position")
+        self.assertEqual(orders["columns"][2], {"name": "AMOUNT", "index": 3, "type": "NUMBER", "precision": 12, "scale": 2})
+        self.assertEqual(orders["columns"][1], {"name": "STATUS", "index": 2, "type": "TEXT"}, "nothing Snowflake left empty")
+
+    def test_one_query_a_database_for_every_relation_asked_in_it(self):
+        self.ask(self.request(("ANALYTICS", "MARTS", "ORDERS"), ("analytics", "marts", "customers"), ("ANALYTICS", "STAGING", "STG_ORDERS"), ("SALES_DB", "S", "T")))
+        queries = self.connections[0][1].columns
+        self.assertEqual(len(queries), 2, "ANALYTICS once, whatever the case it was asked in, and the other database")
+        sql, params = queries[0]
+        self.assertIn('from "ANALYTICS".information_schema.columns', sql)
+        self.assertEqual(sorted(v for k, v in params.items() if k.startswith("s")), ["MARTS", "STAGING"])
+        self.assertEqual(sorted(v for k, v in params.items() if k.startswith("t")), ["CUSTOMERS", "ORDERS", "STG_ORDERS"])
+
+    def test_a_name_reaches_the_statement_only_as_a_quoted_database_and_binds(self):
+        self.ask(self.request(("ANALYTICS", "MARTS", "ORDERS")))
+        sql, params = self.connections[0][1].columns[0]
+        for value in ("MARTS", "ORDERS"):
+            self.assertNotIn(value, sql, "a schema or a table is a bind value")
+        self.assertIn("in (%(s0)s)", sql)
+        self.assertEqual(set(params), {"s0", "t0"})
+        # Only these columns of the view are read: no value of any table, nothing else.
+        self.assertIn("select table_schema, table_name, column_name, ordinal_position, data_type, numeric_precision, numeric_scale", sql)
+
+    def test_a_database_is_a_plain_name_quoted_and_anything_else_is_not_read(self):
+        self.assertEqual(sf.database_identifier("analytics"), '"ANALYTICS"', "unquoted folds to upper case, as dbt writes it")
+        self.assertEqual(sf.database_identifier("MY_DB$1"), '"MY_DB$1"')
+        for bad in ("My Db", 'a"b', "SALES%", "a%(t0)s", "", "1db", "a.b", "a\nb", "x" * 256, None, 7):
+            self.assertIsNone(sf.database_identifier(bad), repr(bad))
+
+    def test_a_database_that_would_leave_its_identifier_or_be_formatted_never_reaches_a_statement(self):
+        # Both reproduced: a % in the name is formatted by the connector's own binding, and a
+        # quote ends the identifier, so what follows runs as SQL over any table the role can read.
+        evil = [
+            ("a%(t0)s", "S", 'x".information_schema.columns union all select 1,2,3,4,5,6,7 from SECRET_DB.S.T --'),
+            ("SALES%", "S", "T"),
+            ('A".INFORMATION_SCHEMA.COLUMNS UNION ALL SELECT 1,2,3,4,5,6,7 FROM SECRET_DB.S.T --', "S", "T"),
+        ]
+        cur = FakeCursor(FakeConnection())
+        answer = sf.table_columns(cur, evil)
+        self.assertEqual(cur.conn.columns, [], "no statement was sent at all")
+        for relation in answer:
+            self.assertFalse(relation["found"])
+            self.assertEqual(relation["columns"], [])
+            self.assertEqual(relation["reason"], sf.NOT_READ)
+        # And through serve, with the others of the request still read.
+        answers = self.ask(self.request(*evil, ("ANALYTICS", "MARTS", "ORDERS")))[1]["relations"]
+        self.assertEqual([r["found"] for r in answers], [False, False, False, True])
+        for _sql, _params in self.connections[0][1].columns:
+            for part in ("SECRET_DB", "union", "UNION", "a%(t0)s", "SALES%"):
+                self.assertNotIn(part, _sql)
+
+    def test_a_name_that_is_not_text_or_holds_a_control_character_is_refused_as_a_request(self):
+        for bad in ("", "a\nb", "a\x00b", "x" * 256, None, 7):
+            with self.assertRaises(ValueError):
+                sf.check_part(bad)
+
+    def test_a_request_that_is_not_what_the_page_sends_is_refused_before_connecting(self):
+        too_many = {"id": 9, "op": "columns", "relations": [{"database": "D", "schema": "S", "name": f"T{i}"} for i in range(sf.COLUMNS_MAX + 1)]}
+        answers = self.ask(
+            {"id": 1, "op": "columns"},
+            {"id": 2, "op": "columns", "relations": []},
+            {"id": 3, "op": "columns", "relations": ["D.S.T"]},
+            {"id": 4, "op": "columns", "relations": [{"database": "D", "schema": "S"}]},
+            self.request(("D", "S", "T; drop table x\n"), id=5),
+            self.request(("D\x00", "S", "T"), id=6),
+            too_many,
+        )
+        self.assertEqual({a["phase"] for a in answers.values()}, {"request"})
+        self.assertIn("at most", answers[9]["error"])
+        self.assertEqual(self.connections, [], "none of them opened a connection")
+
+    def test_a_relation_with_no_row_is_not_found_and_never_a_table_without_columns(self):
+        answer = self.ask(self.request(("ANALYTICS", "MARTS", "GONE"), ("ANALYTICS", "MARTS", "ORDERS")))[1]
+        gone, orders = answer["relations"]
+        self.assertEqual((gone["found"], gone["columns"], gone["reason"]), (False, [], "not found or not visible to this role"))
+        self.assertTrue(orders["found"])
+        self.assertNotIn("reason", orders)
+
+    def test_a_database_snowflake_answers_with_an_error_fails_only_its_own_relations(self):
+        # The warehouse says "does not exist or not authorized" as an error, not as no rows.
+        answer = self.ask(self.request(("NOWHERE", "S", "T"), ("ANALYTICS", "MARTS", "ORDERS"), ("SALES_DB", "S", "T")))[1]
+        nowhere, orders, sales = answer["relations"]
+        self.assertEqual((nowhere["found"], nowhere["reason"]), (False, "not found or not visible to this role"))
+        self.assertTrue(orders["found"] and sales["found"], "the databases the role can see are still read")
+        self.assertEqual(len(self.connections[0][1].columns), 3, "one query each")
+
+    def test_only_snowflakes_missing_database_error_is_not_found_and_any_other_is_an_error(self):
+        class Raising(FakeCursor):
+            def __init__(self, error):
+                super().__init__(FakeConnection())
+                self.error = error
+
+            def execute(self, sql, params=None):
+                raise self.error
+
+        asked = [("ANALYTICS", "MARTS", "ORDERS")]
+        # By its code, whatever the words, and by its message.
+        coded = RuntimeError("some other words")
+        coded.errno = 2003
+        for missing in (coded, RuntimeError("SQL compilation error:\nDatabase 'X' does not exist or not authorized.")):
+            (row,) = sf.table_columns(Raising(missing), asked)
+            self.assertEqual((row["found"], row["reason"]), (False, sf.MISSING))
+        # Every other error reaches the page as one, never as a table that is not there.
+        for other in (
+            RuntimeError("No active warehouse selected in the current session. Select an active warehouse with the 'use warehouse' command."),
+            RuntimeError("Statement reached its statement or warehouse timeout of 60 second(s) and was canceled."),
+            RuntimeError("Failed to connect to DB"),
+            RuntimeError("SQL compilation error: Object 'X' does not exist or not authorized."),
+        ):
+            with self.assertRaises(RuntimeError):
+                sf.table_columns(Raising(other), asked)
+
+    def test_such_an_error_is_a_reply_with_the_query_phase(self):
+        def no_warehouse(self, sql, params=None):
+            raise RuntimeError("No active warehouse selected in the current session.")
+
+        with mock.patch.object(FakeCursor, "execute", no_warehouse):
+            answer = self.ask(self.request(("ANALYTICS", "MARTS", "ORDERS")))[1]
+        self.assertEqual(answer["phase"], "query")
+        self.assertIn("No active warehouse", answer["error"])
+        self.assertNotIn("relations", answer)
+
+    def test_only_the_pairs_asked_are_answered_though_the_statement_matches_each_list_apart(self):
+        # MARTS.CUSTOMERS and STAGING.CUSTOMERS both exist; only STAGING.STG_ORDERS and MARTS.CUSTOMERS are asked.
+        answer = self.ask(self.request(("ANALYTICS", "MARTS", "CUSTOMERS"), ("ANALYTICS", "STAGING", "STG_ORDERS")))[1]
+        customers, stg = answer["relations"]
+        self.assertEqual([c["name"] for c in customers["columns"]], ["ID"], "not STAGING.CUSTOMERS' note")
+        self.assertEqual([c["name"] for c in stg["columns"]], ["ID"])
+
+    def test_a_quoted_database_with_a_space_is_not_read_and_says_why(self):
+        answer = self.ask(self.request(("My Db", "S", "T")))[1]
+        self.assertEqual((answer["relations"][0]["found"], answer["relations"][0]["reason"]), (False, sf.NOT_READ))
+        self.assertEqual(self.connections[0][1].columns if self.connections else [], [], "no statement was built from it")
+
+    def test_a_refused_connection_is_a_reply_with_its_phase(self):
+        self.refuse_connection = "Incorrect username or password was specified."
+        answer = self.ask(self.request(("ANALYTICS", "MARTS", "ORDERS")))[1]
         self.assertEqual(answer["phase"], "connect")
         self.assertIn("Incorrect username", answer["error"])
 

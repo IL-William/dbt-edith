@@ -27,6 +27,8 @@
 use crate::compiled;
 use crate::envs::{self, EnvFile};
 use crate::graph::{Column, Graph, Kind, Node, TableRelation};
+use crate::sidecar::{LiveColumn, LiveRelation};
+use std::collections::HashMap;
 use std::path::Path;
 
 #[derive(serde::Serialize, Clone, Copy, PartialEq, Eq, Debug)]
@@ -62,6 +64,10 @@ pub struct Extra {
     pub described: bool,
     #[serde(skip_serializing_if = "is_zero")]
     pub tests: usize,
+}
+
+fn is_zero_time(n: &u64) -> bool {
+    *n == 0
 }
 
 fn is_zero(n: &usize) -> bool {
@@ -143,13 +149,182 @@ pub struct ModelSync {
 
 #[derive(serde::Serialize, Debug)]
 pub struct Answer {
-    /// When catalog.json was written; 0 when there is none.
+    /// Where the columns of the tables were read from: `catalog` (catalog.json)
+    /// or `snowflake` (INFORMATION_SCHEMA, read when asked, never kept) (0188).
+    pub source: &'static str,
+    /// When catalog.json was written; 0 when there is none, and for a live read.
     pub catalog_at: u64,
+    /// When a live read was made, in seconds.
+    #[serde(skip_serializing_if = "is_zero_time")]
+    pub read_at: u64,
+    /// The environment a live read was made for, `manifest` or an `.env` file:
+    /// what the page asks again with, whatever its pill shows by then.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub env: String,
     /// The environment most of the models checked found the catalog to
     /// describe, `manifest` or a `.env` file's name.
     #[serde(skip_serializing_if = "String::is_empty")]
     pub catalog_env: String,
     pub models: Vec<ModelSync>,
+}
+
+/// What the columns of the tables are read from.
+pub enum Source<'a> {
+    /// catalog.json, merged into the graph.
+    Catalog,
+    /// Snowflake's INFORMATION_SCHEMA, asked for the relations of `Live::relations`.
+    Live(&'a Live),
+}
+
+/// A live read: the environment asked, which relation each model has there (or
+/// why it has none), and the columns Snowflake returned for the relations that
+/// are there (0188).
+pub struct Live {
+    /// `manifest`, or the name of an `.env` file.
+    pub env: String,
+    pub read_at: u64,
+    /// By the model's unique_id.
+    pub relations: HashMap<String, Result<LiveRelation, String>>,
+    /// Only the relations found: a relation with no row is not here.
+    pub tables: HashMap<LiveRelation, Vec<LiveColumn>>,
+    /// Why a relation asked is not found, where the script said more than that
+    /// Snowflake returned nothing.
+    pub reasons: HashMap<LiveRelation, String>,
+}
+
+impl Live {
+    /// The environment in words, for a reason.
+    fn words(&self) -> String {
+        if self.env == "manifest" {
+            "the manifest's target".into()
+        } else {
+            self.env.clone()
+        }
+    }
+}
+
+/// The relation each model asked for has in an environment, and the relations to
+/// ask Snowflake for (each once, in the order of the models). The manifest's own
+/// relation is the manifest's; an `.env` file's is the model's location resolved
+/// under it, in full: a part it leaves unresolved is a place nobody can name, and
+/// the model is not checked, a database no file names least of all. Models that cannot be compared at all are left out.
+pub fn live_plan(
+    graph: &Graph, root: &Path, only: Option<&[u32]>, chosen: &dyn Fn(&str) -> Option<bool>, env: &str,
+) -> (HashMap<String, Result<LiveRelation, String>>, Vec<LiveRelation>) {
+    let env = if env.is_empty() { "manifest" } else { env };
+    let files = Files { graph, root, chosen, found: std::cell::OnceCell::new() };
+    let file = (env != "manifest").then(|| files.all().iter().find(|f| f.file == env)).flatten();
+    let mut relations = HashMap::new();
+    let mut asks: Vec<LiveRelation> = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    let nodes: Vec<&Node> = match only {
+        Some(list) => list.iter().map(|&i| &graph.nodes[i as usize]).collect(),
+        None => graph.nodes.iter().filter(|n| n.kind == Kind::Model && !n.disabled).collect(),
+    };
+    for n in nodes {
+        if unfit(graph, n).is_some() {
+            continue;
+        }
+        let alias = if n.alias.is_empty() { &n.name } else { &n.alias };
+        let place = match (env, file) {
+            ("manifest", _) => Ok((n.database.clone(), n.schema.clone(), alias.clone())),
+            (_, None) => Err(format!("its location is not resolved under {env}: no such .env file")),
+            (_, Some(f)) => {
+                let r = envs::resolve_place(&n.written, &n.parsed, &f.vars);
+                let resolved = [&r.status.database, &r.status.schema, &r.status.alias]
+                    .iter()
+                    .all(|c| matches!(c.kind, envs::Status::Literal | envs::Status::Env | envs::Status::Parsed));
+                let name = if r.place.alias.is_empty() { alias.clone() } else { r.place.alias };
+                if !resolved {
+                    Err(format!("its location is not resolved under {env}"))
+                } else if r.place.database.is_empty() {
+                    // The target's database is the profile's, not this environment's: reading it would read the
+                    // manifest's table under this environment's name. (A catalog is matched against its own relation,
+                    // which is why that read may fall back.)
+                    Err("its database is the profile target's, which no .env file names".to_string())
+                } else {
+                    Ok((r.place.database, r.place.schema, name))
+                }
+            }
+        };
+        let rel = match place {
+            Ok((database, schema, name)) if !database.is_empty() && !schema.is_empty() && !name.is_empty() => {
+                Ok(LiveRelation { database, schema, name })
+            }
+            Ok(_) => Err(format!("its location is not resolved under {}", if env == "manifest" { "the manifest's target" } else { env })),
+            Err(why) => Err(why),
+        };
+        if let Ok(r) = &rel {
+            if seen.insert(r.clone()) {
+                asks.push(r.clone());
+            }
+        }
+        relations.insert(n.id.clone(), rel);
+    }
+    (relations, asks)
+}
+
+/// The columns Snowflake returned, as the merged list the comparison reads: each
+/// declared column placed at the table's position for its name (exactly, then
+/// without case, each table column once), the table's other columns added as
+/// undeclared, and a number written with the precision and scale the table has.
+fn live_columns(declared: &[Column], table: &[LiveColumn]) -> Vec<Column> {
+    let mut cols: Vec<Column> = declared
+        .iter()
+        .filter(|c| !c.undeclared)
+        .cloned()
+        .map(|mut c| {
+            c.index = 0;
+            c.table_type = None;
+            c
+        })
+        .collect();
+    let mut taken = vec![false; cols.len()];
+    let exact: HashMap<&str, usize> = cols.iter().enumerate().map(|(i, c)| (c.name.as_str(), i)).collect();
+    let mut at: Vec<Option<usize>> = vec![None; table.len()];
+    for (t, c) in table.iter().enumerate() {
+        if let Some(&d) = exact.get(c.name.as_str()).filter(|&&d| !taken[d]) {
+            at[t] = Some(d);
+            taken[d] = true;
+        }
+    }
+    let mut loose: HashMap<String, Vec<usize>> = HashMap::new();
+    for (i, c) in cols.iter().enumerate().filter(|(i, _)| !taken[*i]) {
+        loose.entry(c.name.to_lowercase()).or_default().push(i);
+    }
+    for v in loose.values_mut() {
+        v.reverse();
+    }
+    for (t, c) in table.iter().enumerate() {
+        if at[t].is_none() {
+            if let Some(d) = loose.get_mut(&c.name.to_lowercase()).and_then(Vec::pop) {
+                at[t] = Some(d);
+            }
+        }
+    }
+    for (t, c) in table.iter().enumerate() {
+        let ty = live_type(c);
+        let index = if c.index > 0 { c.index } else { t as u32 + 1 };
+        match at[t] {
+            Some(d) => {
+                cols[d].index = index;
+                if cols[d].data_type != ty {
+                    cols[d].table_type = Some(ty.as_str().into());
+                }
+            }
+            None => cols.push(Column { name: c.name.clone(), data_type: ty, undeclared: true, index, ..Column::default() }),
+        }
+    }
+    cols
+}
+
+/// A column's type as written to a contract: a number with its precision and
+/// scale, `NUMBER(38,0)`, which is what a bare `number` is not (0188).
+fn live_type(c: &LiveColumn) -> String {
+    match (c.data_type.eq_ignore_ascii_case("number"), c.precision) {
+        (true, Some(p)) => format!("{}({p},{})", c.data_type, c.scale.unwrap_or(0)),
+        _ => c.data_type.clone(),
+    }
 }
 
 /// The project's `.env` files the environment menu shows, read once for the
@@ -177,18 +352,28 @@ impl Files<'_> {
 /// model, which a whole-project answer would pay thousands of times, so that
 /// answer carries none. `chosen` is
 /// the user's choice to hide an `.env` file, or not, by its name.
-pub fn check(graph: &Graph, root: &Path, target: &Path, only: Option<&[u32]>, chosen: &dyn Fn(&str) -> Option<bool>) -> Answer {
-    let catalog_at = graph.catalog_mtime;
+pub fn check(
+    graph: &Graph, root: &Path, target: &Path, only: Option<&[u32]>, chosen: &dyn Fn(&str) -> Option<bool>, source: Source,
+) -> Answer {
+    let live = match source {
+        Source::Live(l) => Some(l),
+        Source::Catalog => None,
+    };
+    let catalog_at = if live.is_some() { 0 } else { graph.catalog_mtime };
     let snowflake = graph.meta.adapter.eq_ignore_ascii_case("snowflake");
     let files = Files { graph, root, chosen, found: std::cell::OnceCell::new() };
     // The macros are walked once, and only if a model that differs has a run file.
     let macros = std::cell::OnceCell::new();
     let newest = || macros.get_or_init(|| crate::freshness::newest_input(root, crate::freshness::MACROS_DIR)).clone();
     let one = |n: &Node| {
-        let mut m = compare(graph, n, snowflake, &files);
+        let mut m = match live {
+            Some(l) => compare_live(graph, n, snowflake, l),
+            None => compare(graph, n, snowflake, &files),
+        };
         let differs = matches!(m.status, Status::Disagrees | Status::Untyped);
         m.deployed = differs && m.catalog_env != "manifest";
-        if differs && only.is_some() && catalog_at > 0 {
+        // A live read has no catalog to be behind a run or a code, so only the table behind its code applies, and for the manifest's target.
+        if differs && only.is_some() && (catalog_at > 0 || (live.is_some() && !m.deployed)) {
             if m.deployed {
                 m.code_after_catalog = crate::files::resolve(root, &n.file).map(|p| mtime(&p)).unwrap_or(0) > catalog_at;
             } else {
@@ -203,7 +388,7 @@ pub fn check(graph: &Graph, root: &Path, target: &Path, only: Option<&[u32]>, ch
                 // No content wanted, one byte is read.
                 let run = compiled::look_up_with(root, target, compiled::Kind::Run, &subject, 0, newest);
                 if run.found {
-                    m.catalog_behind_run = run.compiled_at > catalog_at;
+                    m.catalog_behind_run = live.is_none() && run.compiled_at > catalog_at;
                     // The schema file changes the table's columns only through a contract.
                     m.table_behind_code = run.changed.iter().any(|c| n.contract || c != "the schema file");
                 }
@@ -222,7 +407,14 @@ pub fn check(graph: &Graph, root: &Path, target: &Path, only: Option<&[u32]>, ch
     // The most models, the first by name when several tie: the rule each model's own pick follows.
     let catalog_env =
         seen.iter().min_by_key(|&(name, count)| (std::cmp::Reverse(*count), *name)).map(|(name, _)| name.to_string()).unwrap_or_default();
-    Answer { catalog_at, catalog_env, models }
+    Answer {
+        source: if live.is_some() { "snowflake" } else { "catalog" },
+        catalog_at,
+        read_at: live.map_or(0, |l| l.read_at),
+        env: live.map(|l| l.env.clone()).unwrap_or_default(),
+        catalog_env,
+        models,
+    }
 }
 
 fn mtime(path: &Path) -> u64 {
@@ -234,8 +426,8 @@ fn mtime(path: &Path) -> u64 {
         .unwrap_or(0)
 }
 
-fn compare(graph: &Graph, n: &Node, snowflake: bool, files: &Files) -> ModelSync {
-    let mut out = ModelSync {
+fn blank(n: &Node) -> ModelSync {
+    ModelSync {
         id: n.id.clone(),
         name: n.name.clone(),
         yml: n.yml.clone(),
@@ -253,37 +445,86 @@ fn compare(graph: &Graph, n: &Node, snowflake: bool, files: &Files) -> ModelSync
         code_after_catalog: false,
         catalog_behind_run: false,
         table_behind_code: false,
+    }
+}
+
+/// A model's status and what differs, from the diff of its columns.
+fn filled(mut out: ModelSync, d: Diff) -> ModelSync {
+    let real = !(d.missing.is_empty() && d.extra.is_empty() && d.retype.is_empty()) || d.held_retype;
+    out.status = if real {
+        Status::Disagrees
+    } else if d.untyped.is_empty() && d.held.is_empty() {
+        Status::Agrees
+    } else {
+        Status::Untyped
     };
+    (out.missing, out.extra, out.retype, out.untyped, out.held) = (d.missing, d.extra, d.retype, d.untyped, d.held);
+    out
+}
+
+fn compare(graph: &Graph, n: &Node, snowflake: bool, files: &Files) -> ModelSync {
+    let mut out = blank(n);
     match placed(graph, n, files) {
-        Err(why) => out.reason = why.into(),
+        Err(why) => {
+            out.reason = why.into();
+            out
+        }
         Ok(env) => {
             out.catalog_env = env;
             let d = diff(&n.columns, snowflake, n.contract);
-            let real = !(d.missing.is_empty() && d.extra.is_empty() && d.retype.is_empty()) || d.held_retype;
-            out.status = if real {
-                Status::Disagrees
-            } else if d.untyped.is_empty() && d.held.is_empty() {
-                Status::Agrees
-            } else {
-                Status::Untyped
-            };
-            (out.missing, out.extra, out.retype, out.untyped, out.held) = (d.missing, d.extra, d.retype, d.untyped, d.held);
+            filled(out, d)
         }
     }
+}
+
+/// The same comparison with the columns Snowflake returned for the model's
+/// relation in the environment asked. A relation it returns nothing for is not
+/// there, or not visible to this role: said so, never a table with no column.
+fn compare_live(graph: &Graph, n: &Node, snowflake: bool, live: &Live) -> ModelSync {
+    let mut out = blank(n);
+    if let Some(why) = unfit(graph, n) {
+        out.reason = why.into();
+        return out;
+    }
+    match live.relations.get(&n.id) {
+        None => out.reason = "its location was not asked for".into(),
+        Some(Err(why)) => out.reason = why.clone(),
+        Some(Ok(rel)) => match live.tables.get(rel) {
+            None => {
+                out.reason = match live.reasons.get(rel).filter(|r| !r.is_empty()) {
+                    Some(why) => format!("{why} (in {})", live.words()),
+                    None => format!("not found in {}, or not visible to this role", live.words()),
+                }
+            }
+            Some(table) => {
+                out.catalog_env = live.env.clone();
+                let d = diff(&live_columns(&n.columns, table), snowflake, n.contract);
+                return filled(out, d);
+            }
+        },
+    }
     out
+}
+
+/// Why a model cannot be compared whatever the source says, in the words the page shows.
+fn unfit(graph: &Graph, n: &Node) -> Option<&'static str> {
+    if n.package != graph.meta.project {
+        return Some("it belongs to an installed package");
+    }
+    if n.version.is_some() {
+        return Some("it is a versioned model, whose columns are declared per version");
+    }
+    if n.materialized == "ephemeral" {
+        return Some("it is ephemeral: it has no table");
+    }
+    None
 }
 
 /// The environment a model's catalog entry describes, or why the model cannot
 /// be compared, in the words the page shows.
 fn placed(graph: &Graph, n: &Node, files: &Files) -> Result<String, &'static str> {
-    if n.package != graph.meta.project {
-        return Err("it belongs to an installed package");
-    }
-    if n.version.is_some() {
-        return Err("it is a versioned model, whose columns are declared per version");
-    }
-    if n.materialized == "ephemeral" {
-        return Err("it is ephemeral: it has no table");
+    if let Some(why) = unfit(graph, n) {
+        return Err(why);
     }
     let Some(table) = n.table.as_deref() else { return Err("it is not in catalog.json") };
     if !n.columns.iter().any(|c| c.index > 0) {
@@ -510,7 +751,7 @@ mod tests {
     }
 
     fn one(g: &Graph) -> ModelSync {
-        let mut answer = check(g, Path::new("/nonexistent"), Path::new("/nonexistent/target"), None, &|_| None);
+        let mut answer = check(g, Path::new("/nonexistent"), Path::new("/nonexistent/target"), None, &|_| None, Source::Catalog);
         assert_eq!(answer.models.len(), 1);
         answer.models.remove(0)
     }
@@ -583,7 +824,7 @@ mod tests {
             "depends_on": { "nodes": [ID] },
         });
         let g = build("snowflake", nodes, Some(table(ID, ["ANALYTICS", "MARTS", "ORDERS"], &[("ID", "NUMBER")])));
-        let m = check(&g, Path::new("/nonexistent"), Path::new("/nonexistent/target"), None, &|_| None).models.remove(0);
+        let m = check(&g, Path::new("/nonexistent"), Path::new("/nonexistent/target"), None, &|_| None, Source::Catalog).models.remove(0);
         assert_eq!(m.extra, vec![Extra { name: "legacy".into(), described: false, tests: 1 }]);
     }
 
@@ -786,7 +1027,7 @@ mod tests {
         let nodes = json!({ ID: model("orders", cols(&[("id", "number")]), config) });
         let mut g = build("snowflake", nodes, Some(table(ID, ["ANALYTICS", "MARTS", "ORDERS"], &[("ID", "NUMBER"), ("X", "TEXT")])));
         g.catalog_mtime = catalog_at;
-        let m = check(&g, dir, &dir.join("target"), Some(&[0]), &|_| None).models.remove(0);
+        let m = check(&g, dir, &dir.join("target"), Some(&[0]), &|_| None, Source::Catalog).models.remove(0);
         assert_eq!(m.status, Status::Disagrees);
         (m.catalog_behind_run, m.table_behind_code)
     }
@@ -848,9 +1089,9 @@ mod tests {
         let nodes = json!({ ID: model("orders", cols(&[("id", "number")]), json!({})) });
         let mut g = build("snowflake", nodes, Some(table(ID, ["ANALYTICS", "MARTS", "ORDERS"], &[("ID", "NUMBER"), ("X", "TEXT")])));
         g.catalog_mtime = 400;
-        let m = check(&g, &dir, &dir.join("target"), None, &|_| None).models.remove(0);
+        let m = check(&g, &dir, &dir.join("target"), None, &|_| None, Source::Catalog).models.remove(0);
         assert_eq!((m.status, m.catalog_behind_run, m.table_behind_code), (Status::Disagrees, false, false));
-        let m = check(&g, &dir, &dir.join("target"), Some(&[0]), &|_| None).models.remove(0);
+        let m = check(&g, &dir, &dir.join("target"), Some(&[0]), &|_| None, Source::Catalog).models.remove(0);
         assert!(m.catalog_behind_run);
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -885,7 +1126,7 @@ mod tests {
     fn a_catalog_written_for_a_deployed_environment_is_compared_and_names_its_file() {
         let envs = [(".env.qa", "SF_DB=QA_DB\nSF_SCHEMA=MARTS_QA\n"), (".env.prod", "SF_DB=PROD_DB\nSF_SCHEMA=MARTS\n")];
         let (dir, g) = deployed(&envs, ["prod_db", "marts", "orders"], json!({}));
-        let answer = check(&g, &dir, &dir.join("target"), None, &|_| None);
+        let answer = check(&g, &dir, &dir.join("target"), None, &|_| None, Source::Catalog);
         let m = &answer.models[0];
         assert_eq!((m.status, m.catalog_env.as_str(), m.deployed), (Status::Disagrees, ".env.prod", true), "{m:?}");
         assert_eq!(answer.catalog_env, ".env.prod");
@@ -899,7 +1140,7 @@ mod tests {
     #[test]
     fn the_manifests_own_relation_is_the_manifest_and_not_deployed() {
         let (dir, g) = deployed(&[(".env.prod", "SF_DB=PROD_DB\n")], ["DEV_DB", "DEV_ME", "ORDERS"], json!({}));
-        let answer = check(&g, &dir, &dir.join("target"), None, &|_| None);
+        let answer = check(&g, &dir, &dir.join("target"), None, &|_| None, Source::Catalog);
         assert_eq!(
             (answer.models[0].catalog_env.as_str(), answer.models[0].deployed, answer.catalog_env.as_str()),
             ("manifest", false, "manifest")
@@ -911,10 +1152,10 @@ mod tests {
     fn a_relation_no_file_resolves_to_is_not_checked() {
         // `.env.qa` leaves SF_DB out: its place is not resolved in full, so it counts for nothing.
         let (dir, g) = deployed(&[(".env.qa", "SF_SCHEMA=MARTS\n")], ["PROD_DB", "MARTS", "ORDERS"], json!({}));
-        let m = check(&g, &dir, &dir.join("target"), None, &|_| None).models.remove(0);
+        let m = check(&g, &dir, &dir.join("target"), None, &|_| None, Source::Catalog).models.remove(0);
         assert_eq!(m.status, Status::NotChecked);
         assert!(m.reason.contains("no .env file places it there"), "{}", m.reason);
-        let answer = check(&g, &dir, &dir.join("target"), None, &|_| None);
+        let answer = check(&g, &dir, &dir.join("target"), None, &|_| None, Source::Catalog);
         assert_eq!(answer.catalog_env, "", "no model was checked");
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -923,7 +1164,7 @@ mod tests {
     fn two_files_resolving_alike_give_the_first_by_name() {
         let same = "SF_DB=PROD_DB\nSF_SCHEMA=MARTS\n";
         let (dir, g) = deployed(&[(".env.uat", same), (".env.prod", same)], ["PROD_DB", "MARTS", "ORDERS"], json!({}));
-        assert_eq!(check(&g, &dir, &dir.join("target"), None, &|_| None).models[0].catalog_env, ".env.prod");
+        assert_eq!(check(&g, &dir, &dir.join("target"), None, &|_| None, Source::Catalog).models[0].catalog_env, ".env.prod");
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -938,13 +1179,13 @@ mod tests {
         }
         // A local run is the manifest's target, so it says nothing of the deployed table.
         set(&dir, "target/run/shop/models/orders.sql", 900);
-        let m = check(&g, &dir, &dir.join("target"), Some(&[0]), &|_| None).models.remove(0);
+        let m = check(&g, &dir, &dir.join("target"), Some(&[0]), &|_| None, Source::Catalog).models.remove(0);
         assert_eq!((m.deployed, m.code_after_catalog, m.catalog_behind_run, m.table_behind_code), (true, false, false, false));
         set(&dir, "models/orders.sql", 500);
-        let m = check(&g, &dir, &dir.join("target"), Some(&[0]), &|_| None).models.remove(0);
+        let m = check(&g, &dir, &dir.join("target"), Some(&[0]), &|_| None, Source::Catalog).models.remove(0);
         assert_eq!((m.deployed, m.code_after_catalog, m.catalog_behind_run, m.table_behind_code), (true, true, false, false));
         // Whole project: `deployed` is said, the stat is not made.
-        let m = check(&g, &dir, &dir.join("target"), None, &|_| None).models.remove(0);
+        let m = check(&g, &dir, &dir.join("target"), None, &|_| None, Source::Catalog).models.remove(0);
         assert_eq!((m.deployed, m.code_after_catalog), (true, false));
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -956,7 +1197,7 @@ mod tests {
         std::fs::write(dir.join(".env"), "WAREHOUSE_USER=me\n").unwrap();
         let nodes = json!({ ID: model("orders", cols(&[("id", "number")]), json!({})) });
         let g = build("snowflake", nodes, Some(table(ID, ["CI_DB", "CI_SCHEMA", "ORDERS"], &[("ID", "NUMBER"), ("NOTE", "TEXT")])));
-        let m = check(&g, &dir, &dir.join("target"), None, &|_| None).models.remove(0);
+        let m = check(&g, &dir, &dir.join("target"), None, &|_| None, Source::Catalog).models.remove(0);
         assert_eq!((m.status, m.deployed), (Status::NotChecked, false), "{m:?}");
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -968,7 +1209,7 @@ mod tests {
             "unrendered_config": { "database": "PROD_DB", "schema": "marts" },
         });
         let (dir, g) = deployed(&[(".env", "X=1\n"), (".env.prod", "Y=1\n")], ["PROD_DB", "MARTS", "ORDERS"], literal);
-        let m = check(&g, &dir, &dir.join("target"), None, &|_| None).models.remove(0);
+        let m = check(&g, &dir, &dir.join("target"), None, &|_| None, Source::Catalog).models.remove(0);
         assert_eq!((m.status, m.deployed), (Status::NotChecked, false), "{m:?}");
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -978,7 +1219,7 @@ mod tests {
         let body = "SF_DB=PROD_DB\nSF_SCHEMA=MARTS\n";
         let rel = ["PROD_DB", "MARTS", "ORDERS"];
         let env_of = |g: &Graph, dir: &Path, chosen: &dyn Fn(&str) -> Option<bool>| {
-            let m = check(g, dir, &dir.join("target"), None, chosen).models.remove(0);
+            let m = check(g, dir, &dir.join("target"), None, chosen, Source::Catalog).models.remove(0);
             (m.status, m.catalog_env)
         };
         // A template by its name.
@@ -1016,7 +1257,7 @@ mod tests {
             .unwrap()
             .extend(table(second, ["DEV_DB", "DEV_ME", "PAYMENTS"], &[("ID", "NUMBER")]).as_object().unwrap().clone());
         let g = build("snowflake", nodes, Some(catalog));
-        let answer = check(&g, &dir, &dir.join("target"), None, &|_| None);
+        let answer = check(&g, &dir, &dir.join("target"), None, &|_| None, Source::Catalog);
         let mut seen: Vec<&str> = answer.models.iter().map(|m| m.catalog_env.as_str()).collect();
         seen.sort_unstable();
         assert_eq!(seen, [".env.prod", "manifest"]);
@@ -1036,12 +1277,12 @@ mod tests {
         });
         let nodes = json!({ ID: model("orders", cols(&[("id", "number")]), config) });
         let g = build("snowflake", nodes, Some(table(ID, ["ANALYTICS", "MARTS", "ORDERS"], &[("ID", "NUMBER"), ("NOTE", "TEXT")])));
-        let m = check(&g, &dir, &dir.join("target"), None, &|_| None).models.remove(0);
+        let m = check(&g, &dir, &dir.join("target"), None, &|_| None, Source::Catalog).models.remove(0);
         assert_eq!((m.status, m.catalog_env.as_str(), m.deployed), (Status::Disagrees, ".env.prod", true), "{m:?}");
         // The same schema in another database is another table.
         let nodes = json!({ ID: model("orders", cols(&[("id", "number")]), json!({ "config": { "schema": "dev_me" }, "unrendered_config": { "schema": "{{ env_var('DBT_SCHEMA') }}" } })) });
         let g = build("snowflake", nodes, Some(table(ID, ["OTHER_DB", "MARTS", "ORDERS"], &[("ID", "NUMBER")])));
-        assert_eq!(check(&g, &dir, &dir.join("target"), None, &|_| None).models[0].status, Status::NotChecked);
+        assert_eq!(check(&g, &dir, &dir.join("target"), None, &|_| None, Source::Catalog).models[0].status, Status::NotChecked);
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -1062,20 +1303,194 @@ mod tests {
             .extend(table(two, ["ANALYTICS", "MARTS", "PAYMENTS"], &[("ID", "NUMBER"), ("X", "TEXT")]).as_object().unwrap().clone());
         let mut g = build("snowflake", nodes, Some(catalog));
         g.catalog_mtime = 400;
-        let answer = check(&g, &dir, &dir.join("target"), Some(&[0, 1]), &|_| None);
+        let answer = check(&g, &dir, &dir.join("target"), Some(&[0, 1]), &|_| None, Source::Catalog);
         let flagged: Vec<(&str, bool)> = answer.models.iter().map(|m| (m.name.as_str(), m.catalog_behind_run)).collect();
         assert_eq!(flagged, [("orders", true), ("payments", false)], "payments has no run file");
-        let answer = check(&g, &dir, &dir.join("target"), Some(&[1]), &|_| None);
+        let answer = check(&g, &dir, &dir.join("target"), Some(&[1]), &|_| None, Source::Catalog);
         assert_eq!(answer.models.len(), 1);
         assert_eq!(answer.models[0].name, "payments");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    fn lcol(name: &str, index: u32, ty: &str, precision: Option<u32>, scale: Option<u32>) -> LiveColumn {
+        LiveColumn { name: name.into(), index, data_type: ty.into(), precision, scale }
+    }
+
+    /// A live read of the manifest's relation for the one model of `build`.
+    fn live(tables: Vec<(LiveRelation, Vec<LiveColumn>)>) -> Live {
+        let rel = LiveRelation { database: "ANALYTICS".into(), schema: "MARTS".into(), name: "orders".into() };
+        Live {
+            env: "manifest".into(),
+            read_at: 5,
+            relations: HashMap::from([(ID.to_string(), Ok(rel))]),
+            tables: tables.into_iter().collect(),
+            reasons: HashMap::new(),
+        }
+    }
+
+    fn orders() -> LiveRelation {
+        LiveRelation { database: "ANALYTICS".into(), schema: "MARTS".into(), name: "orders".into() }
+    }
+
+    fn live_one(declared: &[(&str, &str)], extra: Value, table: Vec<LiveColumn>) -> ModelSync {
+        let g = build("snowflake", json!({ ID: model("orders", cols(declared), extra) }), None);
+        let read = live(vec![(orders(), table)]);
+        check(&g, Path::new("/nonexistent"), Path::new("/nonexistent/target"), None, &|_| None, Source::Live(&read)).models.remove(0)
+    }
+
+    #[test]
+    fn a_number_is_written_with_the_precision_and_scale_the_table_has() {
+        assert_eq!(live_type(&lcol("A", 1, "NUMBER", Some(12), Some(2))), "NUMBER(12,2)");
+        assert_eq!(live_type(&lcol("A", 1, "NUMBER", Some(38), None)), "NUMBER(38,0)");
+        assert_eq!(live_type(&lcol("A", 1, "NUMBER", None, None)), "NUMBER");
+        assert_eq!(live_type(&lcol("A", 1, "TEXT", Some(5), None)), "TEXT", "only a number has a precision to write");
+        let m = live_one(
+            &[("id", "")],
+            json!({}),
+            vec![
+                lcol("ID", 1, "NUMBER", Some(38), Some(0)),
+                lcol("AMOUNT", 2, "NUMBER", Some(12), Some(2)),
+                lcol("NOTE", 3, "TEXT", None, None),
+            ],
+        );
+        assert_eq!(m.untyped, vec![Untyped { name: "id".into(), to: "number(38,0)".into() }]);
+        assert_eq!(
+            m.missing,
+            vec![
+                Missing { name: "amount".into(), data_type: "number(12,2)".into(), after: "id".into() },
+                Missing { name: "note".into(), data_type: "varchar".into(), after: "amount".into() },
+            ]
+        );
+    }
+
+    #[test]
+    fn a_live_precision_lifts_the_contract_trap_and_a_bare_number_still_holds() {
+        let contract = json!({ "config": { "materialized": "table", "contract": { "enforced": true } } });
+        let m = live_one(&[("id", "")], contract.clone(), vec![lcol("ID", 1, "NUMBER", Some(10), Some(2))]);
+        assert!(m.held.is_empty(), "{m:?}");
+        assert_eq!(m.untyped[0].to, "number(10,2)");
+        let m = live_one(&[("id", "")], contract, vec![lcol("ID", 1, "NUMBER", None, None)]);
+        assert_eq!(m.held.len(), 1, "a number Snowflake gave no precision is still held");
+    }
+
+    #[test]
+    fn live_columns_are_in_the_tables_order_matched_without_case_and_an_alias_is_not_a_difference() {
+        let m = live_one(
+            &[("Id", "integer"), ("legacy", "text")],
+            json!({}),
+            vec![lcol("NOTE", 1, "TEXT", None, None), lcol("ID", 2, "NUMBER", Some(38), Some(0))],
+        );
+        assert_eq!(m.status, Status::Disagrees);
+        assert_eq!(m.missing, vec![Missing { name: "note".into(), data_type: "varchar".into(), after: String::new() }]);
+        assert_eq!(m.extra.iter().map(|e| e.name.as_str()).collect::<Vec<_>>(), ["legacy"]);
+        assert!(m.retype.is_empty(), "integer and number are one base on Snowflake: {m:?}");
+        assert_eq!(m.catalog_env, "manifest");
+    }
+
+    #[test]
+    fn a_relation_snowflake_returns_nothing_for_is_not_found_and_not_a_table_with_no_column() {
+        let g = build("snowflake", json!({ ID: model("orders", cols(&[("id", "number")]), json!({})) }), None);
+        let read = live(vec![]);
+        let m =
+            check(&g, Path::new("/nonexistent"), Path::new("/nonexistent/target"), None, &|_| None, Source::Live(&read)).models.remove(0);
+        assert_eq!(m.status, Status::NotChecked);
+        assert_eq!(m.reason, "not found in the manifest's target, or not visible to this role");
+        let mut unresolved = live(vec![]);
+        unresolved.relations.insert(ID.into(), Err("its location is not resolved under .env.qa".into()));
+        let m = check(&g, Path::new("/nonexistent"), Path::new("/nonexistent/target"), None, &|_| None, Source::Live(&unresolved))
+            .models
+            .remove(0);
+        assert_eq!(m.reason, "its location is not resolved under .env.qa");
+    }
+
+    #[test]
+    fn the_relation_asked_is_the_manifests_or_the_one_an_env_file_resolves_in_full() {
+        let envs = [(".env.prod", "SF_DB=PROD_DB\nSF_SCHEMA=MARTS\n"), (".env.part", "SF_SCHEMA=MARTS\n")];
+        let (dir, g) = deployed(&envs, ["PROD_DB", "MARTS", "ORDERS"], json!({}));
+        let ask = |env: &str| live_plan(&g, &dir, None, &|_| None, env);
+        let (rels, asks) = ask("manifest");
+        assert_eq!(rels[ID], Ok(LiveRelation { database: "DEV_DB".into(), schema: "dev_me".into(), name: "orders".into() }));
+        assert_eq!(asks.len(), 1);
+        let (rels, _) = ask("");
+        assert!(rels[ID].is_ok(), "no env is the manifest's");
+        let (rels, asks) = ask(".env.prod");
+        assert_eq!(rels[ID], Ok(LiveRelation { database: "PROD_DB".into(), schema: "MARTS".into(), name: "orders".into() }));
+        assert_eq!(asks.len(), 1);
+        let (rels, asks) = ask(".env.part");
+        assert_eq!(
+            rels[ID],
+            Err("its location is not resolved under .env.part".into()),
+            "a variable the file leaves out is a place nobody can name"
+        );
+        assert!(asks.is_empty());
+        let (rels, _) = ask(".env.nowhere");
+        assert!(rels[ID].as_ref().unwrap_err().contains("no such .env file"));
+        // A file the menu hides is not an environment.
+        let (rels, _) = live_plan(&g, &dir, None, &|f| (f == ".env.prod").then_some(true), ".env.prod");
+        assert!(rels[ID].is_err());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_live_read_has_no_catalog_flag_and_says_deployed_for_an_env_file_alone() {
+        let dir = project();
+        for f in ["models/orders.sql", "models/schema.yml", "dbt_project.yml"] {
+            set(&dir, f, 100);
+        }
+        set(&dir, "target/run/shop/models/orders.sql", 500);
+        let config = json!({ "config": { "materialized": "table", "contract": { "enforced": true } } });
+        let g = build("snowflake", json!({ ID: model("orders", cols(&[("id", "number")]), config) }), None);
+        let table = vec![lcol("ID", 1, "NUMBER", Some(38), Some(0)), lcol("X", 2, "TEXT", None, None)];
+        // The schema file moved after the run, and the contract makes it count; the catalog flags do not exist.
+        set(&dir, "models/schema.yml", 700);
+        let mut read = live(vec![(orders(), table.clone())]);
+        read.read_at = 800;
+        let m = check(&g, &dir, &dir.join("target"), Some(&[0]), &|_| None, Source::Live(&read)).models.remove(0);
+        assert_eq!((m.catalog_behind_run, m.code_after_catalog, m.table_behind_code, m.deployed), (false, false, true, false));
+        // An env file's tables are a deployment's: said, with no flag about a local run.
+        let mut other = live(vec![(orders(), table)]);
+        other.env = ".env.prod".into();
+        let m = check(&g, &dir, &dir.join("target"), Some(&[0]), &|_| None, Source::Live(&other)).models.remove(0);
+        assert_eq!((m.catalog_behind_run, m.code_after_catalog, m.table_behind_code, m.deployed), (false, false, false, true));
+        let answer = check(&g, &dir, &dir.join("target"), Some(&[0]), &|_| None, Source::Live(&other));
+        assert_eq!((answer.source, answer.catalog_at, answer.read_at), ("snowflake", 0, 5));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_database_no_env_file_names_is_not_read_under_the_name_of_that_file() {
+        // The schema is the environment's, the database the profile target's: reading the manifest's database
+        // under `.env.prod` would read the dev table and label it production.
+        let location = json!({
+            "config": { "materialized": "table", "schema": "dev_me" },
+            "unrendered_config": { "schema": "{{ env_var('SF_SCHEMA') }}" },
+        });
+        let (dir, g) = deployed(&[(".env.prod", "SF_SCHEMA=MARTS\n")], ["PROD_DB", "MARTS", "ORDERS"], location);
+        let (rels, asks) = live_plan(&g, &dir, None, &|_| None, ".env.prod");
+        assert_eq!(rels[ID], Err("its database is the profile target's, which no .env file names".into()));
+        assert!(asks.is_empty());
+        // The manifest's own target is that database, and is read.
+        let (rels, _) = live_plan(&g, &dir, None, &|_| None, "manifest");
+        assert!(rels[ID].is_ok());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_relation_the_script_gave_a_reason_for_says_it() {
+        let g = build("snowflake", json!({ ID: model("orders", cols(&[("id", "number")]), json!({})) }), None);
+        let mut read = live(vec![]);
+        read.reasons.insert(orders(), "the database name was not read: here a database is letters, digits, _ and $ only".into());
+        let m =
+            check(&g, Path::new("/nonexistent"), Path::new("/nonexistent/target"), None, &|_| None, Source::Live(&read)).models.remove(0);
+        assert_eq!(m.status, Status::NotChecked);
+        assert!(m.reason.starts_with("the database name was not read") && m.reason.ends_with("(in the manifest's target)"), "{}", m.reason);
     }
 
     #[test]
     fn one_model_can_be_asked_for_and_the_answer_is_serialised_without_what_is_empty() {
         let nodes = json!({ ID: model("orders", cols(&[("id", "number")]), json!({})) });
         let g = build("snowflake", nodes, Some(table(ID, ["ANALYTICS", "MARTS", "ORDERS"], &[("ID", "NUMBER")])));
-        let answer = check(&g, Path::new("/nonexistent"), Path::new("/nonexistent/target"), Some(&[0]), &|_| None);
+        let answer = check(&g, Path::new("/nonexistent"), Path::new("/nonexistent/target"), Some(&[0]), &|_| None, Source::Catalog);
         let v = serde_json::to_value(&answer).unwrap();
         assert_eq!(v["catalog_at"], 1_000);
         assert_eq!(v["models"][0]["status"], "agrees");
