@@ -49,9 +49,10 @@ half the pane's width, as tall as the pane leaves room for, and moving even
 when the system asks for reduced motion; a
 column clicked during the run waits too, and the one clicked last is drawn when
 it ends. If the run fails, the canvas goes back to the column's model.
-Regenerate, in Catalog > Columns, runs it at any time. collin reads the compiled
-SQL, so run `dbt compile` before it for SQL that changed. It takes a few seconds
-on a project of thousands of models and never runs at startup.
+Regenerate, beside the column lineage menu in Catalog > Columns, runs it at any
+time. collin reads the compiled SQL, so run `dbt compile` before it for SQL that
+changed. It takes a few seconds on a project of thousands of models and never
+runs at startup.
 dbt-edith looks for `collin` beside itself, then on your `PATH`. Without it,
 Collin's entry types the command that installs it into the terminal, for you to
 run:

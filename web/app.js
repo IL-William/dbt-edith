@@ -4388,6 +4388,46 @@ function yamlSyncTip(sync) {
   return sync.status === 'untyped' ? `${tip}, types only` : tip;
 }
 
+/* The left half of the Update YAML control in Catalog > Columns: what it shows
+   and whether it is a button, from where the columns are read (`source`), the
+   server's answer for the model (`sync`: null when the request failed,
+   undefined for Snowflake, where nothing is read before a click), when the
+   catalog was written (`catalogAt`, 0 with no catalog.json) and whether
+   Snowflake's features are on. null is nothing to show: the control stays
+   hidden, the page as it was without the feature. */
+function yamlSyncState(source, sync, snowflakeOn, catalogAt = 0, name = 'this model', env = 'manifest') {
+  if (source === 'snowflake') {
+    return {
+      kind: 'button',
+      label: 'Update YAML',
+      title: `Read the columns of ${name}'s table from ${yamlSyncSourceWords(source, env)} and bring its schema YAML in line. `
+        + 'Nothing is read before you click; the change is made in the editor for you to review.',
+    };
+  }
+  if (!sync) {
+    return snowflakeOn ? { kind: 'quiet', label: 'YAML not checked', title: 'The check did not answer.' } : null;
+  }
+  if (sync.status === 'disagrees' || sync.status === 'untyped') {
+    return {
+      kind: 'button',
+      label: 'Update YAML',
+      title: `${yamlSyncTip(sync)}\nBring the schema YAML in line with the table catalog.json describes. `
+        + 'The change is made in the editor for you to review, and nothing is saved until you save it.',
+    };
+  }
+  if (sync.status === 'agrees') {
+    return { kind: 'ok', label: '✓ YAML matches', title: 'The schema YAML already says what catalog.json says.' };
+  }
+  if (sync.status === 'not_checked' && snowflakeOn) {
+    // The server does not fail without a catalog: it answers not_checked, with no date for it.
+    if (!catalogAt) {
+      return { kind: 'quiet', label: 'no catalog.json', title: 'There is no catalog.json: run dbt docs generate, or read the columns from Snowflake.' };
+    }
+    return { kind: 'quiet', label: 'YAML not checked', title: sync.reason || '' };
+  }
+  return null;
+}
+
 /* Why the columns of the catalog may not be the table's, in words, or '' when
    nothing says so: the model ran after catalog.json was written, or its code
    changed since it ran; or the catalog describes a deployed environment, which
@@ -11592,6 +11632,8 @@ function catalogTabList(n, site) {
 }
 
 function renderCatalog(n) {
+  // A focus waiting for a model's answer belongs to that model's Columns tab alone.
+  if (S.yamlRefocus && (S.yamlRefocus !== n.id || S.catTab !== 'columns')) S.yamlRefocus = '';
   S.node = n;
   const host = $('#catalog');
   if (envMenu && host.contains(envMenu.anchor)) closeEnvMenu();
@@ -20390,33 +20432,104 @@ function yamlSyncFailure(e) {
   return box;
 }
 
-/* Update YAML (0188): in the Columns tab of a model the catalog says disagrees
-   with its schema YAML. The button is drawn once the answer is in, and is no
-   button at all when it fails: the page is as it was without this feature. */
-function yamlSyncButton(n) {
-  const b = document.createElement('button');
-  b.type = 'button';
-  b.className = 'btn sm ghost yamlsync';
-  b.hidden = true;
-  b.textContent = 'Update YAML';
-  const source = yamlSourceNow();
-  if (source === 'snowflake') {
-    // Nothing is asked of Snowflake by showing a model: a read follows a click.
-    b.hidden = false;
-    b.title = `Read the columns of ${n.name}'s table from ${yamlSyncSourceWords(source, yamlSourceEnv())} and bring its schema YAML in line. `
-      + 'Nothing is read before you click; the change is made in the editor for you to review.';
-    b.addEventListener('click', () => updateYamlFromCatalog(n));
-    return b;
+/* The picker of where Update YAML reads the columns from: a menu of the two
+   sources, opened from the right half of the control. */
+function openYamlSourceMenu(anchor, n) {
+  if (closePopup(anchor)) return;
+  const now = yamlSourceNow();
+  const menu = document.createElement('div');
+  menu.className = 'envmenu yamlsrcmenu';
+  menu.setAttribute('role', 'menu');
+  menu.append(jel('div', 'menuhead', "Read the table's columns from"));
+  for (const [key, label, said, title] of [
+    ['catalog', 'catalog.json', 'the catalog dbt docs generate wrote', 'Compare the YAML with the catalog dbt docs generate wrote'],
+    ['snowflake', `Snowflake, ${yamlSourceEnvName()}`, 'the tables as Snowflake has them now, read when you click Update YAML',
+      'Compare the YAML with the tables as Snowflake has them now, read when you ask: the columns of the models asked, never a value of a table'],
+  ]) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = now === key ? 'on' : '';
+    b.title = title;
+    b.setAttribute('role', 'menuitemradio');
+    b.setAttribute('aria-checked', String(now === key));
+    const text = jel('span', 'ytext');
+    text.append(jel('span', 'lbl', label), jel('span', 'ydesc', said));
+    b.append(jel('span', 'check', now === key ? '\u2713' : ''), text);
+    b.addEventListener('click', (e) => {
+      closePopup();
+      if (key === now) return;
+      S.yamlSource = key;
+      S.yamlRefocus = '';
+      renderCatalog(n);
+      // Only a pick by keyboard (a click event with no detail) gets its focus back, as the tab
+      // is drawn again: at once when the control is (Snowflake), else when the catalog answers.
+      if (e.detail !== 0) return;
+      const back = $('#catalog .yamlsrc');
+      if (back && back.offsetParent) back.focus();
+      else S.yamlRefocus = n.id;
+    });
+    menu.append(b);
   }
-  api.get('/api/yaml-sync?node=' + encodeURIComponent(n.id)).then((answer) => {
-    const sync = answer.models[0];
-    if (!sync || !['disagrees', 'untyped'].includes(sync.status) || !b.isConnected) return;
-    b.hidden = false;
-    b.title = `${yamlSyncTip(sync)}\nBring the schema YAML in line with the table catalog.json describes. `
-      + 'The change is made in the editor for you to review, and nothing is saved until you save it.';
-    b.addEventListener('click', () => updateYamlFromCatalog(n));
-  }).catch(() => { /* no catalog, or no answer: no button */ });
-  return b;
+  openPopup(anchor, menu);
+}
+
+/* Update YAML (0188): in the Columns tab of a model, one joined control. Its
+   left half says what the YAML is (a button to update it when the catalog says
+   it differs, or that it matches), its right half names where the columns are
+   read from and, with Snowflake's features on, picks it. The group is drawn
+   once the catalog's answer is in, and not at all when there is nothing to
+   say: the page is as it was without this feature. */
+function yamlSyncGroup(n) {
+  const group = jel('div', 'colgroup tray');
+  group.hidden = true;
+  const joined = jel('span', 'yamlgroup');
+  group.append(joined);
+  const snowflakeOn = !!(S.features && S.features.snowflake);
+  const source = yamlSourceNow();
+  const fill = (sync, catalogAt) => {
+    const state = yamlSyncState(source, sync, snowflakeOn, catalogAt, n.name, yamlSourceEnv());
+    if (!state) return;
+    let left;
+    if (state.kind === 'button') {
+      left = jel('button', 'btn sm yamlsync', state.label);
+      left.type = 'button';
+      left.addEventListener('click', () => updateYamlFromCatalog(n));
+    } else {
+      left = jel('span', 'yamlstate' + (state.kind === 'ok' ? ' ok' : ''), state.label);
+    }
+    left.title = state.title;
+    let right;
+    if (snowflakeOn) {
+      right = jel('button', 'btn sm yamlsrc');
+      right.append(jel('span', 'yamlsrctext', source === 'snowflake' ? `Snowflake, ${yamlSourceEnvName()}` : 'catalog.json'));
+      right.type = 'button';
+      right.setAttribute('aria-haspopup', 'menu');
+      right.title = "Where Update YAML reads the table's columns. Click to change.";
+      right.append(jel('span', 'caret', ' ▾'));
+      right.addEventListener('click', (e) => {
+        e.stopPropagation();
+        openYamlSourceMenu(right, n);
+      });
+    } else {
+      right = jel('span', 'yamlsrc', 'catalog.json');
+    }
+    joined.replaceChildren(left, right);
+    group.hidden = false;
+    if (S.yamlRefocus === n.id && group.isConnected) {
+      S.yamlRefocus = '';
+      if (!document.activeElement || document.activeElement === document.body) right.focus();
+    }
+  };
+  // Nothing is asked of Snowflake by showing a model: a read follows a click.
+  if (source === 'snowflake') {
+    fill(undefined, 0);
+    return group;
+  }
+  api.get('/api/yaml-sync?node=' + encodeURIComponent(n.id))
+    .then((answer) => ({ sync: answer.models[0] || null, at: answer.catalog_at || 0 }), () => ({ sync: null, at: 0 }))
+    .then(({ sync, at }) => { if (group.isConnected) fill(sync, at); })
+    .catch(() => { /* nothing to draw: the page is as it was without this feature */ });
+  return group;
 }
 
 async function updateYamlFromCatalog(n) {
@@ -20487,6 +20600,11 @@ async function updateYamlFromCatalog(n) {
   S.notice.card.focus({ preventScroll: true });
 }
 
+/* The pill that opens the tests no column row can hold. */
+function modelTestsLabel(count) {
+  return `${count} model test${count === 1 ? '' : 's'} \u2192`;
+}
+
 function catalogColumns(body, n, inCard) {
   if (!n.columns.length) {
     if (S.colReveal === n.id && S.dock === 'catalog') S.colReveal = '';
@@ -20517,51 +20635,56 @@ function catalogColumns(body, n, inCard) {
   const box = document.createElement('label');
   box.className = 'colfind';
   box.append(strokeIcon('0 0 16 16', 'colfind-ico', ['M7 2.25a4.75 4.75 0 1 0 0 9.5 4.75 4.75 0 0 0 0-9.5z', 'M10.5 10.5l3.5 3.5']), filter, shown);
-  tools.append(box);
+  // Three groups, each a thing of its own: the table (what is shown of it),
+  // the column lineage (its tool, running it again) and the YAML update, the
+  // last two in a tray. A group with nothing in it is not drawn.
+  const tableGroup = jel('div', 'colgroup');
+  tableGroup.append(box);
   const untyped = n.columns.filter((c) => !c.data_type).length;
   const typed = n.columns.length - untyped;
   if (!typed) {
-    tools.append(Object.assign(document.createElement('span'), {
+    tableGroup.append(Object.assign(document.createElement('span'), {
       textContent: siteNoTypes(S.site),
     }));
   }
-  // A site's column lineage is the file it was written with: there is no other to pick (0182).
-  if (!S.site) tools.append(sourceMenu());
   // This table can only ever show the tests that name a column. Saying how many
   // it cannot show is what stops it from reading as the whole story.
   const onModel = splitTests(n.tests).model.length;
   if (onModel) {
-    const span = document.createElement('span');
-    span.className = 'colhint modeltests';
-    span.textContent = `${onModel} guard the model itself`;
-    span.title = 'a singular test, or a generic naming no column: no column row can hold it.\nclick to list them in Preview';
-    span.addEventListener('click', () => showCatalogTab(n, 'preview'));
-    tools.appendChild(span);
+    const pill = jel('button', 'btn sm modeltests', modelTestsLabel(onModel));
+    pill.type = 'button';
+    pill.title = 'a singular test, or a generic naming no column: no column row can hold it.\nclick to list them in Preview';
+    pill.addEventListener('click', () => showCatalogTab(n, 'preview'));
+    tableGroup.append(pill);
   }
+  tools.append(tableGroup);
+  const lineageGroup = jel('div', 'colgroup tray');
+  // A site's column lineage is the file it was written with: there is no other to pick (0182).
+  if (!S.site) lineageGroup.append(sourceMenu());
+  if (S.cllTool === 'collin' && S.collin && S.collin.found) {
+    const again = jel('button', 'btn sm', 'Regenerate');
+    again.type = 'button';
+    again.prepend(strokeIcon('0 0 16 16', 'refresh-ico', ['M13.6 8a5.6 5.6 0 1 1-1.1-3.3', 'M12.5 1.6v3.1H9.4']));
+    again.disabled = S.collin.state === 'running';
+    again.title = 'Run collin again over the compiled SQL. Run dbt compile first for SQL that changed.';
+    again.addEventListener('click', () => regenerateCollin());
+    lineageGroup.append(again);
+  }
+  if (lineageGroup.children.length) tools.append(lineageGroup);
+  if (!S.site && n.kind === 'model' && !n.version) tools.append(yamlSyncGroup(n));
+  let hintLine = null;
   const hint = columnsHint(S.sidecar, n.columns.some((c) => c.up || c.down))
     || (S.site ? siteCllHint(S.meta) : collinHint(S.cllTool, S.collin, S.meta && S.meta.cll_kinds));
   if (hint) {
+    hintLine = document.createElement('div');
+    hintLine.className = 'colhintline';
     const span = document.createElement('span');
     span.className = 'colhint';
     span.dataset.tone = hint.tone;
     span.textContent = hint.text;
     if (hint.title) span.title = hint.title;
     if (hint.tone === 'failed') span.title = (((sidecarOn() ? S.sidecar : S.collin) || {}).log || []).join('\n');
-    tools.appendChild(span);
-  }
-  if (S.cllTool === 'collin' && S.collin && S.collin.found) {
-    const again = document.createElement('button');
-    again.className = 'btn sm ghost';
-    again.textContent = 'Regenerate';
-    again.disabled = S.collin.state === 'running';
-    again.title = 'Run collin again over the compiled SQL. Run dbt compile first for SQL that changed.';
-    again.addEventListener('click', () => regenerateCollin());
-    tools.appendChild(again);
-  }
-  if (!S.site && n.kind === 'model' && !n.version) {
-    const sw = yamlSourceSwitch(() => renderCatalog(n));
-    tools.appendChild(yamlSyncButton(n));
-    if (sw) tools.appendChild(sw);
+    hintLine.append(span);
   }
   // Each column of a key, by the key's letter and its place in the key,
   // expressions included; a column named twice in a key keeps its first place.
@@ -20581,7 +20704,9 @@ function catalogColumns(body, n, inCard) {
   const keyShown = keys.some((k) => keyColumns(k.entries, n.columns).some((e) => e.column));
   const sort = S.colSort === 'key' && !keyShown ? 'az' : S.colSort;
   tools.append(Object.assign(document.createElement('div'), { className: 'grow' }));
-  tools.appendChild(document.createTextNode('Sort'));
+  // The word and its control wrap together.
+  const sortBox = jel('span', 'sortbox');
+  sortBox.appendChild(document.createTextNode('Sort'));
   const seg = document.createElement('span');
   seg.className = 'seg';
   seg.setAttribute('role', 'group');
@@ -20596,8 +20721,11 @@ function catalogColumns(body, n, inCard) {
     b.addEventListener('click', () => { S.colSort = key; renderCatalog(n); });
     seg.appendChild(b);
   }
-  tools.appendChild(seg);
+  sortBox.appendChild(seg);
+  tools.appendChild(sortBox);
   body.appendChild(tools);
+  // What the column lineage tool says, on a line of its own under the row.
+  if (hintLine) body.appendChild(hintLine);
   const said = S.cllTool === 'collin' && collinModelNote(n.collin, n.columns);
   const flags = S.cllTool === 'collin' ? collinColumnNotes(n.collin) : new Map();
   if (said) body.appendChild(Object.assign(document.createElement('div'), { className: 'colnote', textContent: said }));

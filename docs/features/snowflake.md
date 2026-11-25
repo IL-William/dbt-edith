@@ -147,9 +147,10 @@ which Snowflake's error then names.
 
 With Snowflake's features on, the YAML update in [the Catalog](catalog.md#update-yaml) and
 in [Reports](jobs-and-reports.md#reports) can read the columns of the tables
-from Snowflake instead of `catalog.json`: a switch, **catalog.json | Snowflake,
-<environment>**, sits beside the Catalog's Update YAML button and in the head of
-the YAML and warehouse section. The choice lasts the page session, and the
+from Snowflake instead of `catalog.json`: a menu, **catalog.json | Snowflake,
+<environment>**, opens from the right half of the Catalog's Update YAML control,
+and a switch of the same name sits in the head of the YAML and warehouse
+section. The choice lasts the page session, and the
 environment is the one the status bar's pill shows: the manifest's target, or an
 `.env` file, whose resolved location for each model is the relation read. A model
 whose location the file leaves unresolved is not checked, and says so.

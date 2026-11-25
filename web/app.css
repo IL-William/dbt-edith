@@ -3398,7 +3398,7 @@ span.envpill:hover { filter: none; }
 .kvline dt { color: var(--fg-dim); }
 .kvline dd { margin: 0; font-family: var(--mono); font-size: 11.5px; word-break: break-all; }
 
-.coltools { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; font-size: 12px; color: var(--fg-dim); margin-bottom: 8px; }
+.coltools { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 10px; font-size: 12px; color: var(--fg-dim); margin-bottom: 8px; }
 .coltools .grow { flex: 1; }
 /* The filter is a boxed field with its count inside at the right: the
    count shown and the count typed, which cannot be read as part of the word.
@@ -3415,7 +3415,46 @@ span.envpill:hover { filter: none; }
 .colcount { flex: 0 0 auto; text-align: right; font: 11px var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .coltools .cllpick { height: 24px; box-sizing: border-box; gap: 7px; padding: 0 8px 0 9px; border-radius: 12px; background: none; font-size: 12px; }
 .coltools .cllpick:hover { background: var(--hover); }
-.coltools .btn.ghost { height: 20px; padding: 0 7px; font-size: 11px; }
+/* The row is three groups: the table, then the column lineage and the YAML
+   update, each of these in a tray like Sort's. A group wraps whole as an item
+   of the row, and inside its own box when it is wider than the row. */
+.coltools .colgroup { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.coltools .colgroup.tray { background: var(--bg); border: 1px solid var(--line); border-radius: 15px; padding: 3px; gap: 4px; min-width: 0; max-width: 100%; }
+.coltools .sortbox { display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; }
+.coltools .colgroup[hidden] { display: none; }
+/* Its buttons have a fill and a size to be read as buttons. The column lineage
+   pick keeps its own rules (its border is its tool's colour). */
+.coltools .btn:not(.cllpick) {
+  height: 24px; box-sizing: border-box; padding: 0 9px; border-radius: 12px; font-size: 11.5px;
+  background: var(--bg-3); border-color: var(--line-strong); color: var(--fg);
+  display: inline-flex; align-items: center; gap: 5px; white-space: nowrap;
+}
+.coltools .btn:not(.cllpick):hover:not(:disabled) { background: var(--btn-hover); }
+.coltools .btn:disabled { opacity: .55; cursor: default; }
+.coltools .refresh-ico { width: 12px; height: 12px; flex: 0 0 auto; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+/* Update YAML: two parts sharing one border, the state on the left (a button
+   or a word) and where the columns are read from on the right. */
+.coltools .yamlgroup { display: inline-flex; align-items: stretch; min-width: 0; max-width: 100%; }
+.coltools .yamlgroup > * { height: 24px; box-sizing: border-box; border-radius: 0; position: relative; }
+.coltools .yamlgroup > * + * { margin-left: -1px; }
+.coltools .yamlgroup > :first-child { border-radius: 12px 0 0 12px; }
+.coltools .yamlgroup > :last-child { border-radius: 0 12px 12px 0; }
+.coltools .yamlgroup > :only-child { border-radius: 12px; }
+.coltools .yamlgroup > .yamlsrc { min-width: 0; max-width: 100%; }
+.coltools .yamlsrctext { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.coltools .yamlgroup > :hover, .coltools .yamlgroup > :focus-visible { z-index: 1; }
+.coltools .yamlstate, .coltools span.yamlsrc {
+  display: inline-flex; align-items: center; padding: 0 9px; border: 1px solid var(--line-strong);
+  font-size: 11.5px; color: var(--fg-dim); white-space: nowrap;
+}
+.coltools .yamlstate.ok { color: var(--ok); }
+.coltools .yamlsrc .caret { font-size: 11px; line-height: 1; color: var(--fg-dim); }
+/* The menu of sources: a check, then the name with what it reads under it. */
+.envmenu.yamlsrcmenu { max-width: 300px; }
+.envmenu.yamlsrcmenu button { align-items: flex-start; }
+.envmenu.yamlsrcmenu .check { width: 1.1em; flex: 0 0 auto; display: inline-block; text-align: center; }
+.envmenu.yamlsrcmenu .ytext { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.envmenu.yamlsrcmenu .ydesc { font: 11px/1.35 var(--ui); color: var(--fg-dim); white-space: normal; }
 /* Sort: the dock's modes as #graph-mode draws them, the one in front raised. */
 .coltools .seg { gap: 2px; padding: 2px; border: 0; border-radius: 7px; background: var(--bg); overflow: visible; }
 .coltools .segbtn { height: 20px; padding: 0 8px; border-radius: 5px; font-size: 11.5px; }
@@ -3447,16 +3486,14 @@ span.envpill:hover { filter: none; }
 /* What a generated column is set to, in the canvas badge's pink, clipped:
    a typed null recast reads whole, a long literal on hover (0096). */
 .cols .c-gen { display: inline-block; max-width: 26ch; overflow: hidden; text-overflow: ellipsis; vertical-align: bottom; color: var(--r-generated); cursor: help; }
-/* The count of tests this table cannot show. Underlined rather than coloured:
-   the toolbar's colours mean the column lineage tool and its state, nothing else. */
-.coltools .modeltests { cursor: pointer; text-decoration: underline dotted; text-underline-offset: 2px; }
-.coltools .modeltests:hover { color: var(--accent); }
-.coltools .colhint[data-tone="hint"] { color: var(--accent); }
-.coltools .colhint[data-tone="busy"] { color: var(--warn); }
-.coltools .colhint[data-tone="failed"] { color: var(--err); }
-.coltools .colhint[data-tone="alpha"] { color: var(--warn); }
+.colhintline .colhint[data-tone="hint"] { color: var(--accent); }
+.colhintline .colhint[data-tone="busy"] { color: var(--warn); }
+.colhintline .colhint[data-tone="failed"] { color: var(--err); }
+.colhintline .colhint[data-tone="alpha"] { color: var(--warn); }
 /* A site's column lineage older than its manifest (0182). */
-.coltools .colhint[data-tone="stale"] { color: var(--warn); }
+.colhintline .colhint[data-tone="stale"] { color: var(--warn); }
+/* What the column lineage tool says, on a line under the tools. */
+.colhintline { margin: -2px 0 8px; font-size: 11.5px; color: var(--fg-dim); }
 /* What collin's report says about the model shown, full width under the tools. */
 .colnote {
   margin: 0 0 8px; padding: 5px 8px; border-left: 2px solid var(--warn); background: color-mix(in srgb, var(--warn) 8%, transparent);
@@ -3843,7 +3880,6 @@ span.envpill:hover { filter: none; }
    outline and its text twin; the outline is a rect with no fill of its own. */
 #graph .roletaglabel { font: 600 9.5px var(--mono); letter-spacing: .04em; }
 .roletag rect { fill: none; stroke-width: 1; }
-.coltools .yamlsync[hidden] { display: none; }
 /* The lines Update YAML put in, lit until the next edit (0188). */
 .cm-synced { background: var(--ok-tint); box-shadow: inset 3px 0 0 var(--ok); }
 /* Where a jump to a test landed, lit and faded (0041). */

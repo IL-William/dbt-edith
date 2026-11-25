@@ -72,7 +72,9 @@ chip opens its properties file at the line that declares the test. The tests
 that guard the model rather than a column, which is every singular test under
 `tests/` and every generic with no column such as
 `unique_combination_of_columns`, are listed under Preview, where clicking one
-moves the lineage to it and double-clicking opens it where it is declared.
+moves the lineage to it and double-clicking opens it where it is declared. The
+`N model tests →` pill in the tools row above the columns opens that Preview
+list.
 A test shown in the Catalog has Preview alone, since it has no columns of its
 own. It opens on what it checks, as its hover card says it: the generic, or
 `singular`, the model whose YAML declares it, its column, its severity, `warn`
@@ -106,7 +108,10 @@ snapshot, a source, an ephemeral or versioned model, one from an installed
 package, a model `catalog.json` does not list or lists with no column, or one it
 describes at a relation neither the manifest nor a `.env` file of the project
 places it at (below). Those are not compared, since their columns say nothing of
-drift.
+drift. When the YAML already says what `catalog.json` says, the row shows
+`✓ YAML matches` beside the source in place of the button. With Snowflake's
+features on, a model that is not compared shows `YAML not checked` there, its
+reason on hover, and a project with no `catalog.json` shows `no catalog.json`.
 
 The click opens the model's properties file in the editor and changes its
 text there, in one step that Undo takes back. Nothing is saved: the tab shows
@@ -192,9 +197,10 @@ overwritten: it is opened and the model's entry added to it. A static site has n
 button. A folder, or the whole project, is updated from Reports
 ([YAML and warehouse](jobs-and-reports.md#reports)).
 
-With Snowflake's features on, a switch beside the button, **catalog.json |
-Snowflake, <environment>**, picks where the columns of the table are read
-from, for the page session: Snowflake's own tables for the status bar's
+The source is named on the right half of the control, **catalog.json** or
+**Snowflake, <environment>**. With Snowflake's features on its ▾ opens a menu
+that picks where the columns of the table are read from, for the page session:
+Snowflake's own tables for the status bar's
 environment, read on the click and never kept ([the live read](snowflake.md#columns-for-the-yaml-update)).
 The button's tooltip and its dialog say which source they are about, a number is
 written with the precision and scale the table has, and no flag about a catalog
