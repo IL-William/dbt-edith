@@ -3679,6 +3679,14 @@ of its own, and each panel updates the tour, its page under
       as it does a comment.
     - A file over the outline limit opens with no landing.
     - A package's model and the static site have no glyph.
+71. **What the Columns tab's tool groups left.**
+    - In a narrow Catalog, a long file path line and the column lineage note
+      under the tools row can run past the edge. Jaffle Shop's paths wrap at
+      415px, before the groups and after, so seeing it takes a longer path.
+    - Without Snowflake's features, a model the YAML update does not compare
+      draws nothing in the YAML tray, where `YAML not checked` could say why.
+    - Reports' YAML and warehouse section keeps its two-button source switch
+      rather than the Catalog's menu.
 
 Left by the pull requests of 2026-10-14, each a known limit written in
 its pull request, unranked:
