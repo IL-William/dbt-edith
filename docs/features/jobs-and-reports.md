@@ -476,6 +476,19 @@ tab, and carries no count in the rail.
   hold, the ones skipped and why, and what was left out. A model written shows
   `updated, waiting for a parse` and is no longer counted, until the manifest
   reloads; Read again then says what is left.
+- **The source.** With Snowflake's features on, a switch in the head, **catalog.json
+  | Snowflake, <environment>**, reads the same comparison live from Snowflake
+  ([the columns it reads](snowflake.md#columns-for-the-yaml-update)): the head then
+  says `Snowflake, <environment>, read <time>`, the tree, the counts and Update
+  are of what Snowflake returned, a model it returns no table for is in Not
+  checked, and no left-out for a catalog behind applies, only a table behind its
+  code for the manifest's target. The choice lasts the page session and the
+  environment follows the status bar's pill. The answer is kept: the section is
+  drawn from it again and again, and read again from Snowflake only on **Read
+  again**, a switch, the pill's environment changing, or the button an empty
+  section shows (**Read from Snowflake**: nothing is asked until then). With no
+  `catalog.json` the section is listed while Snowflake's features are on and
+  starts on Snowflake.
 - **From collin's report**, the fold of models whose YAML is behind the
   warehouse, and collin's own finding that the YAML is out of date, link here.
 

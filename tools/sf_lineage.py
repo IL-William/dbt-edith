@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Snowflake for dbt-edith: column-level lineage, the user's query history and
-the last build of each model per environment.
+"""Snowflake for dbt-edith: column-level lineage, the user's query history, the
+last build of each model per environment and the columns of its tables.
 
 dbt-edith is a single static binary with no HTTP client, no TLS and no credential
 handling, and it has to stay that way to keep cross-compiling to one dependency
@@ -21,7 +21,10 @@ calls, so `serve` is the normal mode and `dump` is always scoped. The query
 history comes from INFORMATION_SCHEMA.QUERY_HISTORY_BY_USER, which any role can
 read for its own user, live and for the last seven days. The last builds come
 from the tables of the dbt_artifacts package, when the project has it, read on
-a click and never kept (docs/decisions/0117).
+a click and never kept (docs/decisions/0117). The columns of a table come from
+the database's INFORMATION_SCHEMA.COLUMNS, one query per database, only the
+names, positions and types of the relations asked for and never a value of
+a table, read when the user asks for a YAML to be brought in line (0188).
 """
 
 import argparse
@@ -58,6 +61,12 @@ BUILDS_DAYS = 90
 BUILDS_MAX = 50000
 # Enough of dbt's message to say what went wrong; the run itself has the rest.
 BUILDS_MESSAGE = 600
+
+# The columns read keeps this many relations at most to a request, and asks no
+# more than one query per database for them. A part of a name is cut here too:
+# Snowflake's own limit is 255.
+COLUMNS_MAX = 2000
+COLUMNS_PART = 255
 
 # The target keys this script reads, and so the ones checked for Jinja.
 PROFILE_KEYS = (
@@ -518,6 +527,139 @@ def builds_request(req):
     return tuple(found)
 
 
+# An unquoted name: what Snowflake folds to upper case.
+PLAIN_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_$]*")
+
+
+def fold_name(name: str) -> str:
+    """A name as Snowflake keeps it: an unquoted one is upper case, which is how
+    dbt writes every relation it does not quote; any other spelling stays."""
+    return name.upper() if PLAIN_NAME.fullmatch(name) else name
+
+
+# The names a database may have here: what an unquoted identifier can be, which is
+# what dbt projects use. The database is the one name that reaches a statement as
+# text, and the connector binds in its driver, so the whole statement goes through
+# Python's `%` formatting: a `%` or a quote in it would run as part of the SQL.
+# A name outside this list is not read, and is not escaped instead (0188).
+DATABASE_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_$]{0,254}")
+NOT_READ = "the database name was not read: here a database is letters, digits, _ and $ only"
+MISSING = "not found or not visible to this role"
+# What Snowflake answers when a database does not exist or the role cannot see it:
+# error 2003 ("SQL compilation error: Database 'X' does not exist or not
+# authorized"). Only this is "not found": a session with no warehouse, a timeout
+# or a dropped connection says nothing of the database and reaches the page as the
+# error it is.
+MISSING_DATABASE_CODE = 2003
+MISSING_DATABASE_TEXT = "does not exist or not authorized"
+
+
+def is_missing_database(error: BaseException) -> bool:
+    """Whether an error is Snowflake saying the database is not there for this role."""
+    if getattr(error, "errno", None) == MISSING_DATABASE_CODE:
+        return True
+    return MISSING_DATABASE_TEXT in str(error).lower() and "database" in str(error).lower()
+
+
+def database_identifier(name):
+    """A database name as the one quoted identifier a statement holds, or None
+    when it is not a name this read accepts."""
+    return '"' + name.upper() + '"' if isinstance(name, str) and DATABASE_NAME.fullmatch(name) else None
+
+
+def check_part(part) -> None:
+    """A part of a relation as a request may name it: text of one to 255 characters
+    with no control character. What the part may be beyond that is for the
+    statement to decide: a schema and a name are bind values, a database goes
+    through database_identifier."""
+    if not isinstance(part, str) or not part or len(part) > COLUMNS_PART or re.search(r"[\x00-\x1f\x7f]", part):
+        raise ValueError("a name must be 1 to 255 characters and hold no control character")
+
+
+def columns_request(req):
+    """The relations a columns request names, as (database, schema, name), or ValueError.
+
+    This is for a request that is not what the page sends, and for the bound on
+    how many a request may carry. A database that is not a plain name is not
+    refused here but answered as not read, by table_columns.
+    """
+    asked = req.get("relations")
+    if not isinstance(asked, list) or not asked:
+        raise ValueError("a columns request needs a list of relations")
+    if len(asked) > COLUMNS_MAX:
+        raise ValueError(f"at most {COLUMNS_MAX} relations at a time")
+    out = []
+    for r in asked:
+        if not isinstance(r, dict):
+            raise ValueError("a relation is a database, a schema and a name")
+        parts = tuple(r.get(k) for k in ("database", "schema", "name"))
+        for part in parts:
+            check_part(part)
+        out.append(parts)
+    return out
+
+
+def table_columns(cur, relations):
+    """The columns of each relation asked, in the table's own order, one query per
+    database, and `found: false`, with its reason, for a relation that has none.
+
+    A table always has a column, so no row at all means the relation is not
+    there or this role cannot see it: said as that, and never as a table with no
+    columns. A database Snowflake answers with an error (it does not exist or is
+    not visible to the role) answers its relations the same way and the others
+    are read; a database name that is not a plain one is not queried at all. Any
+    other error (no active warehouse, a timeout, a dropped connection) is raised,
+    since it says nothing of a database. Only INFORMATION_SCHEMA.COLUMNS is read, and from it a column's
+    name, position, type, precision and scale: no value of any table leaves (0188).
+    """
+    by_database = {}
+    for database, schema, name in relations:
+        by_database.setdefault(fold_name(database), []).append((fold_name(schema), fold_name(name)))
+    columns = {}
+    why = {}
+    for database, wanted in by_database.items():
+        identifier = database_identifier(database)
+        if identifier is None:
+            why[database] = NOT_READ
+            continue
+        schemas = sorted({s for s, _ in wanted})
+        tables = sorted({t for _, t in wanted})
+        binds = {}
+        for kind, values in (("s", schemas), ("t", tables)):
+            for i, v in enumerate(values):
+                binds[f"{kind}{i}"] = v
+        # The placeholders are made here, from counts; the database is an allowed name, quoted.
+        marks = {k: ", ".join(f"%({k}{i})s" for i in range(len(v))) for k, v in (("s", schemas), ("t", tables))}
+        sql = (
+            "select table_schema, table_name, column_name, ordinal_position, data_type, numeric_precision, numeric_scale "
+            f"from {identifier}.information_schema.columns "
+            f"where table_schema in ({marks['s']}) and table_name in ({marks['t']}) "
+            "order by table_schema, table_name, ordinal_position"
+        )
+        try:
+            cur.execute(sql, binds)
+            rows = cur.fetchall()
+        except Exception as e:
+            # A database that does not exist, or this role cannot see, and nothing else.
+            if not is_missing_database(e):
+                raise
+            why[database] = MISSING
+            continue
+        for schema, table, column, ordinal, data_type, precision, scale in rows:
+            columns.setdefault((database, schema, table), []).append(
+                {k: v for k, v in (("name", column), ("index", ordinal), ("type", data_type), ("precision", precision), ("scale", scale)) if v is not None}
+            )
+    out = []
+    for database, schema, name in relations:
+        # The statement matched schemas and names apart, so a row may be another relation's: only the asked pair counts.
+        found = columns.get((fold_name(database), fold_name(schema), fold_name(name)))
+        row = {"database": database, "schema": schema, "name": name, "found": bool(found), "columns": found or []}
+        if not found:
+            row["reason"] = why.get(fold_name(database), MISSING)
+        out.append(row)
+    return out
+
+
 BUILD_COLUMNS = (
     "node", "target", "status", "started", "completed", "compiled", "invocation", "full_refresh", "rows",
     "message", "command", "cloud_job", "cloud_run", "last_success",
@@ -689,12 +831,17 @@ def cmd_serve(args):
                names;
               {"id": 4, "op": "builds", "executions": "DB.SCHEMA.TABLE",
                "invocations": "DB.SCHEMA.TABLE"}, the last run of each model
-               in one environment's dbt_artifacts tables; or {"op": "quit"}.
+               in one environment's dbt_artifacts tables;
+              {"id": 5, "op": "columns", "relations": [{"database": "DB",
+               "schema": "S", "name": "T"}]}, the columns of those tables, from
+               INFORMATION_SCHEMA; or {"op": "quit"}.
     Replies:  {"event": "profiles", "path": ...} and {"event": "ready", ...}
               once each, then {"id": 1, "rows": [...]} for lineage,
               {"id": 2, "session": {...}, "rows": [...], "more": bool} for
               history, {"id": 3, "session": {...}} for session,
-              {"id": 4, "rows": [...], "cut": bool} for builds, or
+              {"id": 4, "rows": [...], "cut": bool} for builds,
+              {"id": 5, "relations": [{..., "found": bool, "columns": [...]}]}
+              for columns, or
               {"id": 1, "error": "...", "phase": "connect" | "query"}.
 
     The phase says whether the profile is to blame or not: a connection that
@@ -755,6 +902,8 @@ def cmd_serve(args):
                 asked = history_request(req)
             elif op == "builds":
                 asked = builds_request(req)
+            elif op == "columns":
+                asked = columns_request(req)
             elif op == "session":
                 asked = None
             else:
@@ -774,6 +923,8 @@ def cmd_serve(args):
                     elif op == "builds":
                         rows, cut = last_builds(cur, *asked)
                         answer = {"rows": rows, "cut": cut}
+                    elif op == "columns":
+                        answer = {"relations": table_columns(cur, asked)}
                     else:
                         if session is None:
                             session = session_info(cur)

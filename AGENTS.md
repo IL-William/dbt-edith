@@ -78,9 +78,10 @@ frontend fix does not exist in a release binary until it is rebuilt (see 0005).
 - **Never run dbt.** The binary never talks to a warehouse either:
   `tools/sf_lineage.py` does, started by the server only once the user picks
   Snowflake as the column lineage tool, opens the query history or a
-  relation's Snowsight menu, or reads the last builds, with Snowflake's
+  relation's Snowsight menu, reads the last builds, or asks for the columns of
+  the tables a YAML update is compared with, with Snowflake's
   features on for the project, under their own credentials (0002, 0016, 0031,
-  0048, 0051, 0117). collin, which
+  0048, 0051, 0117, 0188). collin, which
   parses the compiled SQL and reaches nothing, is started only once Collin is
   picked, a column is clicked or Regenerate pressed, never at startup (0042),
   and from the command line only when `--column` or `--site` is asked with
@@ -367,7 +368,7 @@ src/command.rs        a dbt command line, read into what it runs and what it sel
 src/yaml.rs           a subset of YAML, anchors and merges included, read into a tree
 src/yaml_sync.rs      what a model's YAML would change to say what its table says: the columns it lacks or declares in excess, the types to write, and whether the catalog is behind the run, never a file written
 src/clone.rs          which nodes a clone into your schema copies: the model, its direct parents, through ephemerals
-src/sidecar.rs        the Snowflake script: started once Snowflake is picked, or the history or the last builds read, one request at a time
+src/sidecar.rs        the Snowflake script: started once Snowflake is picked, or the history, the last builds or the columns of tables read, one request at a time
 src/compiled.rs       the compiled/ and run/ SQL under target/, and how fresh each is
 src/macros.rs         macros from the manifest, and which one a call in the editor reaches
 src/macro_use.rs      which nodes reach each macro, through the macros calling it, and why one no node reaches may still run

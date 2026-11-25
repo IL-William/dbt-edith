@@ -3600,9 +3600,7 @@ of its own, and each panel updates the tour, its page under
       that state back in the `popstate` handler to set the depth before
       `focusNode`. A column is not in an entry, by choice.
 64. **What Update YAML left (0188).**
-    - **Snowflake.** The columns read from Snowflake for the environment pill's
-      environment, which give a number its precision and lift the contract trap,
-      are the step after the bulk update from Reports (item 67).
+    - **Snowflake** is the live read of item 68, which lifts the contract trap.
     - **Not compared:** seeds, snapshots, sources, ephemeral and versioned
       models, and a package's models. A versioned model declares its columns per
       version.
@@ -3640,9 +3638,7 @@ of its own, and each panel updates the tour, its page under
     tab to remember the file's ending and write it back, with a mixed file kept
     as it is; its own pull request.
 67. **What the bulk YAML update left (0188).**
-    - **Snowflake live.** The columns read from Snowflake for the environment
-      pill's environment, which give a number its precision and lift the contract
-      trap, are the step after this; the dialog reads `catalog.json` only.
+    - **Snowflake live** is item 68: the section reads either source.
     - **A write is a sequence of requests,** not a transaction: a request that
       fails midway leaves the files before it written, which the card lists.
     - **The tree lists the models that differ only.** The models that agree are a
@@ -3654,6 +3650,24 @@ of its own, and each panel updates the tour, its page under
       again if it still differs.
     - **No count in the rail,** since counting needs the comparison, which the
       polled index does not make.
+68. **What the live read left (0188).**
+    - **Not tried on a real account.** The read is tested against the fake
+      connector and a fake sidecar; INFORMATION_SCHEMA's columns, and what a
+      role without the privilege gets from it, are not checked on a warehouse.
+    - **A bare `number` already written under an enforced contract is not
+      flagged.** It compares equal to `number(38,2)` by base, though the contract
+      rounds with it; telling them apart means comparing precision, which the
+      other adapters do not have.
+    - **A project past the route's bound** is read in batches of a thousand
+      models, each its own request with the script's own deadline.
+    - **A lower-case quoted relation reads as not found.** The script folds a plain
+      name to upper case as dbt writes it, so a project with `quoting: identifier:
+      true` whose objects are lower case is looked for in upper case and is not
+      found.
+    - **A database that is not a plain name is not read:** one with a space or a
+      quote (a quoted database) is answered as not read.
+    - **A type other than a number** is the view's `data_type` as Snowflake spells
+      it, with no length (`TEXT`, `FLOAT`), written as the catalog's types are.
 
 Left by the pull requests of 2026-10-14, each a known limit written in
 its pull request, unranked:

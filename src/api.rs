@@ -1048,6 +1048,9 @@ async fn reports_index(State(st): State<Arc<AppState>>) -> Response {
         let graph = st.graph.read().await;
         let unreached = graph.macro_use.unreached(&graph.macros);
         let listed = graph.nodes.iter().filter(|n| n.kind == crate::graph::Kind::Model && n.table.is_some()).count();
+        // With no catalog the section is still there for a live read, which needs only the models.
+        let models = graph.nodes.iter().filter(|n| n.kind == crate::graph::Kind::Model && !n.disabled).count();
+        let listed = (listed, models);
         (
             unreached.into_iter().filter(|&m| macro_used(&graph, m).unexplained()).count(),
             crate::checks::count(&graph),
@@ -1063,6 +1066,11 @@ async fn reports_index(State(st): State<Arc<AppState>>) -> Response {
         let has = |id: &str| graph.index.contains_key(id);
         has(BUILDS_EXECUTIONS) && has(BUILDS_INVOCATIONS)
     } && st.snowflake_allowed().await;
+    let yamlsync = match listed {
+        (0, 0) => None,
+        (0, models) => st.snowflake_allowed().await.then_some(YamlSyncIndex { models, at: 0, manifest_at }),
+        (models, _) => Some(YamlSyncIndex { models, at: catalog_at, manifest_at }),
+    };
     Json(ReportsIndex {
         run,
         warnings,
@@ -1071,7 +1079,7 @@ async fn reports_index(State(st): State<Arc<AppState>>) -> Response {
         macros: (unexplained > 0).then_some(MacrosIndex { unexplained, at: manifest_at }),
         builds,
         checks: (checks > 0).then_some(ChecksIndex { count: checks, at: manifest_at }),
-        yamlsync: (listed > 0).then_some(YamlSyncIndex { models: listed, at: catalog_at, manifest_at }),
+        yamlsync,
     })
     .into_response()
 }
@@ -1322,7 +1330,9 @@ struct ReportsIndex {
     #[serde(skip_serializing_if = "Option::is_none")]
     checks: Option<ChecksIndex>,
     /// Listed while catalog.json lists a model's table: the models it lists and
-    /// when it was written. Nothing is compared for the index, which is polled (0188).
+    /// when it was written, or, with no catalog and Snowflake's features on, the
+    /// models and no time, for a live read. Nothing is compared for the index,
+    /// which is polled (0188).
     #[serde(skip_serializing_if = "Option::is_none")]
     yamlsync: Option<YamlSyncIndex>,
 }
@@ -3239,6 +3249,10 @@ async fn job_step(State(st): State<Arc<AppState>>, Query(q): Query<JobStepQuery>
 struct YamlSyncQuery {
     /// One model's unique_id; the whole project's models when absent.
     node: Option<String>,
+    /// `catalog` (the default) or `snowflake`: where the columns of the tables are read from.
+    source: Option<String>,
+    /// For `snowflake`: `manifest` (or nothing), or the `.env` file whose environment is read.
+    env: Option<String>,
 }
 
 /// What each model's YAML would change to say what its table says, from the
@@ -3248,7 +3262,16 @@ struct YamlSyncQuery {
 /// With `node` the answer carries the model's freshness flags; without it, for
 /// the whole project, it carries none, since they cost file-system calls for
 /// each model. The POST form below gives them for a list of models.
+///
+/// With `source=snowflake` the columns are read live from the environment `env`
+/// names, behind Snowflake's features (0188): one query per database for the
+/// relations asked, and the whole project is refused past the batch bound, which
+/// the POST form takes in several requests.
 async fn yaml_sync(State(st): State<Arc<AppState>>, Query(q): Query<YamlSyncQuery>) -> Response {
+    let live = match live_source(q.source.as_deref(), q.env.as_deref()) {
+        Ok(l) => l,
+        Err(e) => return e,
+    };
     let graph = st.graph.read().await.clone();
     let only = match q.node.as_deref() {
         Some(id) => match graph.index.get(id) {
@@ -3257,7 +3280,21 @@ async fn yaml_sync(State(st): State<Arc<AppState>>, Query(q): Query<YamlSyncQuer
         },
         None => None,
     };
-    yaml_sync_answer(&st, graph, only).await
+    yaml_sync_answer(&st, graph, only, live).await
+}
+
+/// The environment a live read asks for, None for the catalog: `source`, if any,
+/// is one of the two, and `env` `manifest` or the name of an `.env` file.
+fn live_source(source: Option<&str>, env: Option<&str>) -> Result<Option<String>, Response> {
+    match source {
+        None | Some("catalog") => Ok(None),
+        Some("snowflake") => match env.unwrap_or("") {
+            "" | "manifest" => Ok(Some("manifest".into())),
+            file if valid_env_file(file) => Ok(Some(file.to_string())),
+            _ => Err((StatusCode::BAD_REQUEST, "not an env file name").into_response()),
+        },
+        Some(_) => Err((StatusCode::BAD_REQUEST, "source must be catalog or snowflake").into_response()),
+    }
 }
 
 /// The most models one batch may name: a folder of the bulk update is a few
@@ -3267,6 +3304,10 @@ const MAX_YAML_SYNC_BATCH: usize = 5_000;
 #[derive(Deserialize)]
 struct YamlSyncBatch {
     nodes: Vec<String>,
+    #[serde(default)]
+    source: Option<String>,
+    #[serde(default)]
+    env: Option<String>,
 }
 
 /// The same answer for the models named, each with its freshness flags: what
@@ -3274,6 +3315,10 @@ struct YamlSyncBatch {
 /// (0188). An id that is no model of the manifest on screen is left out of the
 /// answer, a manifest reloaded since the page read it.
 async fn yaml_sync_flags(State(st): State<Arc<AppState>>, Json(b): Json<YamlSyncBatch>) -> Response {
+    let live = match live_source(b.source.as_deref(), b.env.as_deref()) {
+        Ok(l) => l,
+        Err(e) => return e,
+    };
     if b.nodes.len() > MAX_YAML_SYNC_BATCH {
         return (StatusCode::PAYLOAD_TOO_LARGE, format!("at most {MAX_YAML_SYNC_BATCH} models at a time")).into_response();
     }
@@ -3286,14 +3331,70 @@ async fn yaml_sync_flags(State(st): State<Arc<AppState>>, Json(b): Json<YamlSync
         .collect();
     ids.sort_unstable();
     ids.dedup();
-    yaml_sync_answer(&st, graph, Some(ids)).await
+    yaml_sync_answer(&st, graph, Some(ids), live).await
 }
 
-async fn yaml_sync_answer(st: &Arc<AppState>, graph: Arc<Graph>, only: Option<Vec<u32>>) -> Response {
+/// The answer from the catalog, or, with `live` naming an environment, from a
+/// read of its tables in Snowflake: the relations each model has there are worked
+/// out first (the `.env` files are read for them), asked of the script, and the
+/// same comparison made on what it returns (0188). A failure of Snowflake is
+/// worded as the other reads word it, with its phase, so the page can point at
+/// the profile.
+async fn yaml_sync_answer(st: &Arc<AppState>, graph: Arc<Graph>, only: Option<Vec<u32>>, live: Option<String>) -> Response {
     let (root, target) = (st.root.clone(), st.target_dir.clone());
     let settings = st.settings.load();
+    let hidden = move |file: &str| settings.envs.get(file).and_then(|o| o.hidden);
+    let Some(env) = live else {
+        return match tokio::task::spawn_blocking(move || {
+            crate::yaml_sync::check(&graph, &root, &target, only.as_deref(), &hidden, crate::yaml_sync::Source::Catalog)
+        })
+        .await
+        {
+            Ok(answer) => Json(answer).into_response(),
+            Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+        };
+    };
+    if !st.snowflake_allowed().await {
+        return (StatusCode::CONFLICT, SNOWFLAKE_OFF).into_response();
+    }
+    let planned = {
+        let (graph, root, only, env, hidden) = (graph.clone(), root.clone(), only.clone(), env.clone(), hidden.clone());
+        tokio::task::spawn_blocking(move || crate::yaml_sync::live_plan(&graph, &root, only.as_deref(), &hidden, &env)).await
+    };
+    let (relations, asks) = match planned {
+        Ok(p) => p,
+        Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    };
+    if asks.len() > MAX_YAML_SYNC_BATCH {
+        return (StatusCode::PAYLOAD_TOO_LARGE, format!("at most {MAX_YAML_SYNC_BATCH} tables at a time: ask for the models in batches"))
+            .into_response();
+    }
+    let mut tables = std::collections::HashMap::new();
+    let mut reasons = std::collections::HashMap::new();
+    if !asks.is_empty() {
+        if let Err(failed) = start_reading(st).await {
+            return failed;
+        }
+        for chunk in asks.chunks(sidecar::COLUMNS_MAX) {
+            match st.sidecar.columns(chunk).await {
+                Ok(found) => {
+                    for t in found {
+                        let rel = sidecar::LiveRelation { database: t.database, schema: t.schema, name: t.name };
+                        if t.found {
+                            tables.insert(rel, t.columns);
+                        } else if !t.reason.is_empty() {
+                            reasons.insert(rel, t.reason);
+                        }
+                    }
+                }
+                Err(e) => return (StatusCode::BAD_GATEWAY, Json(FetchFailed { error: e.message, phase: e.phase })).into_response(),
+            }
+        }
+    }
+    let read_at = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+    let read = crate::yaml_sync::Live { env, read_at, relations, tables, reasons };
     match tokio::task::spawn_blocking(move || {
-        crate::yaml_sync::check(&graph, &root, &target, only.as_deref(), &|file: &str| settings.envs.get(file).and_then(|o| o.hidden))
+        crate::yaml_sync::check(&graph, &root, &target, only.as_deref(), &hidden, crate::yaml_sync::Source::Live(&read))
     })
     .await
     {
@@ -5519,6 +5620,113 @@ mod tests {
         assert!(status_of(port, keyless(post(r#"{"nodes":[]}"#))).await.ends_with("401 Unauthorized"));
         let index = response_of(port, get("/api/reports", &h)).await;
         assert!(index.contains(r#""yamlsync":{"models":2,"at":1,"manifest_at":0}"#), "{index}");
+        server.abort();
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The YAML update can read its columns live from Snowflake instead of the
+    /// catalog, for the environment the page names, behind Snowflake's features,
+    /// with a number written with its precision, a relation Snowflake does not
+    /// return not checked, and a failure worded as the other reads word it (0188).
+    #[tokio::test]
+    async fn the_yaml_sync_reads_the_columns_live_from_the_environment_asked() {
+        let root = temp_project("yaml-sync-live");
+        std::fs::write(root.join(".env.prod"), "SF_DB=PROD_DB\nSF_SCHEMA=MARTS\n").unwrap();
+        let (port, st, server) = serve(&root).await;
+        let host = format!("127.0.0.1:{port}");
+        let h = [("Host", host.as_str())];
+        let model = |name: &str, contract: bool| {
+            serde_json::json!({ "name": name, "resource_type": "model", "package_name": "demo",
+                "original_file_path": format!("models/{name}.sql"), "database": "DEV_DB", "schema": "dev_me", "alias": name,
+                "config": { "materialized": "table", "database": "DEV_DB", "schema": "dev_me", "contract": { "enforced": contract } },
+                "unrendered_config": { "database": "{{ env_var('SF_DB') }}", "schema": "{{ env_var('SF_SCHEMA') }}" },
+                "columns": { "id": { "name": "id", "data_type": "number" } } })
+        };
+        let raw_manifest: crate::manifest::RawManifest = serde_json::from_value(serde_json::json!({
+            "metadata": { "project_name": "demo", "adapter_type": "snowflake" },
+            "nodes": { "model.demo.orders": model("orders", true), "model.demo.gone": model("gone", false) } }))
+        .unwrap();
+        *st.graph.write().await = Arc::new(Graph::build(raw_manifest, &root.join("target/manifest.json"), 0, 0));
+
+        // Off: nothing is asked of Snowflake.
+        *st.snowflake_features.lock().unwrap() = Some(false);
+        let off = response_of(port, get("/api/yaml-sync?source=snowflake&node=model.demo.orders", &h)).await;
+        assert!(off.starts_with("HTTP/1.1 409"), "{off}");
+
+        *st.snowflake_features.lock().unwrap() = Some(true);
+        let script = root.join("fake.sh");
+        let body = r#"echo '{"event":"ready"}'
+while IFS= read -r line; do
+  id=$(printf '%s' "$line" | sed 's/.*"id":\([0-9]*\).*/\1/')
+  printf '%s\n' "$line" >> "$(dirname "$0")/asked"
+  case "$line" in
+    *'BROKEN'*) echo "{\"id\":$id,\"error\":\"Incorrect username or password\",\"phase\":\"connect\"}" ;;
+    *'"op":"columns"'*) echo "{\"id\":$id,\"relations\":[{\"database\":\"DEV_DB\",\"schema\":\"dev_me\",\"name\":\"orders\",\"found\":true,\"columns\":[{\"name\":\"ID\",\"index\":1,\"type\":\"NUMBER\",\"precision\":38,\"scale\":0},{\"name\":\"AMOUNT\",\"index\":2,\"type\":\"NUMBER\",\"precision\":12,\"scale\":2},{\"name\":\"NOTE\",\"index\":3,\"type\":\"TEXT\"}]},{\"database\":\"PROD_DB\",\"schema\":\"MARTS\",\"name\":\"orders\",\"found\":true,\"columns\":[{\"name\":\"ID\",\"index\":1,\"type\":\"NUMBER\",\"precision\":38,\"scale\":0},{\"name\":\"NOTE\",\"index\":2,\"type\":\"TEXT\"}]},{\"database\":\"DEV_DB\",\"schema\":\"dev_me\",\"name\":\"gone\",\"found\":false,\"columns\":[]}]}" ;;
+    *'"op":"quit"'*) exit 0 ;;
+  esac
+done
+"#;
+        std::fs::write(&script, body).unwrap();
+        let sh = [crate::sidecar::Interpreter { program: "/bin/sh".into(), args: Vec::new() }];
+        st.sidecar.set_enabled(true);
+        assert_eq!(st.sidecar.start(&sh, &script, &root).await.state, "ready");
+
+        let live = response_of(port, get("/api/yaml-sync?source=snowflake", &h)).await;
+        assert!(live.contains(r#""source":"snowflake""#) && live.contains(r#""read_at":"#), "{live}");
+        assert!(live.contains(r#""env":"manifest""#), "the environment read is in the answer: {live}");
+        assert!(live.contains(r#""name":"orders""#) && live.contains(r#""name":"amount","data_type":"number(12,2)""#), "{live}");
+        assert!(live.contains(r#""name":"note","data_type":"varchar""#), "TEXT is varchar: {live}");
+        assert!(!live.contains(r#""held""#), "a contract's number with its precision is not held: {live}");
+        assert!(live.contains("not found in the manifest's target, or not visible to this role"), "{live}");
+        assert!(!live.contains("catalog_behind_run") && !live.contains("code_after_catalog"), "no catalog to be behind: {live}");
+        let asked = std::fs::read_to_string(root.join("asked")).unwrap();
+        assert!(asked.contains(r#""op":"columns""#) && asked.contains(r#""database":"DEV_DB""#), "the manifest's own relations: {asked}");
+        assert_eq!(asked.matches(r#""op":"columns""#).count(), 1, "one request for the whole project");
+
+        // No catalog: the section is listed for a live read while Snowflake's features are on, and not otherwise.
+        let index = response_of(port, get("/api/reports", &h)).await;
+        assert!(index.contains(r#""yamlsync":{"models":2,"at":0,"manifest_at":0}"#), "{index}");
+        *st.snowflake_features.lock().unwrap() = Some(false);
+        let index = response_of(port, get("/api/reports", &h)).await;
+        assert!(!index.contains("yamlsync"), "{index}");
+        *st.snowflake_features.lock().unwrap() = Some(true);
+
+        // An environment: the location resolved under its file, and deployed said.
+        let prod = response_of(port, get("/api/yaml-sync?source=snowflake&env=.env.prod&node=model.demo.orders", &h)).await;
+        let asked = std::fs::read_to_string(root.join("asked")).unwrap();
+        assert!(asked.lines().last().unwrap().contains(r#""database":"PROD_DB""#), "{asked}");
+        assert!(asked.lines().last().unwrap().contains(r#""schema":"MARTS""#), "{asked}");
+        assert!(prod.contains(r#""deployed":true"#) && prod.contains(r#""catalog_env":".env.prod""#), "{prod}");
+
+        // Only a name an env file can have, and a source that is one of the two.
+        assert!(status_of(port, get("/api/yaml-sync?source=snowflake&env=..%2Fx", &h)).await.ends_with("400 Bad Request"));
+        assert!(status_of(port, get("/api/yaml-sync?source=other", &h)).await.ends_with("400 Bad Request"));
+        let no_file = response_of(port, get("/api/yaml-sync?source=snowflake&env=.env.nowhere&node=model.demo.orders", &h)).await;
+        assert!(no_file.contains("not resolved under .env.nowhere"), "{no_file}");
+
+        // The batch form reads the models named; a whole project past the bound is refused.
+        let post = |body: &str| {
+            let mut r = format!("POST /api/yaml-sync HTTP/1.1\r\nAuthorization: Bearer {TEST_KEY}\r\nHost: {host}\r\n");
+            r.push_str(&format!("Content-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()));
+            r
+        };
+        let one = response_of(port, post(r#"{"nodes":["model.demo.orders"],"source":"snowflake"}"#)).await;
+        assert!(one.contains(r#""name":"orders""#) && !one.contains(r#""name":"gone""#), "{one}");
+
+        // A refusal comes back worded as the other reads word it, with its phase.
+        let broken = serde_json::json!({ "name": "BROKEN", "resource_type": "model", "package_name": "demo", "original_file_path": "models/BROKEN.sql",
+            "database": "D", "schema": "S", "config": { "materialized": "table" } });
+        let raw_manifest: crate::manifest::RawManifest = serde_json::from_value(serde_json::json!({
+            "metadata": { "project_name": "demo", "adapter_type": "snowflake" }, "nodes": { "model.demo.BROKEN": broken } }))
+        .unwrap();
+        *st.graph.write().await = Arc::new(Graph::build(raw_manifest, &root.join("target/manifest.json"), 0, 0));
+        let refused = response_of(port, get("/api/yaml-sync?source=snowflake", &h)).await;
+        assert!(
+            refused.starts_with("HTTP/1.1 502") && refused.contains(r#""phase":"connect""#) && refused.contains("Incorrect username"),
+            "{refused}"
+        );
+
+        st.sidecar.stop().await;
         server.abort();
         let _ = std::fs::remove_dir_all(&root);
     }

@@ -3,7 +3,8 @@
 //! The binary never talks to a warehouse. It starts the script only once a
 //! Snowflake feature wants it: Snowflake picked as the column lineage tool
 //! (0031), the query history opened (0048), a relation's Snowsight menu
-//! (0051), or the last builds read (0117). It stops once none does. The
+//! (0051), the last builds read (0117), or the columns of the tables a YAML
+//! update is compared with (0188). It stops once none does. The
 //! script connects on its first request, so a sign-in tab can only ever follow
 //! a click (0016).
 //!
@@ -223,6 +224,57 @@ pub struct Builds {
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub cut: bool,
 }
+
+/// A table a YAML update asks the columns of, as the script wants it: each part
+/// a name, which the script folds or quotes itself (0188).
+#[derive(serde::Serialize, Clone, Debug, PartialEq, Eq, Hash)]
+pub struct LiveRelation {
+    pub database: String,
+    pub schema: String,
+    pub name: String,
+}
+
+/// One column of a table as INFORMATION_SCHEMA holds it: its name, place, type
+/// and, for a number, its precision and scale. Named field by field, as the
+/// others here: nothing else of a table passes (0188).
+#[derive(serde::Deserialize, Clone, Debug, Default, PartialEq)]
+pub struct LiveColumn {
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub index: u32,
+    #[serde(default, rename = "type")]
+    pub data_type: String,
+    #[serde(default)]
+    pub precision: Option<u32>,
+    #[serde(default)]
+    pub scale: Option<u32>,
+}
+
+/// What the script found for one relation asked: its columns in the table's
+/// order, or `found: false` when Snowflake returned no row, which says the
+/// relation is not there or this role cannot see it, and is never a table with
+/// no column.
+#[derive(serde::Deserialize, Clone, Debug, Default, PartialEq)]
+pub struct LiveTable {
+    #[serde(default)]
+    pub database: String,
+    #[serde(default)]
+    pub schema: String,
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub found: bool,
+    #[serde(default)]
+    pub columns: Vec<LiveColumn>,
+    /// Why a relation is not found, when the script says more than that
+    /// Snowflake returned nothing: its database name was not one it reads.
+    #[serde(default)]
+    pub reason: String,
+}
+
+/// The most relations the script takes in one request.
+pub const COLUMNS_MAX: usize = 2000;
 
 /// Whether a text is a relation of three parts, each unquoted or in double
 /// quotes with `""` for a quote: what the script accepts, held here too so a
@@ -641,6 +693,18 @@ impl Sidecar {
         serde_json::from_value(self.ask(request).await?).map_err(unreadable)
     }
 
+    /// The columns of the relations asked, in the order asked, read from
+    /// INFORMATION_SCHEMA with one query per database (0188). At most
+    /// `COLUMNS_MAX` of them; the caller splits a longer list.
+    pub async fn columns(&self, relations: &[LiveRelation]) -> Result<Vec<LiveTable>, QueryError> {
+        if relations.len() > COLUMNS_MAX {
+            return Err(QueryError::own(format!("at most {COLUMNS_MAX} relations at a time")));
+        }
+        let mut reply = self.ask(serde_json::json!({ "op": "columns", "relations": relations })).await?;
+        let tables = reply.get_mut("relations").map(serde_json::Value::take).unwrap_or_else(|| serde_json::json!([]));
+        serde_json::from_value(tables).map_err(unreadable)
+    }
+
     /// Who the connection is and on which account, connecting first if it has
     /// not yet: what a Snowsight link names.
     pub async fn session(&self) -> Result<SessionInfo, QueryError> {
@@ -972,6 +1036,49 @@ done
             "a field this build does not name stays here: {sent}"
         );
         assert!(!sent.contains("completed"), "an empty field is left out: {sent}");
+
+        car.stop().await;
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn the_columns_of_tables_are_read_and_only_the_named_fields_pass() {
+        let body = r#"echo '{"event":"ready","profile":"shop","target":"dev"}'
+while IFS= read -r line; do
+  case "$line" in
+    *'"op":"columns"'*)
+      printf '%s
+' "$line" > "$(dirname "$0")/asked"
+      echo '{"id":1,"relations":[{"database":"ANALYTICS","schema":"MARTS","name":"ORDERS","found":true,"columns":[{"name":"ID","index":1,"type":"NUMBER","precision":38,"scale":0,"rows":"not for the page"},{"name":"NOTE","index":2,"type":"TEXT"}]},{"database":"ANALYTICS","schema":"MARTS","name":"GONE","found":false,"columns":[]}]}' ;;
+    *'"op":"quit"'*) exit 0 ;;
+  esac
+done
+"#;
+        let (dir, script) = fake("columns", body);
+        let car = Sidecar::new(false, quick());
+        car.set_reading(true);
+        assert_eq!(car.start(&sh(), &script, &dir).await.state, "ready");
+
+        let ask = |n: &str| LiveRelation { database: "ANALYTICS".into(), schema: "MARTS".into(), name: n.into() };
+        let read = car.columns(&[ask("ORDERS"), ask("GONE")]).await.unwrap();
+        let asked = std::fs::read_to_string(dir.join("asked")).unwrap();
+        assert!(
+            asked.contains(r#""op":"columns""#) && asked.contains(r#"{"database":"ANALYTICS","name":"ORDERS","schema":"MARTS"}"#),
+            "{asked}"
+        );
+        assert_eq!(read.len(), 2);
+        assert!(read[0].found && !read[1].found, "a relation with no row is not found, and has no columns to confuse with a table's");
+        assert_eq!(
+            read[0].columns[0],
+            LiveColumn { name: "ID".into(), index: 1, data_type: "NUMBER".into(), precision: Some(38), scale: Some(0) }
+        );
+        assert_eq!(read[0].columns[1].precision, None);
+        assert!(read[1].columns.is_empty());
+        let sent = format!("{read:?}");
+        assert!(!sent.contains("not for the page"), "a field this build does not name stays here: {sent}");
+
+        let many: Vec<LiveRelation> = (0..=COLUMNS_MAX).map(|i| ask(&format!("T{i}"))).collect();
+        assert!(car.columns(&many).await.unwrap_err().message.contains("at most"));
 
         car.stop().await;
         std::fs::remove_dir_all(&dir).unwrap();

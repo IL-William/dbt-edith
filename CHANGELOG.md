@@ -20,6 +20,8 @@ and bumps nothing.
 
 ## Unreleased
 
+## 2.31.0 - 2026-11-25
+
 - Update a model's schema YAML from the catalog: a button in Catalog > Columns
   adds the columns the table has, types them and drops the ones it lacks, in the
   editor for you to review and save (0188).
@@ -27,6 +29,10 @@ and bumps nothing.
   warehouse section lists the models whose YAML differs from catalog.json by
   folder, and a dialog shows every file patched, with what is left out and why,
   before it writes anything (0188).
+- Read the columns of the tables from Snowflake for the YAML update, in the
+  Catalog and in Reports, with a switch between catalog.json and Snowflake for the
+  environment the pill shows, a number written with the precision and scale the
+  table has (0188).
 
 ## 2.30.0 - 2026-11-24
 

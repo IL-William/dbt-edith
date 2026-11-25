@@ -4,7 +4,7 @@ It is copied there as snowflake/connector/__init__.py in a folder put first on
 the server's PYTHONPATH, so that tools/sf_lineage.py imports it and reaches no
 warehouse (0014, 0144). It knows the few statements that script sends, by a
 substring of each, and answers them with invented rows: a session, a query
-history, the runs dbt_artifacts would hold. Any other statement fails, as it
+history, the runs dbt_artifacts would hold, the columns of its tables. Any other statement fails, as it
 does in tools/test_sf_lineage.py.
 
 The recent times fall within the run (from TAKE_SHOTS_STARTED, the epoch
@@ -126,6 +126,36 @@ def builds():
     return rows
 
 
+# What INFORMATION_SCHEMA.COLUMNS would hold of the invented tables, whichever
+# database and schema are asked: table, then each column's name, ordinal
+# position, type, precision and scale. customers has a column its YAML lacks
+# and lacks one it declares, for the YAML update to show.
+COLUMNS = {
+    "CUSTOMERS": [
+        ("CUSTOMER_ID", 1, "NUMBER", 38, 0), ("FIRST_NAME", 2, "TEXT", None, None), ("LAST_NAME", 3, "TEXT", None, None),
+        ("FIRST_ORDER", 4, "DATE", None, None), ("MOST_RECENT_ORDER", 5, "DATE", None, None),
+        ("NUMBER_OF_ORDERS", 6, "NUMBER", 18, 0), ("CUSTOMER_LIFETIME_VALUE", 7, "NUMBER", 38, 2),
+    ],
+    "ORDERS": [
+        ("ORDER_ID", 1, "NUMBER", 38, 0), ("CUSTOMER_ID", 2, "NUMBER", 38, 0), ("ORDER_DATE", 3, "DATE", None, None),
+        ("STATUS", 4, "TEXT", None, None), ("AMOUNT", 5, "NUMBER", 38, 2),
+    ],
+    "STG_CUSTOMERS": [("CUSTOMER_ID", 1, "NUMBER", 38, 0), ("FIRST_NAME", 2, "TEXT", None, None), ("LAST_NAME", 3, "TEXT", None, None)],
+    "STG_ORDERS": [("ORDER_ID", 1, "NUMBER", 38, 0), ("CUSTOMER_ID", 2, "NUMBER", 38, 0), ("ORDER_DATE", 3, "DATE", None, None), ("STATUS", 4, "TEXT", None, None)],
+    "STG_PAYMENTS": [("PAYMENT_ID", 1, "NUMBER", 38, 0), ("ORDER_ID", 2, "NUMBER", 38, 0), ("PAYMENT_METHOD", 3, "TEXT", None, None), ("AMOUNT", 4, "NUMBER", 38, 2)],
+}
+
+
+def columns(params):
+    """The rows of the columns query, as its two IN lists match them."""
+    schemas = [v for k, v in sorted(params.items()) if k.startswith("s")]
+    tables = {v for k, v in params.items() if k.startswith("t")}
+    return [(schema, table, name, ordinal, kind, precision, scale)
+            for table, cols in COLUMNS.items() if table in tables
+            for schema in schemas
+            for name, ordinal, kind, precision, scale in cols]
+
+
 class Cursor:
     def __init__(self):
         self.result = []
@@ -144,6 +174,8 @@ class Cursor:
             self.result = rows[: (params or {}).get("limit", 21)]
         elif "identifier(%(exe)s)" in low:
             self.result = builds()
+        elif "information_schema.columns" in low:
+            self.result = columns(params or {})
         elif "get_lineage" in low:
             self.result = []
         else:

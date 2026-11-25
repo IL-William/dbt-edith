@@ -143,6 +143,41 @@ The schema the package is placed in is the config before `generate_schema_name`
 runs, so a project whose macro rewrites it sends the query to the wrong table,
 which Snowflake's error then names.
 
+## Columns for the YAML update
+
+With Snowflake's features on, the YAML update in [the Catalog](catalog.md#update-yaml) and
+in [Reports](jobs-and-reports.md#reports) can read the columns of the tables
+from Snowflake instead of `catalog.json`: a switch, **catalog.json | Snowflake,
+<environment>**, sits beside the Catalog's Update YAML button and in the head of
+the YAML and warehouse section. The choice lasts the page session, and the
+environment is the one the status bar's pill shows: the manifest's target, or an
+`.env` file, whose resolved location for each model is the relation read. A model
+whose location the file leaves unresolved is not checked, and says so.
+
+What is queried is `INFORMATION_SCHEMA.COLUMNS` of each database asked, one query
+a database, restricted to the schemas and tables of the models asked, and only a
+column's name, position, type, precision and scale are selected. A database name
+is read only as a plain one, letters, digits, `_` and `$`; any other is not
+queried and its models are not checked, with that said. A database Snowflake
+refuses or does not know fails its own models only. An `.env` file's environment
+is asked only for a model whose database that file names: one that takes the
+profile target's database is not checked under it. No value of any
+table is read or sent, nothing is kept, and the read runs on a click: showing a
+model asks nothing. A relation Snowflake returns no row for is not checked, "not
+found in <environment>, or not visible to this role", never a table with no
+columns. A refused connection or a role that cannot see a table comes back in
+the words the other Snowflake reads use, with a link to the profile.
+
+A number is written with the precision and scale the table has, `number(38,2)`,
+which `catalog.json` does not carry: on a model whose contract is enforced, a
+bare `number` would be `number(38,0)` and round decimals, so nothing is held
+back for its precision. Text is `varchar`, and the rest as the catalog's types are
+spelled. No catalog is behind a live read, so the flags about one do not apply: a
+model's table older than its code still does for the manifest's target, and an
+`.env` file's environment is a deployment, said as before. A whole project that is
+too many tables for one request is read in batches of a thousand models, with its
+progress said.
+
 ## If something looks off
 
 | Symptom | Cause | Fix |

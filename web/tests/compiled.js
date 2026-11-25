@@ -174,6 +174,8 @@ check('the tab buttons keep those titles for the wire that reads them', [/data-d
   function renderCatalog() {}
   function paintLineageBuilds() {}
   function repaintArtifacts() { asked.push('repaint'); }
+  // The YAML update reads live only when Snowflake is picked for it: not here.
+  function yamlSourceNow() { return 'catalog'; }
   var api = { send: function (url, method, body) { posts.push(body.file); return Promise.resolve(); } };
   eval(src.slice(src.indexOf('function selectEnv'), src.indexOf('/* The environment menu, shared by')));
   selectEnv('.env.prod');

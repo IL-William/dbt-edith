@@ -4392,11 +4392,12 @@ function yamlSyncTip(sync) {
    nothing says so: the model ran after catalog.json was written, or its code
    changed since it ran; or the catalog describes a deployed environment, which
    is always said. `at` is when the catalog was written, in seconds. */
-function yamlSyncBehind(sync, at, fmt = (d) => d.toLocaleString()) {
+function yamlSyncBehind(sync, at, fmt = (d) => d.toLocaleString(), source = 'catalog') {
+  const live = source === 'snowflake';
   if (sync.deployed) {
     // Not the table a local run builds: the one a deployment built, from the code deployed there.
     return [
-      `catalog.json describes the table of ${sync.catalog_env}, an environment deployed from code that may be behind this branch: `
+      `${live ? 'Snowflake has' : 'catalog.json describes'} the table of ${sync.catalog_env}, an environment deployed from code that may be behind this branch: `
         + 'a column the branch added shows as a removal and one it dropped as an addition. Check each removal against the model\'s SQL.',
       sync.code_after_catalog
         ? `This model's code is newer than catalog.json (${fmt(new Date(at * 1000))}), so the table there may have been built from older code still: `
@@ -4407,8 +4408,27 @@ function yamlSyncBehind(sync, at, fmt = (d) => d.toLocaleString()) {
     sync.catalog_behind_run
       ? `catalog.json was written ${fmt(new Date(at * 1000))}, before this model's last run, so its columns may be the old table's.` : '',
     sync.table_behind_code
-      ? "This model's table is older than its code: run it first, or the columns catalog.json lists are not the ones its code builds." : '',
+      ? `This model's table is older than its code: run it first, or the columns ${live ? 'Snowflake has' : 'catalog.json lists'} are not the ones its code builds.` : '',
   ].filter(Boolean).join('\n');
+}
+
+/* Where the columns of the tables are read from, in the words a switch, a
+   tooltip and a head use: catalog.json, or Snowflake with the environment's
+   name (`manifest`, or an .env file's name, is the manifest's target). */
+function yamlSyncSourceWords(source, env) {
+  if (source !== 'snowflake') return 'catalog.json';
+  return `Snowflake, ${!env || env === 'manifest' ? "the manifest's target" : env}`;
+}
+
+/* The query a live read adds to a request, and the fields to a body: nothing for
+   the catalog, which is the route's default. The environment is the pill's
+   (a file name, or none for the manifest's). */
+function yamlSyncQuery(source, env) {
+  return source === 'snowflake' ? `source=snowflake&env=${encodeURIComponent(env || '')}` : '';
+}
+
+function yamlSyncSourceBody(body, source, env) {
+  return source === 'snowflake' ? Object.assign({}, body, { source: 'snowflake', env: env || '' }) : body;
 }
 
 /* Where the properties file of a model that has none goes: beside its SQL. */
@@ -4550,8 +4570,8 @@ function yamlBulkWhy(sync) {
 
 /* What is said once at the top of the dialog when the catalog is a deployed
    environment's. */
-function yamlBulkDeployed(env) {
-  return `catalog.json describes the tables of ${env}, built from code that may be behind this branch: `
+function yamlBulkDeployed(env, source = 'catalog') {
+  return `${source === 'snowflake' ? 'Snowflake has' : 'catalog.json describes'} the tables of ${env}, built from code that may be behind this branch: `
     + 'a column to remove may be one this branch added.';
 }
 
@@ -4591,6 +4611,12 @@ function* yamlBulkSteps(syncs, reads, dirty, withBehind, cache) {
   const byFile = new Map();
   for (const s of syncs) {
     if (s.deployed && !plan.env) plan.env = s.catalog_env;
+    // Not compared (a relation Snowflake did not return, a location not resolved): nothing is known of its
+    // columns, which is not that its file says them right.
+    if (s.status === 'not_checked') {
+      plan.left.push({ sync: s, kind: 'unchecked', why: s.reason || 'it was not compared' });
+      continue;
+    }
     const why = yamlBulkWhy(s);
     if (why.length && !withBehind) {
       plan.left.push({ sync: s, kind: 'behind', why: why.join(', ') });
@@ -4663,7 +4689,7 @@ function yamlBulkLines(sync, patch) {
 
 /* The words of a left-out model's kind, for the dialog and the card. */
 function yamlBulkKindWords(kind) {
-  return { behind: 'behind the catalog or the code', unsaved: 'open with unsaved edits', refused: 'refused', unread: 'not read', skipped: 'the file no longer matches', reloaded: 'no longer in the manifest' }[kind] || kind;
+  return { behind: 'behind the catalog or the code', unsaved: 'open with unsaved edits', refused: 'refused', unread: 'not read', unchecked: 'not compared', skipped: 'the file no longer matches', reloaded: 'no longer in the manifest' }[kind] || kind;
 }
 
 /* The line that says which files, at most `cap` of them, and how many more. */
@@ -4699,6 +4725,7 @@ function yamlBulkResult(done, left) {
 /* What the section's head says it was read from. */
 function yamlBulkAbout(answer, fmt = (d) => d.toLocaleString()) {
   const env = !answer.catalog_env || answer.catalog_env === 'manifest' ? "the manifest's target" : answer.catalog_env;
+  if (answer.source === 'snowflake') return `Snowflake, ${env}, read ${fmt(new Date(answer.read_at * 1000))}`;
   return `catalog.json, ${env}, written ${fmt(new Date(answer.catalog_at * 1000))}`;
 }
 
@@ -14603,11 +14630,41 @@ function yamlSyncLink() {
 }
 
 async function yamlSyncSection(again) {
-  const head = (about, extra = []) => reportHead({ title: 'YAML and warehouse', tool: 'dbt', about, again, extra });
+  const source = yamlSourceNow();
+  // A live answer is kept for the page session and read again only when asked for: Read again, a switch, the
+  // pill's environment changing, or the button of the prompt. A redraw for any other reason draws what it holds (0188).
+  const reread = () => { S.yamlLive = null; S.yamlLiveWanted = true; return again(); };
+  const head = (about, extra = []) => reportHead({ title: 'YAML and warehouse', tool: 'dbt', about, again: source === 'snowflake' ? reread : again, extra });
+  const switcher = () => yamlSourceSwitch(() => { S.yamlLiveWanted = true; showReportSection('yamlsync'); });
   let answer;
-  try { answer = await api.get('/api/yaml-sync'); }
-  catch (e) { return [head(''), jel('div', 'compiled-empty', e.message)]; }
-  if (!answer.catalog_at) return [head(''), jel('div', 'compiled-empty', 'There is no catalog.json: run dbt docs generate, and the columns of each table are compared with the YAML.')];
+  if (source === 'snowflake') {
+    const env = yamlSourceEnv();
+    if (!S.yamlLive || S.yamlLive.env !== env) {
+      if (!S.yamlLiveWanted) {
+        const prompt = jel('div', 'compiled-empty', `Nothing is asked of Snowflake until you ask. The columns of the tables of ${yamlSyncSourceWords('snowflake', env)} are read for every model, never a value of a table.  `);
+        const go = jel('button', 'btn sm primary', 'Read from Snowflake');
+        go.type = 'button';
+        go.addEventListener('click', reread);
+        prompt.append(go);
+        return [head('', [switcher()].filter(Boolean)), prompt];
+      }
+      S.yamlLiveWanted = false;
+      try { S.yamlLive = { env, answer: await yamlLiveRead(env) }; }
+      catch (e) {
+        S.yamlLive = null;
+        yamlBulkProgress('');
+        return [head('', [switcher()].filter(Boolean)), yamlSyncFailure(e)];
+      }
+      yamlBulkProgress('');
+    }
+    answer = S.yamlLive.answer;
+  } else {
+    try { answer = await api.get('/api/yaml-sync'); }
+    catch (e) { return [head('', [switcher()].filter(Boolean)), jel('div', 'compiled-empty', e.message)]; }
+    if (!answer.catalog_at) {
+      return [head('', [switcher()].filter(Boolean)), jel('div', 'compiled-empty', 'There is no catalog.json: run dbt docs generate, and the columns of each table are compared with the YAML.')];
+    }
+  }
   const state = yamlBulkState();
   const body = jel('div', 'reportbody');
   const tiles = jel('div', '');
@@ -14644,14 +14701,39 @@ async function yamlSyncSection(again) {
     openYamlBulk('the whole project', yamlBulkScope(answer.models, '', state.types, yamlBulkWaiting()), answer);
   });
 
-  if (answer.catalog_env && answer.catalog_env !== 'manifest') notes.append(jel('p', 'runnote', yamlBulkDeployed(answer.catalog_env)));
-  notes.append(jel('p', 'runnote', 'A model is compared with the table catalog.json lists for it. Update opens a dialog that shows each file as it would be '
+  if (answer.catalog_env && answer.catalog_env !== 'manifest') notes.append(jel('p', 'runnote', yamlBulkDeployed(answer.catalog_env, source)));
+  notes.append(jel('p', 'runnote', `A model is compared with the table ${source === 'snowflake' ? 'Snowflake has' : 'catalog.json lists'} for it. Update opens a dialog that shows each file as it would be `
     + 'written, with what is left out and why, and writes nothing before its own button.'));
   body.append(tiles, notes, tree);
   paint();
   const unchecked = yamlBulkNotChecked(answer.models);
-  if (unchecked.length) body.append(yamlBulkNotCheckedView(unchecked));
-  return [head(yamlBulkAbout(answer), [types, all]), body];
+  if (unchecked.length) body.append(yamlBulkNotCheckedView(unchecked, source));
+  return [head(yamlBulkAbout(answer), [switcher(), types, all].filter(Boolean)), body];
+}
+
+/* The whole project's tables read live from Snowflake for the environment the
+   pill shows. One request when the project is within the route's bound; else
+   the models are asked in batches of a thousand, the progress said, and the
+   answers joined (0188). */
+async function yamlLiveRead(env) {
+  const query = yamlSyncQuery('snowflake', env);
+  yamlBulkProgress(`reading the tables from ${yamlSyncSourceWords('snowflake', env)}`);
+  try {
+    return await api.get('/api/yaml-sync?' + query);
+  } catch (e) {
+    // Past the bound: the models are listed from the catalog's answer, which asks nothing of Snowflake.
+    if (!/at most \d+ tables/.test(e.message)) throw e;
+  }
+  const listed = await api.get('/api/yaml-sync');
+  const ids = listed.models.filter((m) => !/installed package|versioned|ephemeral/.test(m.reason || '')).map((m) => m.id);
+  let joined = null;
+  for (let at = 0; at < ids.length; at += 1000) {
+    yamlBulkProgress(`reading from Snowflake, ${Math.min(at + 1000, ids.length)} of ${ids.length} models`);
+    const part = await api.send('/api/yaml-sync', 'POST', yamlSyncSourceBody({ nodes: ids.slice(at, at + 1000) }, 'snowflake', env));
+    if (joined) joined.models.push(...part.models);
+    else joined = part;
+  }
+  return joined || await api.get('/api/yaml-sync?' + query);
 }
 
 /* The folders of the tree, the first two levels open and the rest folded, each
@@ -14659,7 +14741,7 @@ async function yamlSyncSection(again) {
    hundred rows at a time. */
 function yamlBulkTreeView(answer, state, waiting) {
   const root = yamlBulkTree(answer.models, state.types, waiting);
-  if (!root.shown) return [jel('p', 'runnote', 'Every model catalog.json lists has the columns its YAML declares.')];
+  if (!root.shown) return [jel('p', 'runnote', `Every model ${answer.source === 'snowflake' ? 'Snowflake returned a table for' : 'catalog.json lists'} has the columns its YAML declares.`)];
   const rows = (node, depth) => [
     ...node.folders.map((f) => folder(f, depth + 1)),
     ...(node.models.length ? [modelList(node.models)] : []),
@@ -14726,7 +14808,7 @@ function yamlBulkFolderCount(node) {
 }
 
 /* The models not compared, by reason, in a fold of their own. */
-function yamlBulkNotCheckedView(groups) {
+function yamlBulkNotCheckedView(groups, source = 'catalog') {
   const total = groups.reduce((n, g) => n + g.models.length, 0);
   const d = jel('details', 'reportfinding');
   d.open = false;
@@ -14734,7 +14816,9 @@ function yamlBulkNotCheckedView(groups) {
   sum.append(reportChevron(), jel('span', 'rtitle', 'Not checked'), jel('span', 'tabbadge rcount', String(total)));
   sum.addEventListener('click', () => { d.dataset.touched = '1'; });
   d.append(sum);
-  d.append(reportLever('catalog.json says nothing true of these models, so their YAML is not compared with it. A table the catalog lists with no column, or for another relation, is no evidence of drift.'));
+  d.append(reportLever(source === 'snowflake'
+    ? 'Snowflake returned no table for these models in this environment, or their location is not resolved there, so their YAML is not compared. A relation it returns nothing for is not there, or this role cannot see it.'
+    : 'catalog.json says nothing true of these models, so their YAML is not compared with it. A table the catalog lists with no column, or for another relation, is no evidence of drift.'));
   for (const g of groups) {
     const f = jel('details', 'checkfolder');
     f.open = false;
@@ -14806,11 +14890,11 @@ async function openYamlBulk(label, wanted, answer) {
   if (!wanted.length) return toast('nothing to update there');
   S.yamlBulkBusy = true;
   try {
-    yamlBulkProgress(`reading ${wanted.length} model${wanted.length === 1 ? '' : 's'}`);
+    yamlBulkProgress(`reading ${wanted.length} model${wanted.length === 1 ? '' : 's'}${answer.source === 'snowflake' ? ' from Snowflake' : ''}`);
     // The flags of these models alone, a few thousand to a request (the route's bound).
     const flagged = new Map();
     for (let at = 0; at < wanted.length; at += 4000) {
-      const got = await api.send('/api/yaml-sync', 'POST', { nodes: wanted.slice(at, at + 4000).map((m) => m.id) });
+      const got = await api.send('/api/yaml-sync', 'POST', yamlSyncSourceBody({ nodes: wanted.slice(at, at + 4000).map((m) => m.id) }, answer.source, answer.env));
       got.models.forEach((m) => flagged.set(m.id, m));
     }
     // A manifest reloaded since the page read the section no longer has some of them.
@@ -14834,7 +14918,7 @@ async function openYamlBulk(label, wanted, answer) {
         const actions = [{ id: null, label: 'Cancel' }];
         if (behind) actions.push({ id: 'also', label: `Also the ones behind (${behind})` });
         if (plan.files.length) actions.push({ id: 'write', label: `Write ${plan.files.length} file${plan.files.length === 1 ? '' : 's'}`, style: 'primary' });
-        const pick = await modal({ title: `Update the YAML of ${label}`, body: yamlBulkPreview(plan, answer), actions, wide: true });
+        const pick = await modal({ title: `Update the YAML of ${label}${answer.source === 'snowflake' ? ' from Snowflake' : ''}`, body: yamlBulkPreview(plan, answer), actions, wide: true });
         if (pick === 'also') { withBehind = true; continue; }
         if (pick === 'write') await writeYamlBulk(plan);
         return;
@@ -14860,7 +14944,7 @@ async function openYamlBulk(label, wanted, answer) {
    models left out and why, then each file with the models' changes. */
 function yamlBulkPreview(plan, answer) {
   const box = jel('div', 'ybpreview');
-  if (plan.env) box.append(jel('p', 'runnote', yamlBulkDeployed(plan.env)));
+  if (plan.env) box.append(jel('p', 'runnote', yamlBulkDeployed(plan.env, answer.source)));
   const models = plan.files.reduce((n, f) => n + f.models.length, 0);
   box.append(jel('p', '', plan.files.length
     ? `${plan.files.length} file${plan.files.length === 1 ? '' : 's'} to write, for ${models} model${models === 1 ? '' : 's'}. Each is shown as it is on the disk now, patched; nothing is kept before Write.`
@@ -14870,7 +14954,7 @@ function yamlBulkPreview(plan, answer) {
     d.open = plan.left.length <= 8;
     d.append(jel('summary', '', `${plan.left.length} model${plan.left.length === 1 ? '' : 's'} left out`));
     const ul = jel('ul', '');
-    for (const kind of ['behind', 'unsaved', 'refused', 'unread', 'skipped', 'reloaded']) {
+    for (const kind of ['behind', 'unsaved', 'refused', 'unread', 'unchecked', 'skipped', 'reloaded']) {
       const those = plan.left.filter((l) => l.kind === kind);
       if (!those.length) continue;
       const byWhy = new Map();
@@ -16825,6 +16909,12 @@ function selectEnv(file) {
   S.env = file;
   paintEnvSelect();
   if (S.node) renderCatalog(S.node);
+  // A live read is of the pill's environment: the section on screen is read again for it (0188).
+  if (yamlSourceNow() === 'snowflake' && S.reportsSection === 'yamlsync' && panelOpen('reports')) {
+    S.yamlLive = null;
+    S.yamlLiveWanted = true;
+    showReportSection('yamlsync');
+  }
   // The marks follow the environment, painted over the canvas as it stands (0117).
   paintLineageBuilds();
   // So does the SQL of the visible Compiled or Run tab, from the answer it holds
@@ -20243,6 +20333,63 @@ function columnCountWidth(total, typed, filtering) {
   return filtering ? columnCountText(total, total, typed, true).length + 'ch' : '';
 }
 
+/* Where the YAML update reads the columns of the tables: catalog.json, or
+   Snowflake's own tables for the environment the pill shows. Snowflake only
+   while its features are on, and for the page session once picked (0188). */
+function yamlSourceNow() {
+  // With no catalog.json to read, Snowflake is where the section starts.
+  const none = !!(S.reports && S.reports.yamlsync && !S.reports.yamlsync.at);
+  const chosen = S.yamlSource || (none ? 'snowflake' : 'catalog');
+  return chosen === 'snowflake' && S.features && S.features.snowflake && !S.site ? 'snowflake' : 'catalog';
+}
+
+/* The environment a live read is for: the pill's file, or `manifest`. */
+function yamlSourceEnv() {
+  return S.env || 'manifest';
+}
+
+/* The pill's own name for the environment, in the switch. */
+function yamlSourceEnvName() {
+  if (!S.env) return "the manifest's target";
+  return envDisplayName(S.env);
+}
+
+/* The switch between catalog.json and Snowflake, only when Snowflake's features
+   are on. `changed` runs after the pick. */
+function yamlSourceSwitch(changed) {
+  if (!(S.features && S.features.snowflake) || S.site) return null;
+  const seg = jel('span', 'seg yamlsource');
+  seg.setAttribute('role', 'group');
+  seg.setAttribute('aria-label', 'Where the columns of the tables are read from');
+  const now = yamlSourceNow();
+  for (const [key, label, title] of [
+    ['catalog', 'catalog.json', 'Compare the YAML with the catalog dbt docs generate wrote'],
+    ['snowflake', `Snowflake, ${yamlSourceEnvName()}`, 'Compare the YAML with the tables as Snowflake has them now, read when you ask: the columns of the models asked, never a value of a table'],
+  ]) {
+    const b = jel('button', 'segbtn' + (now === key ? ' active' : ''), label);
+    b.type = 'button';
+    b.title = title;
+    b.setAttribute('aria-pressed', String(now === key));
+    b.addEventListener('click', () => {
+      if (now === key) return;
+      S.yamlSource = key;
+      changed();
+    });
+    seg.append(b);
+  }
+  return seg;
+}
+
+/* The failure of a live read in words, pointing at the profile when the
+   connection is to blame, as the other Snowflake reads do. */
+function yamlSyncFailure(e) {
+  const advice = connectionAdvice(e.message, e.phase, (S.sidecar && S.sidecar.profiles) || '');
+  const box = jel('div', 'compiled-empty', advice.ask ? `${advice.text}  ·  ${advice.ask} ` : advice.text);
+  const link = (e.phase === 'connect' || e.phase === 'start') && profileLink();
+  if (link) box.append(link);
+  return box;
+}
+
 /* Update YAML (0188): in the Columns tab of a model the catalog says disagrees
    with its schema YAML. The button is drawn once the answer is in, and is no
    button at all when it fails: the page is as it was without this feature. */
@@ -20252,6 +20399,15 @@ function yamlSyncButton(n) {
   b.className = 'btn sm ghost yamlsync';
   b.hidden = true;
   b.textContent = 'Update YAML';
+  const source = yamlSourceNow();
+  if (source === 'snowflake') {
+    // Nothing is asked of Snowflake by showing a model: a read follows a click.
+    b.hidden = false;
+    b.title = `Read the columns of ${n.name}'s table from ${yamlSyncSourceWords(source, yamlSourceEnv())} and bring its schema YAML in line. `
+      + 'Nothing is read before you click; the change is made in the editor for you to review.';
+    b.addEventListener('click', () => updateYamlFromCatalog(n));
+    return b;
+  }
   api.get('/api/yaml-sync?node=' + encodeURIComponent(n.id)).then((answer) => {
     const sync = answer.models[0];
     if (!sync || !['disagrees', 'untyped'].includes(sync.status) || !b.isConnected) return;
@@ -20264,16 +20420,24 @@ function yamlSyncButton(n) {
 }
 
 async function updateYamlFromCatalog(n) {
+  const source = yamlSourceNow();
+  const words = yamlSyncSourceWords(source, yamlSourceEnv());
   let answer;
-  try { answer = await api.get('/api/yaml-sync?node=' + encodeURIComponent(n.id)); }
-  catch (e) { return toast('Update YAML: ' + e.message, 'err'); }
+  try {
+    if (source === 'snowflake') toast(`reading ${n.name} from ${words}`);
+    answer = await api.get(`/api/yaml-sync?node=${encodeURIComponent(n.id)}${source === 'snowflake' ? '&' + yamlSyncQuery(source, yamlSourceEnv()) : ''}`);
+  } catch (e) {
+    const advice = source === 'snowflake' ? connectionAdvice(e.message, e.phase, (S.sidecar && S.sidecar.profiles) || '').text : e.message;
+    return toast('Update YAML: ' + advice, 'err');
+  }
   const sync = answer.models[0];
-  if (!sync || !['disagrees', 'untyped'].includes(sync.status)) return toast(`${n.name}: its YAML already says what catalog.json says`);
-  const behind = yamlSyncBehind(sync, answer.catalog_at);
+  if (sync && sync.status === 'not_checked') return toast(`${n.name}: ${sync.reason}`);
+  if (!sync || !['disagrees', 'untyped'].includes(sync.status)) return toast(`${n.name}: its YAML already says what ${words} says`);
+  const behind = yamlSyncBehind(sync, answer.catalog_at, undefined, source);
   if (behind) {
     const body = document.createElement('div');
     behind.split('\n').forEach((line) => body.append(para(line)));
-    if (await modal({ title: 'Update the YAML from this catalog?', body,
+    if (await modal({ title: source === 'snowflake' ? 'Update the YAML from Snowflake?' : 'Update the YAML from this catalog?', body,
       actions: [{ id: null, label: 'Cancel' }, { id: 'go', label: 'Update anyway', style: 'primary' }] }) !== 'go') return;
   }
   let path = sync.yml;
@@ -20286,7 +20450,7 @@ async function updateYamlFromCatalog(n) {
   }
   if (!sync.yml && !exists) {
     const body = document.createElement('div');
-    body.append(para(`${n.name} has no properties file. ${path} is created beside its SQL, and the columns catalog.json lists are put in it in the editor, for you to review. Nothing is kept until you save.`));
+    body.append(para(`${n.name} has no properties file. ${path} is created beside its SQL, and the columns ${source === 'snowflake' ? 'Snowflake has' : 'catalog.json lists'} are put in it in the editor, for you to review. Nothing is kept until you save.`));
     if (await modal({ title: `Create ${base(path)}?`, body,
       actions: [{ id: null, label: 'Cancel' }, { id: 'go', label: 'Create it', style: 'primary' }] }) !== 'go') return;
     // An empty stamp creates a file that is still absent, and is refused for one that appeared since.
@@ -20394,7 +20558,11 @@ function catalogColumns(body, n, inCard) {
     again.addEventListener('click', () => regenerateCollin());
     tools.appendChild(again);
   }
-  if (!S.site && n.kind === 'model' && !n.version) tools.appendChild(yamlSyncButton(n));
+  if (!S.site && n.kind === 'model' && !n.version) {
+    const sw = yamlSourceSwitch(() => renderCatalog(n));
+    tools.appendChild(yamlSyncButton(n));
+    if (sw) tools.appendChild(sw);
+  }
   // Each column of a key, by the key's letter and its place in the key,
   // expressions included; a column named twice in a key keeps its first place.
   const keys = n.keys || [];
@@ -23524,6 +23692,8 @@ function applyMeta(meta) {
   // a feature or a collin poll brings the same one again.
   const moved = !S.meta || S.meta.manifest_mtime !== meta.manifest_mtime;
   S.meta = meta;
+  // A live read is of the models the last manifest held: it is read again for the new one, on asking (0188).
+  if (moved) S.yamlLive = null;
   if (moved && S.rows.size) refreshFileMarks();
   // A sandbox may have appeared or gone, and the pill names the manifest's choice by it.
   if (S.envs) paintEnvSelect();
